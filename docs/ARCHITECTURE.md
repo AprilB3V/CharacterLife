@@ -249,3 +249,30 @@ CharacterRehydrator ── 快照 + 事件重放 ──► 重建 Runtime ──
   任何能输出 JSON 信封的模型都能接。
 - **其他存储**：`SnapshotStore` 只有 `save/load/register` 三个方法，
   换 SQLite 只需替换这一层。
+
+## 9. V0.2 接入层在整体架构中的位置
+
+```
+外部平台（QQ / SillyTavern / 未来的 Telegram…）
+        │  事件 / HTTP
+        ▼
+src/adapters/<platform>/        协议翻译（平台 SDK 只允许出现在这里）
+        ▼
+src/api/gateway.ts              去重 / 限流 / 身份 / 每实例互斥 / 指令
+        ▼
+src/runtime/instance-runtime.ts 一个实例一份 workspace（唯一真相）
+        ▼
+Conversation · Runtime · Memory · Policy（V0.1 四模块，未改动）
+        ▼
+src/persistence/                SQLite（含 platform_identities 等 5 张新表）
+```
+
+关键点：
+
+- 四模块**没有被平台代码污染**：`src/conversation`、`src/runtime`、`src/memory`、`src/policy`
+  都不 import `src/adapters`；
+- 适配器只依赖 `src/adapters/protocol.ts` 的类型，不依赖 workspace 或数据库；
+- 身份与绑定属于接入层，不属于角色引擎：引擎只看到 `instanceId`；
+- 并发一致性靠「每实例一把锁 + 单份 workspace」，而不是靠数据库行锁。
+
+详见 `docs/ADAPTER_PROTOCOL.md`、`docs/QQ_CAPABILITIES.md`、`docs/V02_TEST_REPORT.md`（后者在 `reports/`）。

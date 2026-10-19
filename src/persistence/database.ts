@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { SCHEMA_SQL, SCHEMA_VERSION, splitStatements } from './schema.ts'
+import { PLATFORM_SCHEMA_SQL, SCHEMA_SQL, SCHEMA_VERSION, splitStatements } from './schema.ts'
 
 export class CharacterDatabase {
   readonly db: DatabaseSync
@@ -42,7 +42,14 @@ export class CharacterDatabase {
     this.db.exec(sql)
   }
 
-  /** 建表 + 记录 schema 版本。已存在则只校验版本。 */
+  /**
+   * 建表 + 迁移。
+   *
+   * 迁移策略（V0.2）：
+   * - 所有建表语句都是 `IF NOT EXISTS`，可重复执行；
+   * - 版本低于代码版本 → 执行增量建表（V1→V2 是纯新增表），然后更新 meta；
+   * - 版本高于代码版本 → 显式失败（旧代码读新库会丢数据）。
+   */
   migrate(): void {
     for (const stmt of splitStatements(SCHEMA_SQL)) {
       this.db.exec(stmt)
@@ -51,15 +58,25 @@ export class CharacterDatabase {
       | { value: string }
       | undefined
     if (!row) {
+      for (const stmt of splitStatements(PLATFORM_SCHEMA_SQL)) this.db.exec(stmt)
       this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION))
       return
     }
     const existing = Number(row.value)
-    if (existing !== SCHEMA_VERSION) {
+    if (existing > SCHEMA_VERSION) {
       throw new Error(
-        `数据库 schema_version=${existing} 与代码期望的 ${SCHEMA_VERSION} 不一致；` +
-          'V0.1 不提供自动迁移，请新建数据库或手工迁移',
+        `数据库 schema_version=${existing} 高于代码支持的 ${SCHEMA_VERSION}；` +
+          '请升级代码，不要用旧版本写新库',
       )
+    }
+    if (existing < SCHEMA_VERSION) {
+      // V1 -> V2：新增平台接入层四张表（纯新增，不改旧表，失败可整体回滚）
+      this.transaction(() => {
+        for (const stmt of splitStatements(PLATFORM_SCHEMA_SQL)) this.db.exec(stmt)
+        this.db
+          .prepare('UPDATE meta SET value = ? WHERE key = ?')
+          .run(String(SCHEMA_VERSION), 'schema_version')
+      })
     }
   }
 

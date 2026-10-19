@@ -8,8 +8,13 @@ dist/
 .data/
 examples/.data/
 tests/.data/
+data/
 reports/raw/
 *.tmp
+
+# 真实 SillyTavern 联调探针产生的数据（几十 MB，不入库）
+.st-data/
+st-startup.log
 
 # 本地密钥与隐私（仓库中永不出现真实 Key）
 .env

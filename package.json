@@ -1,8 +1,8 @@
 {
   "name": "characterlife",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.1）",
+  "description": "CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.2：跨平台适配与统一角色接口）",
   "type": "module",
   "engines": {
     "node": ">=22.6"
@@ -10,13 +10,17 @@
   "scripts": {
     "demo": "node examples/three-day-demo.ts",
     "demo:persistent": "node examples/persistent-demo.ts",
+    "qq:demo": "node examples/qq-bot/demo.ts",
+    "qq:server": "node examples/qq-bot/server.ts",
+    "st:demo": "node examples/sillytavern/demo.ts",
+    "st:server": "node examples/sillytavern/start-server.ts",
+    "st:probe": "node experiments/real-clients/sillytavern-smoke.ts",
     "ab": "node experiments/ab/run.ts",
     "continuity": "node experiments/persona-continuity/run.ts",
     "real:smoke": "node experiments/real-model/smoke.ts",
     "real:continuity": "node experiments/real-model/continuity.ts",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
-    "demo:persistent": "node examples/persistent-demo.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

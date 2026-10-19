@@ -11,7 +11,69 @@
  * - `snapshots` 保存状态快照 + 对应的最后事件序号，恢复时只需重放其后的补丁。
  */
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
+
+/**
+ * V0.2 新增：平台接入层需要的表。
+ *
+ * - `platform_identities`：一个平台身份 → 一个角色实例（同一实例可被多个平台身份绑定）；
+ * - `platform_sessions`：每个平台身份「当前会话」，新会话不重建角色；
+ * - `binding_codes`：一次性绑定码（只存哈希，带过期与尝试次数）；
+ * - `processed_messages`：入站消息去重表（幂等处理的基础）。
+ */
+export const PLATFORM_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS platform_identities (
+  platform        TEXT NOT NULL,
+  platform_user_id TEXT NOT NULL,
+  instance_id     TEXT NOT NULL REFERENCES instances(id),
+  display_name    TEXT,
+  binding_source  TEXT NOT NULL CHECK (binding_source IN ('primary','code','admin')),
+  created_at      TEXT NOT NULL,
+  last_seen_at    TEXT NOT NULL,
+  PRIMARY KEY (platform, platform_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_platform_identities_instance ON platform_identities(instance_id);
+
+CREATE TABLE IF NOT EXISTS platform_sessions (
+  platform         TEXT NOT NULL,
+  platform_user_id TEXT NOT NULL,
+  instance_id      TEXT NOT NULL REFERENCES instances(id),
+  session_id       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  PRIMARY KEY (platform, platform_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS binding_codes (
+  code_hash    TEXT PRIMARY KEY,
+  instance_id  TEXT NOT NULL REFERENCES instances(id),
+  target_platform TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  consumed_at  TEXT,
+  created_by   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_binding_codes_instance ON binding_codes(instance_id, expires_at);
+
+CREATE TABLE IF NOT EXISTS identity_settings (
+  platform         TEXT NOT NULL,
+  platform_user_id TEXT NOT NULL,
+  quiet            INTEGER NOT NULL DEFAULT 0,
+  updated_at       TEXT NOT NULL,
+  PRIMARY KEY (platform, platform_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS processed_messages (
+  platform            TEXT NOT NULL,
+  platform_message_id TEXT NOT NULL,
+  instance_id         TEXT,
+  status              TEXT NOT NULL,
+  created_at          TEXT NOT NULL,
+  PRIMARY KEY (platform, platform_message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_processed_created ON processed_messages(created_at);
+`
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;

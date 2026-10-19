@@ -1,0 +1,286 @@
+openapi: 3.1.0
+info:
+  title: CharacterLife API
+  version: 0.2.0
+  description: |
+    CharacterLife 的本地 HTTP 接口。默认只监听 127.0.0.1，使用 Bearer Token 鉴权。
+    人格与长期记忆由 CharacterLife 持有；外部界面（如 SillyTavern）只负责输入与展示。
+servers:
+  - url: http://127.0.0.1:8787
+security:
+  - bearerAuth: []
+tags:
+  - name: openai
+    description: OpenAI Chat Completions 兼容层
+  - name: native
+    description: CharacterLife 原生接口
+  - name: identity
+    description: 跨平台身份绑定
+  - name: admin
+    description: 记忆管理
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, type, code]
+          properties:
+            message: { type: string }
+            type: { type: string }
+            code: { type: string }
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, developer, user, assistant, tool]
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+                properties:
+                  type: { type: string }
+                  text: { type: string }
+    ChatCompletionRequest:
+      type: object
+      required: [messages]
+      properties:
+        model: { type: string, example: characterlife/shen-zhiwei }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+        stream: { type: boolean, default: false }
+        temperature: { type: number }
+        max_tokens: { type: integer }
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, const: chat.completion }
+        created: { type: integer }
+        model: { type: string }
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              message:
+                type: object
+                properties:
+                  role: { type: string }
+                  content: { type: string }
+              finish_reason: { type: string }
+        usage:
+          type: object
+          properties:
+            prompt_tokens: { type: integer }
+            completion_tokens: { type: integer }
+            total_tokens: { type: integer }
+    CharacterState:
+      type: object
+      properties:
+        instanceId: { type: string }
+        character:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+        stage: { type: string }
+        trust: { type: integer }
+        familiarity: { type: integer }
+        memories: { type: integer }
+        milestones: { type: integer }
+        mood: { type: string }
+        pendingMessages: { type: integer }
+        conflicts: { type: integer }
+        platforms:
+          type: array
+          items: { type: string }
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: 健康检查
+      responses:
+        '200':
+          description: OK
+  /v1/models:
+    get:
+      tags: [openai]
+      summary: 模型列表（OpenAI 结构）
+      responses:
+        '200':
+          description: 模型列表
+        '401':
+          description: 缺少或错误的 Token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/chat/completions:
+    post:
+      tags: [openai]
+      summary: Chat Completions（支持 SSE 流式）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatCompletionRequest' }
+      responses:
+        '200':
+          description: 非流式返回 JSON；stream=true 时返回 text/event-stream
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatCompletionResponse' }
+        '400':
+          description: 请求非法（没有 user 消息等）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: 未授权
+        '429':
+          description: 触发限流
+  /v1/messages:
+    post:
+      tags: [native]
+      summary: 原生消息接口
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                identity: { type: string, description: 可选，必须是已绑定的酒馆身份 }
+                notices:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: 回复与状态摘要
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reply: { type: string }
+                  instanceId: { type: string }
+                  sessionId: { type: string }
+                  state: { $ref: '#/components/schemas/CharacterState' }
+  /v1/sessions:
+    post:
+      tags: [native]
+      summary: 新开会话（保留长期记忆）
+      responses:
+        '200':
+          description: 新会话 id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instanceId: { type: string }
+                  sessionId: { type: string }
+  /v1/characters/{id}/state:
+    get:
+      tags: [native]
+      summary: 公开状态（只能读自己绑定的实例）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CharacterState' }
+        '403':
+          description: 不是自己的实例
+  /v1/characters/{id}/memories:
+    get:
+      tags: [native]
+      summary: 个人记忆列表
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 记忆列表（不含正文，只有 id/标题/状态）
+  /v1/memories/{id}:
+    delete:
+      tags: [admin]
+      summary: 删除一条记忆（软删除，可审计）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 删除结果
+        '404':
+          description: 记忆不存在或不属于当前实例
+  /v1/identity/me:
+    get:
+      tags: [identity]
+      summary: 当前平台身份
+      responses:
+        '200':
+          description: 身份与绑定实例
+  /v1/identity/bind-code:
+    post:
+      tags: [identity]
+      summary: 签发一次性绑定码
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetPlatform: { type: string, example: qq }
+      responses:
+        '200':
+          description: 8 位数字码与过期时间
+  /v1/identity/redeem:
+    post:
+      tags: [identity]
+      summary: 消费绑定码（把当前身份绑到已有实例）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{8}$' }
+      responses:
+        '200':
+          description: 绑定成功
+        '400':
+          description: 过期 / 已用 / 次数超限 / 平台不匹配
+  /v1/identity/binding:
+    delete:
+      tags: [identity]
+      summary: 解除当前平台绑定
+      responses:
+        '200':
+          description: 解绑结果

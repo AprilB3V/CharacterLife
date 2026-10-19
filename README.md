@@ -1,7 +1,10 @@
-# CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.1）
+# CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.2）
 
 > 一个**可以独立运行**的开源运行时：让 AI 角色拥有不可被聊天改写的人格、可追溯的记忆、
 > 自己的虚构时间线与生活事件，以及会拒绝、会协商、会沉默的行为决策。
+>
+> **V0.2 起支持跨平台接入**：同一个角色实例可以同时挂到 QQ 官方机器人与 SillyTavern，
+> 人格、关系、长期记忆与剧情状态共享，会话各自独立。
 >
 > 角色的情感与生活均为**虚构模拟**，不声称具有真实意识或人类情感。
 
@@ -22,7 +25,7 @@
 研究目标：通过**独立角色状态 + 受控记忆 + 事件驱动 + 行为决策**，建立一个能保持人格连续性、
 模拟虚构生活、并与用户逐渐形成独特关系的开源运行时。
 
-## 2. V0.1 已实现的范围
+## 2. 已实现的范围
 
 | 模块 | 文件 | 现状 |
 |---|---|---|
@@ -30,11 +33,15 @@
 | Runtime 工作区 | `src/runtime/` | 动态状态、关系、事件时间线、行为决策、里程碑、状态补丁事件 |
 | Memory 记忆区 | `src/memory/` + `src/persistence/` | 四类记忆、来源与时间、检索打分、冲突检测、软删除、导出、SQLite 持久化 |
 | Policy 规则权限层 | `src/policy/` | 能力模型、规则表、路径白名单、限速、注入降级、审计日志 |
-| **Character Persistence** | `src/character/` | Template / Instance / Session 分离，版本化人格，8 步恢复 |
-| **Context Manager** | `src/context/` | 每轮预算化组装、四阶梯压缩降级、实际用量记录 |
+| Character Persistence | `src/character/` | Template / Instance / Session 分离，版本化人格，8 步恢复 |
+| Context Manager | `src/context/` | 每轮预算化组装、四阶梯压缩降级、实际用量记录 |
+| **Platform Adapter（V0.2）** | `src/adapters/` | 统一 `PlatformAdapter` 协议；QQ 官方机器人与 SillyTavern 两个实现 |
+| **API Gateway（V0.2）** | `src/api/` | 去重、限流、身份解析、每实例互斥、指令、本地 HTTP API |
+| **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
 
-**明确不做**：前端 UI、微服务、多 Agent、向量数据库、后台持续调用大模型、向外部平台推送消息。
+**明确不做**：前端 UI、微服务、多 Agent、向量数据库、后台持续调用大模型、
+Telegram/Discord 适配、图片语音消息、公网部署与商业化。
 
 ## 3. 环境与安装
 
@@ -79,6 +86,30 @@ npm run continuity   # A：纯 Prompt + 近期对话 / B：持久化人格+状�
 ```
 
 结果写入 `reports/PERSONA_CONTINUITY.md`。
+
+### 4.4 V0.2 跨平台（QQ / SillyTavern）
+
+```bash
+# QQ：离线全链路（官方事件格式 + MockTransport，不需要凭证）
+npm run qq:demo
+
+# QQ：真实 Webhook 服务（需要 QQBOT_APP_ID / QQBOT_APP_SECRET）
+npm run qq:server
+
+# SillyTavern：启动 OpenAI 兼容 API
+$env:CHARACTERLIFE_API_TOKEN = "local-dev-token-123"
+npm run st:server          # 输出里直接给出酒馆要填的 Base URL 与 Key
+
+# SillyTavern：按酒馆实际请求结构跑一遍（模型列表→对话→新会话→记忆→SSE）
+npm run st:demo
+
+# SillyTavern：启动真实 1.17.0 客户端（服务端转发路径）做联调探针
+npm run st:probe
+```
+
+> **QQ 真实联调未执行**：本环境没有 AppID/AppSecret，也没有通过审核的机器人。
+> 协议层按官方文档与事件格式实现，能力边界见 [`docs/QQ_CAPABILITIES.md`](docs/QQ_CAPABILITIES.md)。
+> **酒馆 UI 级联调未执行**：只验证到「酒馆服务端构造请求并解析响应」这一层。
 
 演示会打印：每轮的行为决策与理由、被拒绝的提议、关系数值变化、事件触发顺序、
 待发送的主动消息（默认**不**推送到任何外部平台），以及审计日志尾部。
@@ -135,7 +166,7 @@ npm run continuity   # A：纯 Prompt + 近期对话 / B：持久化人格+状�
 ## 8. 测试
 
 ```bash
-npm test           # 110 项测试（内存中运行，见下方说明）
+npm test           # 147 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 
@@ -143,11 +174,13 @@ npm run typecheck  # tsc --noEmit
 > （`spawn EPERM`）。因此 `npm test` 使用 `--test-isolation=none` 在单进程内运行。
 
 测试覆盖：四模块接口、人格不可覆盖、状态变更规则、事件时序、重启恢复、记忆增删检索导出、
-权限不足拒绝、时间推进不调用模型、8 组人格/关系情境、7 类安全越界，以及新增的
-**跨进程重启恢复、跨会话记忆恢复、超预算连续运行、已确认记忆检索、矛盾/过时记忆、
-核心人格非法修改拦截、实例隔离、摘要污染、事件重放确定性**（见 `tests/cross_session/`）。
+权限不足拒绝、时间推进不调用模型、8 组人格/关系情境、7 类安全越界；
+**跨进程重启、跨会话记忆、超预算连续运行、矛盾/过时记忆、实例隔离、摘要污染、事件重放确定性**；
+以及 V0.2 新增的 **QQ 事件解析/去重/降级、OpenAI 兼容层（含 SSE）、酒馆新会话记忆、
+绑定码安全（过期/一次性/限次/只存哈希）、跨平台并发一致性**。
 
-真实结果见 [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)。
+V0.2 详细结果（三层验证分开记录）见 [`reports/V02_TEST_REPORT.md`](reports/V02_TEST_REPORT.md)；
+V0.1/V0.1.1 见 [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)。
 
 ## 8.1 跨会话连续性：三个必须搞清楚的概念
 
@@ -159,6 +192,28 @@ npm run typecheck  # tsc --noEmit
 
 所以：新开一个会话，人格与记忆照样在；重启进程，关系与里程碑照样在。
 细节见 [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)。
+
+## 8.2 跨平台：一个角色，多个入口
+
+```
+QQ 事件 / 酒馆 HTTP
+      → PlatformAdapter（只做协议翻译，外部输入恒为 untrusted）
+      → MessageGateway（去重 → 限流 → 身份 → 每实例互斥锁）
+      → 角色引擎（同一实例只有一份 workspace）
+      → PlatformAdapter.send（失败结构化降级，不抛异常）
+```
+
+| 原则 | 实现 |
+|---|---|
+| 平台不碰数据库 | 适配器只实现 `parseInbound` / `send`，拿不到 workspace 与 SQLite |
+| 平台 SDK 不侵入引擎 | 引擎 `src/` 不 import 任何平台 SDK；QQ 用自研 HTTP 客户端，酒馆走 OpenAI 兼容 |
+| 一个实例多个平台身份 | `platform_identities` 表；绑定必须走一次性验证码 |
+| 私人记忆隔离 | 每个平台用户映射到独立实例，SQL 强制带 `instance_id` |
+| 并发不互相覆盖 | 每个实例一把异步锁，串行处理 |
+| 主动消息受平台约束 | 默认 `proactive: false`；发不出就入队，下次来信作为「资料」并入 |
+
+协议细节与新平台接入步骤见 [`docs/ADAPTER_PROTOCOL.md`](docs/ADAPTER_PROTOCOL.md)，
+对外接口定义见 [`docs/openapi.yaml`](docs/openapi.yaml)。
 
 ## 9. 接入真实模型（可选）
 
@@ -194,43 +249,69 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 │   ├── types.ts                 # 共享领域类型（四模块的唯一数据契约）
 │   ├── util/                    # 可注入时钟、随机源、id、文本安全工具
 │   ├── storage/snapshot.ts      # 早期 JSON 快照（单进程演示仍在用）
-│   ├── persistence/             # SQLite：schema、连接、仓储、sink 旁路
+│   ├── persistence/             # SQLite：schema、连接、仓储、平台表、sink 旁路
 │   ├── character/               # Template / Instance / Rehydration / PersistentSession
 │   ├── context/                 # token 估算、Context Manager（预算+压缩阶梯）
 │   ├── memory/                  # 记忆存储、检索打分、冲突检测
 │   ├── policy/                  # 能力模型、规则表、审计日志
-│   ├── runtime/                 # 状态、时间线、决策、工作区、启发式信号
+│   ├── runtime/                 # 状态、时间线、决策、工作区、实例运行时（锁）
 │   ├── conversation/            # 上下文组装、服务、Mock/DeepSeek Provider
+│   ├── adapters/                # V0.2：protocol + qq + sillytavern
+│   ├── identity/               # V0.2：身份解析与一次性绑定码
+│   ├── api/                    # V0.2：Gateway、指令、本地 HTTP API、运行时装配
 │   └── index.ts                 # 公共入口
 ├── examples/
 │   ├── characters/shen-zhiwei.ts
 │   ├── three-day-demo.ts            # 内存态虚构时间演示
-│   └── persistent-demo.ts           # 跨进程 / 跨会话持久化演示
+│   ├── persistent-demo.ts           # 跨进程 / 跨会话持久化演示
+│   ├── qq-bot/                      # 离线 demo + 真实 Webhook 服务
+│   └── sillytavern/                 # 启动 API + 协议演示
 ├── experiments/
 │   ├── ab/                          # 传统角色卡 vs CharacterLife
-│   └── persona-continuity/          # 人格连续性 A/B（长对话/新会话/重启）
+│   ├── persona-continuity/          # 人格连续性 A/B（长对话/新会话/重启）
+│   ├── real-model/                  # 真实 DeepSeek 调用（冒烟 + 14 次对照 + 诊断）
+│   └── real-clients/                # 真实 SillyTavern 1.17.0 服务端转发探针
 ├── tests/
 │   ├── *.test.ts                    # 四模块 + 人格 + 安全（78 项）
-│   └── cross_session/               # 跨会话/跨进程/上下文预算（31 项）
+│   ├── cross_session/               # 跨会话/跨进程/上下文预算（32 项）
+│   ├── adapters/                    # V0.2：QQ（17）+ SillyTavern（8）
+│   └── cross-platform/              # V0.2：跨平台连续性（6）+ 绑定码安全（6）
 ├── docs/                        # ARCHITECTURE / MEMORY_ARCHITECTURE / DECISIONS
-├── reports/                     # 测试报告、真实日志、评估、A/B 结果
-└── media/BILIBILI_NOTES.md      # B 站实验视频素材说明
+│                                # + QQ_CAPABILITIES / QQ_SETUP / SILLYTAVERN_SETUP
+│                                # + ADAPTER_PROTOCOL / openapi.yaml
+├── reports/                     # 测试报告、真实日志、评估、A/B、V02 报告
+└── media/                       # BILIBILI_NOTES / V02_VIDEO_NOTES
 ```
 
 ## 11. 文档索引
 
+**引擎**
+
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：四模块职责、接口、数据流与不变量
 - [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)：状态模型、记忆权限、上下文预算、压缩策略、恢复流程
 - [`docs/DECISIONS.md`](docs/DECISIONS.md)：技术取舍、被放弃的方案、未解决的问题
-- [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)：真实测试结果与开发中真实失败案例
-- [`reports/DEEPSEEK_EVALUATION.md`](reports/DEEPSEEK_EVALUATION.md)：本次 DeepSeek 工程表现与局限
-- [`reports/AB_RESULTS.md`](reports/AB_RESULTS.md)：A/B 对照实验数据（Mock）
-- [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)：真实 DeepSeek 调用记录（18 次，含逐次原文与空回复诊断）
-- [`reports/PERSONA_CONTINUITY.md`](reports/PERSONA_CONTINUITY.md)：人格连续性 A/B（长对话/新会话/重启）
-- [`media/BILIBILI_NOTES.md`](media/BILIBILI_NOTES.md)：视频素材说明
+
+**V0.2 跨平台**
+
+- [`docs/ADAPTER_PROTOCOL.md`](docs/ADAPTER_PROTOCOL.md)：适配器契约、绑定、并发、给新平台写适配器的 7 步
+- [`docs/QQ_CAPABILITIES.md`](docs/QQ_CAPABILITIES.md)：QQ 官方能力核查（含「未验证」清单）
+- [`docs/QQ_SETUP.md`](docs/QQ_SETUP.md)：QQ Webhook 接入步骤与排错
+- [`docs/SILLYTAVERN_SETUP.md`](docs/SILLYTAVERN_SETUP.md)：酒馆配置、记忆边界、已验证/未验证
+- [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
+
+**报告与素材**
+
+- [`reports/V02_TEST_REPORT.md`](reports/V02_TEST_REPORT.md)：V0.2 测试结果（Mock / 真实 API / 真实客户端三层分开）
+- [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)：V0.1/V0.1.1 测试结果与真实失败案例
+- [`reports/DEEPSEEK_EVALUATION.md`](reports/DEEPSEEK_EVALUATION.md)：DeepSeek 工程表现与局限
+- [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)：真实 DeepSeek 调用记录（18 次）
+- [`reports/AB_RESULTS.md`](reports/AB_RESULTS.md)、[`reports/PERSONA_CONTINUITY.md`](reports/PERSONA_CONTINUITY.md)：两组对照实验
+- [`media/BILIBILI_NOTES.md`](media/BILIBILI_NOTES.md)、[`media/V02_VIDEO_NOTES.md`](media/V02_VIDEO_NOTES.md)：视频素材
 
 ## 12. 声明
 
 - 角色与剧情均为虚构；本项目不宣称模型具有意识或真实情感。
 - 不生成、不存储露骨内容；内容边界的处理方式是**拒绝 + 转移话题**。
 - 仓库中不含真实 API Key、真实用户隐私或任何外部平台凭据。
+- **QQ 真实联调未执行**（无凭证）；**酒馆只到服务端转发层**（本环境无浏览器）。
+  这两点在所有相关文档里都有明确标注，不用模拟结果冒充真实平台测试。

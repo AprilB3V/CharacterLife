@@ -169,3 +169,68 @@ export type { MemorySink, MemoryWriteInput as MemoryWriteInputV2 } from './memor
 
 /* 工作区扩展类型 */
 export type { StateSink, WorkspaceStateDump } from './runtime/workspace.ts'
+
+/* ==========================================================================
+ * V0.2：跨平台适配层
+ * ========================================================================== */
+
+/* 适配器协议（新平台实现这个接口即可） */
+export { InboundParseError, isNormalizedMessage } from './adapters/protocol.ts'
+export type {
+  NormalizedMessage,
+  OutboundMessage,
+  PlatformAdapter,
+  PlatformBinding,
+  PlatformCapabilities,
+  PlatformIdentity,
+  DeliveryError,
+  MessageDeliveryResult,
+  SceneKind,
+} from './adapters/protocol.ts'
+
+/* QQ 官方适配器 */
+export { QQAdapter, QQ_SCENE_LIMITS } from './adapters/qq/adapter.ts'
+export type { QQAdapterOptions } from './adapters/qq/adapter.ts'
+export { QQApiClient, FetchTransport, MockTransport } from './adapters/qq/api-client.ts'
+export type { QQTransport, QQTransportRequest, QQTransportResponse, QQCredentials } from './adapters/qq/api-client.ts'
+export { parseQQEvent, sanitizeQQContent, encodeReplyTarget, decodeReplyTarget } from './adapters/qq/events.ts'
+export type { QQReplyTarget } from './adapters/qq/events.ts'
+export {
+  verifyQQWebhookSignature,
+  signWebhookChallenge,
+  derivePublicKeyHex,
+  isUrlVerificationEvent,
+  safeEqual,
+} from './adapters/qq/webhook.ts'
+export type { SignatureVerifyResult } from './adapters/qq/webhook.ts'
+
+/* SillyTavern / OpenAI 兼容 */
+export { SillyTavernAdapter } from './adapters/sillytavern/adapter.ts'
+export {
+  buildNormalizedMessage,
+  extractFromChatRequest,
+  externalContextNotice,
+  buildChatCompletionResponse,
+  buildSSEChunks,
+  buildModelsResponse,
+  SillyTavernRequestError,
+} from './adapters/sillytavern/openai.ts'
+export type { OpenAIChatRequest, OpenAIChatMessage, TextExtraction } from './adapters/sillytavern/openai.ts'
+
+/* Identity / 绑定 */
+export { IdentityService, hashCode } from './identity/identity-service.ts'
+export type { ResolvedIdentity, BindCodeResult, BindError } from './identity/identity-service.ts'
+export { PlatformStore } from './persistence/platform-store.ts'
+export type { BindingSource, BindingCodeRecord, RedeemFailure, RedeemResult } from './persistence/platform-store.ts'
+
+/* Gateway / API Server / 运行时装配 */
+export { MessageGateway, identityKey } from './api/gateway.ts'
+export type { GatewayOptions, InboundOutcome, InboundStatus } from './api/gateway.ts'
+export { createApiServer } from './api/server.ts'
+export type { ApiServerOptions, ApiServerHandle } from './api/server.ts'
+export { handleCommand } from './api/commands.ts'
+export type { CommandContext, CommandResult } from './api/commands.ts'
+export { assembleRuntime, loadEnvConfig, defaultTemplate, chooseProvider } from './api/runtime-factory.ts'
+export type { RuntimeConfig, RuntimeBundle, EnvConfig } from './api/runtime-factory.ts'
+export { InstanceRuntimeManager, seedIdCounters, snapshotInstance } from './runtime/instance-runtime.ts'
+export type { InstanceRuntime, InstanceRuntimeDeps, SendOptions } from './runtime/instance-runtime.ts'
