@@ -1,6 +1,10 @@
 # QQ 官方机器人接入步骤（本项目实现）
 
 > 本文只写「拿到凭证之后怎么做」。能力边界与未验证项见 [`QQ_CAPABILITIES.md`](QQ_CAPABILITIES.md)。
+>
+> **走错文档了吗？** 如果你想用的是「自己的 QQ 号 + 普通群聊」（NapCat / Lagrange / SnowLuma），
+> 官方机器人做不到（只有被 @ 才有事件、被动回复有窗口与次数），请看
+> [`ONEBOT_SETUP.md`](ONEBOT_SETUP.md)。两条通道可以同时接在同一个角色实例上。
 
 ## 0. 前置条件
 
@@ -19,7 +23,8 @@ node examples/qq-bot/demo.ts
 
 ## 1. 配置环境变量
 
-复制 `.env.example` 为 `.env`（本项目不自动加载 .env，请用系统环境变量或 shell 注入）：
+复制 `.env.example` 为 `.env`（QQ / 酒馆入口不自动加载 .env，请用系统环境变量或 shell 注入；
+只有 [`scripts/start-onebot.ps1`](../scripts/start-onebot.ps1) 会读 .env）：
 
 ```powershell
 $env:QQBOT_APP_ID     = "你的 AppID"

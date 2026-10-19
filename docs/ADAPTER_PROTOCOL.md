@@ -86,6 +86,7 @@ interface MessageDeliveryResult {
 
 - `platform_identities(platform, platform_user_id) → instance_id`：一个平台身份只能指向一个实例；
 - 同一实例可被**多个平台身份**绑定（QQ + 酒馆共用同一个角色）；
+- 当前的 `platform` 取值：`qq`（官方机器人）、`onebot`（OneBot 11 网关）、`sillytavern`；
 - 绑定只能通过**一次性验证码**完成：
 
 ```
@@ -147,11 +148,19 @@ QQ: /bind  →  8 位数字码（5 分钟有效、最多 3 次尝试、只存 sh
 
 不需要改引擎的任何代码 —— 这是本层存在的意义。
 
+> 两个现成的范例，按需要挑一个当模板：
+> - `src/adapters/qq/`：官方签名的 Webhook（服务写在 `examples/qq-bot/server.ts`）；
+> - `src/adapters/onebot/`：OneBot 11（**上报服务也放在 `src/adapters/` 里**，因此可以用真实
+>   HTTP 端口做端到端测试，见 `tests/adapters/onebot-http.test.ts`）。需要「服务本身可测」时
+>   请照 OneBot 这个结构写，而不是照 QQ 的 examples 结构。
+
 ## 8. 已知边界
 
 | 项 | 现状 |
 |---|---|
+| QQ 官方机器人 | 已实现（Webhook + Ed25519 验签；真实联调未执行） |
+| OneBot 11（NapCat / Lagrange / SnowLuma） | 已实现（HTTP 上报 + HTTP API，仅文本；真实网关联调未执行） |
 | Telegram / Discord | 未实现（协议已就绪） |
-| 图片 / 语音 / 视频 | 未实现（只处理文本） |
+| 图片 / 语音 / 视频 | 未实现（OneBot 侧转成 `[图片]` `[语音]` 占位符进引擎） |
 | 多进程部署 | 未实现（进程内锁 + SQLite 单写者） |
-| 主动消息调度器 | 未实现（队列在 workspace 里，靠用户来信带走） |
+| 主动消息调度器 | 未实现（队列在 workspace 里，靠用户来信带走；OneBot 能在来信时先推送一条） |

@@ -204,6 +204,31 @@ export {
 } from './adapters/qq/webhook.ts'
 export type { SignatureVerifyResult } from './adapters/qq/webhook.ts'
 
+/* OneBot 11 适配器（NapCat / Lagrange.OneBot / SnowLuma） */
+export { OneBotAdapter, ONEBOT_DEFAULT_CAPABILITIES } from './adapters/onebot/adapter.ts'
+export type { OneBotAdapterOptions } from './adapters/onebot/adapter.ts'
+export { OneBotApiClient, FetchTransport as OneBotFetchTransport, MockTransport as OneBotMockTransport } from './adapters/onebot/api-client.ts'
+export type {
+  OneBotTransport,
+  OneBotTransportRequest,
+  OneBotTransportResponse,
+  OneBotResponse,
+} from './adapters/onebot/api-client.ts'
+export {
+  parseOneBotEvent,
+  extractContent,
+  sanitizeOneBotText,
+  anonymizeUserId,
+  isCommandText,
+  encodeReplyTarget as encodeOneBotReplyTarget,
+  decodeReplyTarget as decodeOneBotReplyTarget,
+} from './adapters/onebot/events.ts'
+export type { OneBotParseOptions, OneBotReplyTarget, ExtractedContent } from './adapters/onebot/events.ts'
+export { verifyOneBotSignature, hmacSha1Hex } from './adapters/onebot/webhook.ts'
+export type { OneBotSignatureOptions, OneBotSignatureResult } from './adapters/onebot/webhook.ts'
+export { createOneBotReportServer } from './adapters/onebot/report-server.ts'
+export type { OneBotReportServerOptions, OneBotReportServerHandle } from './adapters/onebot/report-server.ts'
+
 /* SillyTavern / OpenAI 兼容 */
 export { SillyTavernAdapter } from './adapters/sillytavern/adapter.ts'
 export {

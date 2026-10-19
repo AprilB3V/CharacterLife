@@ -253,7 +253,7 @@ CharacterRehydrator ── 快照 + 事件重放 ──► 重建 Runtime ──
 ## 9. V0.2 接入层在整体架构中的位置
 
 ```
-外部平台（QQ / SillyTavern / 未来的 Telegram…）
+外部平台（QQ 官方 / OneBot 11 / SillyTavern / 未来的 Telegram…）
         │  事件 / HTTP
         ▼
 src/adapters/<platform>/        协议翻译（平台 SDK 只允许出现在这里）
@@ -273,6 +273,8 @@ src/persistence/                SQLite（含 platform_identities 等 5 张新表
   都不 import `src/adapters`；
 - 适配器只依赖 `src/adapters/protocol.ts` 的类型，不依赖 workspace 或数据库；
 - 身份与绑定属于接入层，不属于角色引擎：引擎只看到 `instanceId`；
-- 并发一致性靠「每实例一把锁 + 单份 workspace」，而不是靠数据库行锁。
+- 并发一致性靠「每实例一把锁 + 单份 workspace」，而不是靠数据库行锁；
+- 平台侧事件入口有两处形态：`examples/qq-bot/server.ts`（QQ Webhook，薄壳）与
+  `src/adapters/onebot/report-server.ts`（OneBot 上报，可测的服务本体，examples 只是薄壳）。
 
 详见 `docs/ADAPTER_PROTOCOL.md`、`docs/QQ_CAPABILITIES.md`、`docs/V02_TEST_REPORT.md`（后者在 `reports/`）。

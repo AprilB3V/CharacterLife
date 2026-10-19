@@ -17,6 +17,10 @@ import { MessageGateway } from '../api/gateway.ts'
 import { QQAdapter } from '../adapters/qq/adapter.ts'
 import { QQApiClient, FetchTransport } from '../adapters/qq/api-client.ts'
 import type { QQTransport } from '../adapters/qq/api-client.ts'
+import { OneBotAdapter } from '../adapters/onebot/adapter.ts'
+import { OneBotApiClient, FetchTransport as OneBotFetchTransport } from '../adapters/onebot/api-client.ts'
+import type { OneBotTransport } from '../adapters/onebot/api-client.ts'
+import type { OneBotParseOptions } from '../adapters/onebot/events.ts'
 import { SillyTavernAdapter } from '../adapters/sillytavern/adapter.ts'
 import { ManualClock, SystemClock } from '../util/clock.ts'
 import type { Clock } from '../util/clock.ts'
@@ -44,6 +48,19 @@ export interface RuntimeConfig {
     transport?: QQTransport
     proactive?: boolean
   }
+  /**
+   * OneBot 11 网关（NapCat / Lagrange.OneBot / SnowLuma …）。
+   * 没有则完全不挂 OneBot 适配器。
+   */
+  onebot?: {
+    /** 网关 HTTP API 地址，例如 http://127.0.0.1:3000 */
+    baseUrl: string
+    /** 网关 access_token（可空） */
+    accessToken?: string | null
+    transport?: OneBotTransport
+    proactive?: boolean
+    parse?: OneBotParseOptions
+  }
   bindTargetPlatform?: string
 }
 
@@ -55,6 +72,8 @@ export interface RuntimeBundle {
   runtimeManager: InstanceRuntimeManager
   gateway: MessageGateway
   qqAdapter: QQAdapter | null
+  onebotAdapter: OneBotAdapter | null
+  onebotClient: OneBotApiClient | null
   sillyTavernAdapter: SillyTavernAdapter
   template: CharacterTemplate
   clock: Clock
@@ -152,6 +171,22 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     gateway.registerAdapter(qqAdapter)
   }
 
+  let onebotAdapter: OneBotAdapter | null = null
+  let onebotClient: OneBotApiClient | null = null
+  if (config.onebot) {
+    onebotClient = new OneBotApiClient({
+      transport: config.onebot.transport ?? new OneBotFetchTransport(),
+      baseUrl: config.onebot.baseUrl,
+      accessToken: config.onebot.accessToken ?? null,
+    })
+    onebotAdapter = new OneBotAdapter({
+      client: onebotClient,
+      capabilities: config.onebot.proactive === false ? { proactive: false } : { proactive: true },
+      parse: config.onebot.parse,
+    })
+    gateway.registerAdapter(onebotAdapter)
+  }
+
   return {
     db,
     persistence,
@@ -160,6 +195,8 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     runtimeManager,
     gateway,
     qqAdapter,
+    onebotAdapter,
+    onebotClient,
     sillyTavernAdapter,
     template,
     clock,
@@ -179,6 +216,17 @@ export interface EnvConfig {
   stIdentity: string
   deepseekModel: string
   qq: { appId: string; appSecret: string; proactive: boolean } | null
+  onebot: {
+    baseUrl: string
+    accessToken: string | null
+    secret: string | null
+    host: string
+    port: number
+    path: string
+    allowNonLoopback: boolean
+    proactive: boolean
+    parse: OneBotParseOptions
+  } | null
 }
 
 export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -198,6 +246,26 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
             proactive: env.QQBOT_PROACTIVE === 'true',
           }
         : null,
+    // OneBot 是「网关 + 本体」两段式：只有显式给了 API 地址才装配适配器
+    onebot: env.ONEBOT_API_BASE
+      ? {
+          baseUrl: env.ONEBOT_API_BASE,
+          accessToken: env.ONEBOT_ACCESS_TOKEN ?? null,
+          secret: env.ONEBOT_SECRET ?? null,
+          host: env.ONEBOT_HOST ?? '127.0.0.1',
+          port: Number(env.ONEBOT_PORT ?? 8790),
+          path: env.ONEBOT_PATH ?? '/onebot/event',
+          allowNonLoopback: env.ONEBOT_ALLOW_PUBLIC === 'true',
+          proactive: env.ONEBOT_PROACTIVE !== 'false',
+          parse: {
+            selfId: env.ONEBOT_SELF_ID ?? null,
+            groupMentionOnly: env.ONEBOT_GROUP_MENTION_ONLY !== 'false',
+            allowGroupCommands: env.ONEBOT_ALLOW_GROUP_COMMANDS !== 'false',
+            anonymizeUserIds: env.ONEBOT_ANONYMIZE !== 'false',
+            captureNickname: env.ONEBOT_CAPTURE_NICKNAME === 'true',
+          },
+        }
+      : null,
   }
 }
 

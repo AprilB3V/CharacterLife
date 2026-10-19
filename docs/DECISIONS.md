@@ -206,3 +206,58 @@
 5. **多进程/多实例部署**：进程内锁；SQLite 单写者。
 6. **富媒体**：图片、语音、文件、Markdown 均未实现。
 7. **多用户酒馆**：没有账号体系，同一 token 共享默认身份（文档已警示，未实现配额）。
+
+## 12. V0.2.1 新增决策（OneBot 11）
+
+| 决策 | 选择 | 理由 | 代价 |
+|---|---|---|---|
+| 传输 | **只做 HTTP 上报 + HTTP API**，不做 WebSocket | Node 无内置 WS 客户端，引 SDK 破坏零依赖 | 网关必须开 HTTP 两种传输；WS-only 模式不支持 |
+| 代码位置 | 上报服务放 `src/adapters/onebot/report-server.ts`（QQ 的服务在 examples） | 放 examples 的服务完全不可测；这次要用真端口做端到端 | 与 QQ 目录结构不对称（已在 ADAPTER_PROTOCOL §7 说明取舍） |
+| 群聊策略 | 被 @ 或 `/<指令>` 才进引擎，解析层过滤 | 不过滤 = 刷屏 + 风控 + 白烧 token；且不靠提示词「让它少说话」 | 群里「不 @ 也叫得动」的场景需显式关掉过滤 |
+| 隐私 | QQ 号默认哈希成 `qq_<16hex>` 假名再落库 | 「数据库里不出现 QQ 号」这条承诺对 OneBot 也要成立 | 假名可穷举（非密码学匿名）；要原始号需显式关闭 |
+| 匿名化不加盐 | 确定性哈希 | 同一个人跨群/私聊/重启是同一身份，否则人格割裂 | 可用彩虹表反查（折中已写进 ONEBOT_SETUP §6） |
+| 上报应答 | **先 204 再处理** | 网关上报超时通常 5s，一轮对话要调模型 | 处理失败不自动重试，只记日志 |
+| 出站消息 | `auto_escape: true` | 模型输出里的 `[CQ:...]` 不能被网关当指令执行 | 无（纯文本场景） |
+| 能力声明 | `proactive` 默认 **true** | OneBot 网关没有「主动消息额度」这回事 | 频控交给网关，本项目不再兜一层 |
+
+## 13. V0.2.1 开发中发现的真实问题（已修）
+
+1. **群聊会刷屏**：OneBot 网关上报全部群消息，若不过滤，每句话都会触发一次模型调用。
+   修复：解析层按「被 @ / 指令」过滤，被忽略的消息连去重表都不写。
+2. **QQ 号直接落库**：初版把 `user_id` 原样当 `platform_user_id`，违反 README 的隐私承诺。
+   修复：默认哈希成假名，发送时再用 `replyTarget` 里的原始 id。
+3. **`data: null` 与 MockTransport 的默认参数类型冲突**：TS 从默认值反推参数类型，导致
+   测试里无法构造失败响应。修复：给 fallback 参数显式标注类型。
+4. **HTTP keep-alive 让 `server.close()` 挂住**：测试进程不退出。修复：close 时调
+   `closeAllConnections()`（已处理在途事件后再断）。
+5. **`server.address()` 与 port 0 的窄化**：`runtime.onebotAdapter` 在 throw 检查之后 TS 仍认为
+   可能为 null。修复：先取局部变量再判空。
+
+## 14. V0.2.1 仍未解决
+
+1. **OneBot 真实网关联调**：没有 QQ 小号，网关不可达；只在假网关上跑通协议与 HTTP 层。
+2. 各网关字段差异未逐一核对（`self_id` 缺失、`sender.card` 位置、guild 事件）。
+3. 引用回复未用于出站气泡；富媒体只转占位符。
+4. 网关登录态/掉线重连不在本项目职责内。
+
+## 15. 启动脚本（scripts/start-onebot.ps1）踩到的真实问题（已修）
+
+背景：本机**只有 Windows PowerShell 5.1，没有 PowerShell 7（`pwsh` 未安装）**。
+文档里到处写的 `pwsh -Command` 在本机实际落到 5.1，所以脚本必须按 5.1 兼容写。
+下列每一条都是先写错、再被真实运行打出来的：
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | 脚本完全无法解析：`The parameter 'Db' cannot be specified because it conflicts with the parameter alias… 'Debug'` | `[CmdletBinding()]` 会注入通用参数，`-Debug` 的别名就是 `db` | 参数改名 `-Database`（并在帮助里写明为什么不叫 `-Db`） |
+| 2 | `node -e "import('node:sqlite')…"` 报 `[eval]:1` 语法错 | 5.1 给原生命令传参时会吞掉内嵌**双**引号 | JS 片段统一用单引号，外层用 PS 双引号 |
+| 3 | 上面那条还把整个脚本终止（`NativeCommandError`） | 原生命令的 stderr 被包成 ErrorRecord，与 `$ErrorActionPreference='Stop'` 叠加 | 探测类调用临时把 EAP 放宽为 `Continue`，且不用管道吞输出 |
+| 4 | 网关昵称显示成 `åç½å³` | 网关响应头没有 charset 时，5.1 按 ISO-8859-1 解码 JSON | 自写 `Invoke-GatewayJson`：按 UTF-8 重解 body（兼容 5.1 的 `RawContentStream` 与 7 的 `RawContent`） |
+| 5 | 中文列对齐歪掉 | 中文是双宽字符，`'{0,-22}'` 按字符数补空格 | 按**显示宽度**补空格（`Get-DisplayWidth`） |
+| 6 | `-GatewayArgs` 传不进去 | 用 `-File` 调用脚本时无法构造数组参数 | 参数改字符串，按逗号切分 |
+| 7 | 网关明明秒起，脚本却等满 15 秒后说「可能需要先扫码登录」 | `-GatewayArgs` 里的相对路径是按**网关自身目录**解析的，假网关启动即失败；而循环只 `break` 没有区分原因 | 检测到子进程已退出时改报「网关进程已退出（退出码 X）」并提示改用绝对路径 |
+| 8 | 用 edit 工具改完 `.ps1` 后中文全变乱码 | **edit/写入工具会剥掉 UTF-8 BOM**，而 5.1 读无 BOM 脚本时按本地代码页解码 | 每次编辑后用字节级方式补回 BOM（`EF BB BF`），并把这条写进脚本头部与 `ONEBOT_SETUP.md` |
+
+顺带确认的两个 5.1 事实（写脚本时可以依赖）：
+
+- `Set-Item Env:NAME`、`[Environment]::GetEnvironmentVariable(name,'Process')`、`::new()`、`Get-Content -Encoding UTF8` 在 5.1 都可用；
+- `Invoke-WebRequest -UseBasicParsing` 的 `RawContentStream` 能拿到原始字节（PS 7 没有该属性，要用 `RawContent`）——这也是第 4 条的修法要分版本的原因。

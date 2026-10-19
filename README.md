@@ -35,7 +35,7 @@
 | Policy 规则权限层 | `src/policy/` | 能力模型、规则表、路径白名单、限速、注入降级、审计日志 |
 | Character Persistence | `src/character/` | Template / Instance / Session 分离，版本化人格，8 步恢复 |
 | Context Manager | `src/context/` | 每轮预算化组装、四阶梯压缩降级、实际用量记录 |
-| **Platform Adapter（V0.2）** | `src/adapters/` | 统一 `PlatformAdapter` 协议；QQ 官方机器人与 SillyTavern 两个实现 |
+| **Platform Adapter（V0.2）** | `src/adapters/` | 统一 `PlatformAdapter` 协议；QQ 官方机器人 / OneBot 11 / SillyTavern 三个实现 |
 | **API Gateway（V0.2）** | `src/api/` | 去重、限流、身份解析、每实例互斥、指令、本地 HTTP API |
 | **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
@@ -87,7 +87,7 @@ npm run continuity   # A：纯 Prompt + 近期对话 / B：持久化人格+状�
 
 结果写入 `reports/PERSONA_CONTINUITY.md`。
 
-### 4.4 V0.2 跨平台（QQ / SillyTavern）
+### 4.4 V0.2 跨平台（QQ / OneBot / SillyTavern）
 
 ```bash
 # QQ：离线全链路（官方事件格式 + MockTransport，不需要凭证）
@@ -95,6 +95,17 @@ npm run qq:demo
 
 # QQ：真实 Webhook 服务（需要 QQBOT_APP_ID / QQBOT_APP_SECRET）
 npm run qq:server
+
+# OneBot 11：离线全链路（OneBot 事件格式 + MockTransport，不需要网关和 QQ 号）
+npm run onebot:demo
+
+# OneBot 11：启动脚本（读 .env → 体检 → 启动；体检不过不硬启动）
+.\scripts\start-onebot.cmd -Probe     # 只体检：Node/node:sqlite/配置/端口/网关
+.\scripts\start-onebot.cmd            # 启动（Ctrl+C 停止）
+npm run onebot:start                  # 等价别名
+
+# OneBot 11：不用脚本时（自己注入环境变量后启动上报服务）
+npm run onebot:server
 
 # SillyTavern：启动 OpenAI 兼容 API
 $env:CHARACTERLIFE_API_TOKEN = "local-dev-token-123"
@@ -109,6 +120,9 @@ npm run st:probe
 
 > **QQ 真实联调未执行**：本环境没有 AppID/AppSecret，也没有通过审核的机器人。
 > 协议层按官方文档与事件格式实现，能力边界见 [`docs/QQ_CAPABILITIES.md`](docs/QQ_CAPABILITIES.md)。
+> **OneBot 真实网关联调未执行**：没有 QQ 小号，网关在本环境不可达；上报服务用真实 HTTP
+> 端口 + 假网关做了端到端测试，协议行为按 OneBot 11 规范实现，见
+> [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md) §8。
 > **酒馆 UI 级联调未执行**：只验证到「酒馆服务端构造请求并解析响应」这一层。
 
 演示会打印：每轮的行为决策与理由、被拒绝的提议、关系数值变化、事件触发顺序、
@@ -166,7 +180,7 @@ npm run st:probe
 ## 8. 测试
 
 ```bash
-npm test           # 147 项测试（内存中运行，见下方说明）
+npm test           # 181 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 
@@ -177,7 +191,9 @@ npm run typecheck  # tsc --noEmit
 权限不足拒绝、时间推进不调用模型、8 组人格/关系情境、7 类安全越界；
 **跨进程重启、跨会话记忆、超预算连续运行、矛盾/过时记忆、实例隔离、摘要污染、事件重放确定性**；
 以及 V0.2 新增的 **QQ 事件解析/去重/降级、OpenAI 兼容层（含 SSE）、酒馆新会话记忆、
-绑定码安全（过期/一次性/限次/只存哈希）、跨平台并发一致性**。
+绑定码安全（过期/一次性/限次/只存哈希）、跨平台并发一致性**；
+V0.2.1 新增的 **OneBot 11 事件解析/群 @ 过滤/QQ 号匿名化、上报服务真实 HTTP 端到端
+（HMAC-SHA1 验签、204 先应答、重投去重、401/404/405/400）**。
 
 V0.2 详细结果（三层验证分开记录）见 [`reports/V02_TEST_REPORT.md`](reports/V02_TEST_REPORT.md)；
 V0.1/V0.1.1 见 [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)。
@@ -196,7 +212,7 @@ V0.1/V0.1.1 见 [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)。
 ## 8.2 跨平台：一个角色，多个入口
 
 ```
-QQ 事件 / 酒馆 HTTP
+QQ 事件 / OneBot 上报 / 酒馆 HTTP
       → PlatformAdapter（只做协议翻译，外部输入恒为 untrusted）
       → MessageGateway（去重 → 限流 → 身份 → 每实例互斥锁）
       → 角色引擎（同一实例只有一份 workspace）
@@ -206,11 +222,13 @@ QQ 事件 / 酒馆 HTTP
 | 原则 | 实现 |
 |---|---|
 | 平台不碰数据库 | 适配器只实现 `parseInbound` / `send`，拿不到 workspace 与 SQLite |
-| 平台 SDK 不侵入引擎 | 引擎 `src/` 不 import 任何平台 SDK；QQ 用自研 HTTP 客户端，酒馆走 OpenAI 兼容 |
+| 平台 SDK 不侵入引擎 | 引擎 `src/` 不 import 任何平台 SDK；QQ / OneBot 都用自研 HTTP 客户端，酒馆走 OpenAI 兼容 |
 | 一个实例多个平台身份 | `platform_identities` 表；绑定必须走一次性验证码 |
 | 私人记忆隔离 | 每个平台用户映射到独立实例，SQL 强制带 `instance_id` |
+| 平台标识不落 QQ 号 | QQ 官方只有 openid；OneBot 的 QQ 号默认哈希成假名再落库 |
 | 并发不互相覆盖 | 每个实例一把异步锁，串行处理 |
-| 主动消息受平台约束 | 默认 `proactive: false`；发不出就入队，下次来信作为「资料」并入 |
+| 主动消息受平台约束 | 默认 `proactive: false`（QQ）；OneBot 可声明 true，发不出就入队，下次来信作为「资料」并入 |
+| 群里不刷屏 | OneBot 默认只在被 @ 或收到 `/指令` 时才进入引擎（解析层过滤，不是靠提示词） |
 
 协议细节与新平台接入步骤见 [`docs/ADAPTER_PROTOCOL.md`](docs/ADAPTER_PROTOCOL.md)，
 对外接口定义见 [`docs/openapi.yaml`](docs/openapi.yaml)。
@@ -256,7 +274,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 │   ├── policy/                  # 能力模型、规则表、审计日志
 │   ├── runtime/                 # 状态、时间线、决策、工作区、实例运行时（锁）
 │   ├── conversation/            # 上下文组装、服务、Mock/DeepSeek Provider
-│   ├── adapters/                # V0.2：protocol + qq + sillytavern
+│   ├── adapters/                # V0.2：protocol + qq + onebot + sillytavern
 │   ├── identity/               # V0.2：身份解析与一次性绑定码
 │   ├── api/                    # V0.2：Gateway、指令、本地 HTTP API、运行时装配
 │   └── index.ts                 # 公共入口
@@ -265,20 +283,25 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 │   ├── three-day-demo.ts            # 内存态虚构时间演示
 │   ├── persistent-demo.ts           # 跨进程 / 跨会话持久化演示
 │   ├── qq-bot/                      # 离线 demo + 真实 Webhook 服务
+│   ├── onebot/                      # 离线 demo + 真实上报服务（HTTP 上报 + HTTP API）
 │   └── sillytavern/                 # 启动 API + 协议演示
 ├── experiments/
 │   ├── ab/                          # 传统角色卡 vs CharacterLife
 │   ├── persona-continuity/          # 人格连续性 A/B（长对话/新会话/重启）
 │   ├── real-model/                  # 真实 DeepSeek 调用（冒烟 + 14 次对照 + 诊断）
 │   └── real-clients/                # 真实 SillyTavern 1.17.0 服务端转发探针
+├── scripts/
+│   ├── start-onebot.ps1             # OneBot 启动脚本：读 .env + 体检 + 启动（PowerShell 5.1 兼容）
+│   ├── start-onebot.cmd             # 双击/免执行策略包装
+│   └── fake-onebot-gateway.mjs      # 假网关（测试替身）：先证明本服务是好的，再怀疑网关
 ├── tests/
 │   ├── *.test.ts                    # 四模块 + 人格 + 安全（78 项）
 │   ├── cross_session/               # 跨会话/跨进程/上下文预算（32 项）
-│   ├── adapters/                    # V0.2：QQ（17）+ SillyTavern（8）
+│   ├── adapters/                    # V0.2：QQ（17）+ SillyTavern（8）+ OneBot（27 + 7）
 │   └── cross-platform/              # V0.2：跨平台连续性（6）+ 绑定码安全（6）
 ├── docs/                        # ARCHITECTURE / MEMORY_ARCHITECTURE / DECISIONS
-│                                # + QQ_CAPABILITIES / QQ_SETUP / SILLYTAVERN_SETUP
-│                                # + ADAPTER_PROTOCOL / openapi.yaml
+│                                # + QQ_CAPABILITIES / QQ_SETUP / ONEBOT_SETUP
+│                                # + SILLYTAVERN_SETUP / ADAPTER_PROTOCOL / openapi.yaml
 ├── reports/                     # 测试报告、真实日志、评估、A/B、V02 报告
 └── media/                       # BILIBILI_NOTES / V02_VIDEO_NOTES
 ```
@@ -296,6 +319,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/ADAPTER_PROTOCOL.md`](docs/ADAPTER_PROTOCOL.md)：适配器契约、绑定、并发、给新平台写适配器的 7 步
 - [`docs/QQ_CAPABILITIES.md`](docs/QQ_CAPABILITIES.md)：QQ 官方能力核查（含「未验证」清单）
 - [`docs/QQ_SETUP.md`](docs/QQ_SETUP.md)：QQ Webhook 接入步骤与排错
+- [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md)：OneBot 11 网关接入（NapCat / Lagrange / SnowLuma）、**启动脚本用法**、群聊策略、隐私与风险
 - [`docs/SILLYTAVERN_SETUP.md`](docs/SILLYTAVERN_SETUP.md)：酒馆配置、记忆边界、已验证/未验证
 - [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
 
@@ -313,5 +337,8 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - 角色与剧情均为虚构；本项目不宣称模型具有意识或真实情感。
 - 不生成、不存储露骨内容；内容边界的处理方式是**拒绝 + 转移话题**。
 - 仓库中不含真实 API Key、真实用户隐私或任何外部平台凭据。
-- **QQ 真实联调未执行**（无凭证）；**酒馆只到服务端转发层**（本环境无浏览器）。
-  这两点在所有相关文档里都有明确标注，不用模拟结果冒充真实平台测试。
+- **QQ 真实联调未执行**（无凭证）；**OneBot 真实网关联调未执行**（无 QQ 小号，网关不可达）；
+  **酒馆只到服务端转发层**（本环境无浏览器）。这三点在所有相关文档里都有明确标注，
+  不用模拟结果冒充真实平台测试。
+- OneBot 走的是社区协议，**不是腾讯官方授权方式**，存在账号风险；项目只提供适配器，
+  不提供任何风控绕过手段，使用与否、用哪个号，由部署者自行决定并承担后果。

@@ -12,6 +12,8 @@
     "demo:persistent": "node examples/persistent-demo.ts",
     "qq:demo": "node examples/qq-bot/demo.ts",
     "qq:server": "node examples/qq-bot/server.ts",
+    "onebot:demo": "node examples/onebot/demo.ts",
+    "onebot:server": "node examples/onebot/server.ts",
     "st:demo": "node examples/sillytavern/demo.ts",
     "st:server": "node examples/sillytavern/start-server.ts",
     "st:probe": "node experiments/real-clients/sillytavern-smoke.ts",
@@ -21,7 +23,8 @@
     "real:continuity": "node experiments/real-model/continuity.ts",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "onebot:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-onebot.ps1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
