@@ -9,9 +9,12 @@
   },
   "scripts": {
     "demo": "node examples/three-day-demo.ts",
+    "demo:persistent": "node examples/persistent-demo.ts",
     "ab": "node experiments/ab/run.ts",
-    "test": "node --test --test-isolation=none tests/*.test.ts",
+    "continuity": "node experiments/persona-continuity/run.ts",
+    "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
+    "demo:persistent": "node examples/persistent-demo.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

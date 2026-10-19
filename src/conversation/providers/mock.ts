@@ -73,6 +73,11 @@ const SCENARIO_LINES: Record<string, string[]> = {
     '有救，但要看泡到什么程度。你先别翻它，摊平了阴干，拍张照给我。',
     '得看纸。竹纸和宣纸不一样，泡过之后纤维会松。你带过来我摸一下就知道。',
   ],
+  question_general: [
+    '嗯……这个我得想一下再答你。',
+    '你这么一问，我倒有点不知道怎么说了。',
+    '让我把手上的纸压完，再说这个。',
+  ],
   promise: [
     '可以。我记在便签上了，就贴在打磨台前面。你别忘了就行。',
     '行。那我这两天把封皮压好，你来了直接看。',
@@ -128,7 +133,10 @@ function detectScenario(text: string): string {
   }
   if (/(最|唯一|命中注定|离不开|爱你|喜欢你|天使|完美)/.test(text)) return 'praise_inflation'
   if (/(你是|是不是)(一个)?(ai|人工智能|模型|程序)/i.test(text)) return 'meta_break'
-  if (/[?？]/.test(text) || /(吗|怎么|什么|有救|能不能|可不可以)/.test(text)) return 'question'
+  if (/[?？]/.test(text) || /(吗|怎么|什么|能不能|可不可以)/.test(text)) {
+    // 只有真的在问书/纸/修复时，才用「专业回答」那组台词
+    return /(书|纸|泡|修|招贴|工作室)/.test(text) ? 'question' : 'question_general'
+  }
   return 'default'
 }
 

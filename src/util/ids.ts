@@ -12,6 +12,20 @@ export class SequentialIdFactory implements IdFactory {
     this.#counters.set(prefix, n)
     return `${prefix}_${String(n).padStart(3, '0')}`
   }
+
+  /**
+   * 把某个前缀的计数器抬到至少 n。
+   * 跨会话恢复时必须调用：否则新会话的 id 会从 001 重新开始，
+   * 与数据库里已有的里程碑/记忆 id 撞车。
+   */
+  seed(prefix: string, n: number): void {
+    if (!Number.isFinite(n) || n < 0) return
+    this.#counters.set(prefix, Math.max(this.#counters.get(prefix) ?? 0, Math.floor(n)))
+  }
+
+  counter(prefix: string): number {
+    return this.#counters.get(prefix) ?? 0
+  }
 }
 
 export class EntropyIdFactory implements IdFactory {

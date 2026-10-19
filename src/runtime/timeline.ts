@@ -28,11 +28,17 @@ export class Timeline implements SnapshotSection {
   #events: TimelineEvent[] = []
   #clock: Clock
   #ids: IdFactory
+  /** 每次结构性变更 +1；持久层用它判断「时间线是否变了，需要随事件一起落库」 */
+  #version = 0
 
   constructor(clock: Clock, ids: IdFactory, initial: TimelineEvent[] = []) {
     this.#clock = clock
     this.#ids = ids
     this.#events = initial.map((e) => ({ ...e, payload: { ...e.payload } }))
+  }
+
+  get version(): number {
+    return this.#version
   }
 
   schedule(input: ScheduleInput): TimelineEvent {
@@ -52,6 +58,7 @@ export class Timeline implements SnapshotSection {
     }
     this.#events.push(event)
     this.#sort()
+    this.#version++
     return { ...event, payload: { ...event.payload } }
   }
 
@@ -68,6 +75,7 @@ export class Timeline implements SnapshotSection {
     if (!event || event.fired) return false
     event.fired = true
     event.firedAtSim = nowSim
+    this.#version++
     return true
   }
 
@@ -91,6 +99,7 @@ export class Timeline implements SnapshotSection {
   fromJSON(value: unknown): void {
     if (!Array.isArray(value)) throw new Error('timeline section 必须是数组')
     this.#events = (value as TimelineEvent[]).map((e) => ({ ...e, payload: { ...e.payload } }))
+    this.#version++
   }
 
   #sort(): void {

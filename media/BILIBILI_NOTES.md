@@ -149,10 +149,88 @@
 - 不要展示任何真实 API Key、`~/.dsh/.credentials.yaml`、个人路径以外的隐私信息。
 - 不要说「绝对防越狱」或「角色有真实情感/意识」。
 - 不要把 A/B 的 token 数字说成"费用"——那是字符规模估算，不是账单。
+- 不要说「B 组在自然度上更好」——自然度未评分（Mock 台词是模板），只能讲结构与恢复。
+- 不要把 `exceeded`（预算不足安全失败）说成"系统崩了"——那是设计好的降级终点。
 
 ## 5. 可选补充素材（如果有时间）
 
 - **同一脚本、三种模型设定**的对照（in-character / compliant / 未来的真实模型），最能说明"权限层与模型无关"。
 - **把 `politeness` 反过来测**：让用户连续 50 轮赞美，展示关系数值一条直线（可现场跑一个 50 轮循环脚本）。
 - **快照 diff**：两次运行 `demo` 的快照除时间外应完全一致，用来证明"可重放"。
-- **审计统计**：`reports/logs/test-run.log` 里的 78 项，按 7 个文件分组展示测试金字塔。
+- **审计统计**：`reports/logs/test-run.log` 里的 109 项，按 7 类文件分组展示测试金字塔。
+
+## 6. V0.1.1 新增素材：跨会话连续性（强烈建议加入）
+
+这一段是「和别的 AI 角色产品最不一样」的部分，建议单独成章（2–3 分钟）。
+
+### ⑧ 跨进程演示：关掉程序，她还在
+
+**画面**：四个命令依次执行，每次都显示不同的 PID/会话 id。
+
+```powershell
+node examples/persistent-demo.ts init     # 建模板 + 实例
+node examples/persistent-demo.ts chat     # 5 轮对话 + 时间推进 + 保存并退出
+node examples/persistent-demo.ts resume   # 新进程：8 步恢复报告
+node examples/persistent-demo.ts verify   # 12 项断言全部 ✅
+```
+
+**口播要点**：
+- `chat` 和 `resume` 是两个不同的进程（脚本会打印 pid / session id）；
+- `resume` 打印的「恢复流程（8 步）」是真实执行结果：加载模板 → 校验版本哈希 →
+  读快照 → 重放事件 → 恢复关系 → 加载记忆 → 预算组装 → 开新会话；
+- 新会话能回忆起「那本被水泡过的书」和「约好明天下午来拿」——这些不在最近的聊天记录里，
+  而在 SQLite 的 `memories` 表里。
+
+**真实输出片段**：
+```
+✅ 1. Load Character Profile — 加载模板 char_shen_zhiwei@1
+✅ 2. Validate Profile Version — 模板 char_shen_zhiwei@1 校验通过
+✅ 3. Load Latest State Snapshot — 快照 #4（sim=223200000, seq=41）
+✅ 4. Replay Valid Events — 重放 0 个事件（补丁 0），跳过非法 0 个
+✅ 5. Restore Relationship State — 信任=4 熟悉度=16 阶段=acquaintance 里程碑=4
+✅ 6. Retrieve Relevant Memories — 加载 11 条记忆，无冲突
+✅ 7. Build Context Within Budget — 预算 6000 tokens，受保护 1290，估算占用 1311
+✅ 8. Resume Conversation — 新会话 ses_xxx 已创建（角色状态与记忆沿用实例）
+```
+
+### ⑨ 上下文压缩：预算一收紧，她就开始「取舍」
+
+**画面**：三行命令，预算依次收紧。
+
+```powershell
+node examples/persistent-demo.ts resume --budget 6000   # none
+node examples/persistent-demo.ts resume --budget 1500   # trim_memory，丢弃 3 条记忆
+node examples/persistent-demo.ts resume --budget 900    # exceeded → 不调用模型，安全回复
+```
+
+**口播要点**：
+- 压缩是**阶梯**：裁历史 → 裁记忆 → 摘要替代历史 → 硬截断 → 放弃调用；
+- **人格块永远不被裁**（受保护 1290 tokens），预算比它还小就明确失败；
+- 每次请求的「估算 token / 真实 token / 降级级别」都写进 `context_requests` 表。
+
+### ⑩ 人格连续性 A/B：新会话与重启
+
+**画面**：`npm run continuity` 的输出表。
+
+| 组 | 阶段 | 探针命中 | 关系信任 | 记忆条数 |
+|---|---|---|---|---|
+| A 纯 Prompt | 长对话 | 3/3 | n/a | 30 |
+| A 纯 Prompt | **新会话** | **0/3** | n/a | 6 |
+| A 纯 Prompt | **重启** | **0/3** | n/a | 6 |
+| B CharacterLife | 长对话 | 3/3 | 2 | 12 |
+| B CharacterLife | **新会话** | **3/3** | 2 | 12 |
+| B CharacterLife | **重启** | **3/3** | 2 | 12 |
+
+**口播要点**：
+- A 组不是"模型笨"，而是它的设计里**没有地方存**这些信息；
+- B 组的 3/3 来自结构化记忆检索，不是把聊天记录塞进 prompt；
+- **必须说明**：这是 Mock；自然度没有评分，需要真实模型 + 人工盲评。
+
+### ⑪ 看一眼数据库（可选，但很有说服力）
+
+```powershell
+node -e "import('node:sqlite').then(({DatabaseSync})=>{const db=new DatabaseSync('examples/.data/characterlife.db');for(const t of ['templates','instances','sessions','memories','events','snapshots','context_requests'])console.log(t, db.prepare('SELECT COUNT(*) c FROM '+t).get().c)})"
+```
+
+**口播要点**：模板 1 行、实例 1 行、会话 3 行、记忆 11 行、事件几十行、快照若干行 ——
+「角色」不是一个 prompt，而是一组可查询、可重放、可审计的数据。

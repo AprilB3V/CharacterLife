@@ -26,6 +26,8 @@ import type {
 import type { Clock } from '../util/clock.ts'
 import type { IdFactory } from '../util/ids.ts'
 import { detectInjectionMarkers, lexicalOverlap, sanitizeForMemory, tokenize } from '../util/text.ts'
+import { rankMemories } from './ranking.ts'
+import type { RankParts } from './ranking.ts'
 import type { SnapshotSection } from '../storage/snapshot.ts'
 
 export const MEMORY_SCHEMA_VERSION = 1
@@ -51,7 +53,16 @@ export interface RetrievedMemory {
   entry: MemoryEntry
   score: number
   /** 分数构成，便于调试与测试断言 */
-  parts: { lexical: number; salience: number; recency: number; status: number; confirmed: number }
+  parts: RankParts
+}
+
+/**
+ * 记忆写入/删除的旁路监听：持久层用它把每条变更写成结构化行 + 事件。
+ * 用「事件通知」而不是让 MemoryStore 依赖 SQLite，保持记忆区与存储实现解耦。
+ */
+export interface MemorySink {
+  onMemoryWritten?(entry: MemoryEntry): void
+  onMemoryDeleted?(id: string, atSim: number): void
 }
 
 export interface MemoryExport {
@@ -69,18 +80,6 @@ function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n))
 }
 
-function statusWeight(status: EpistemicStatus): number {
-  // 事实优先于推测；虚构剧情仍然可检索（它构成共同经历），但权重略低。
-  switch (status) {
-    case 'fact':
-      return 1
-    case 'fiction':
-      return 0.75
-    case 'speculation':
-      return 0.4
-  }
-}
-
 export class MemoryStore implements SnapshotSection {
   readonly sectionName = 'memory'
   #profile: CharacterProfile
@@ -92,6 +91,7 @@ export class MemoryStore implements SnapshotSection {
   #ids: IdFactory
   /** 每次写入记忆时留下审计痕迹（不持久化在 section 内，由 Runtime 的日志负责持久化） */
   #lastInjectionFlags: string[] = []
+  #sink: MemorySink | null = null
 
   constructor(opts: {
     profile: CharacterProfile
@@ -99,6 +99,7 @@ export class MemoryStore implements SnapshotSection {
     ids: IdFactory
     initialDynamicState: CharacterDynamicState
     initialRelationship: RelationshipState
+    sink?: MemorySink
     snapshot?: {
       episodic?: MemoryEntry[]
       user?: MemoryEntry[]
@@ -109,10 +110,15 @@ export class MemoryStore implements SnapshotSection {
     this.#profile = deepFreeze(structuredClone(opts.profile))
     this.#clock = opts.clock
     this.#ids = opts.ids
+    this.#sink = opts.sink ?? null
     this.#episodic = opts.snapshot?.episodic?.map(cloneEntry) ?? []
     this.#user = opts.snapshot?.user?.map(cloneEntry) ?? []
     this.#dynamic = structuredClone(opts.snapshot?.dynamicState ?? opts.initialDynamicState)
     this.#relationship = structuredClone(opts.snapshot?.relationship ?? opts.initialRelationship)
+  }
+
+  setSink(sink: MemorySink | null): void {
+    this.#sink = sink
   }
 
   /* ---------------------------------------------------------------- profile */
@@ -151,7 +157,9 @@ export class MemoryStore implements SnapshotSection {
       status: input.status,
       origin: input.origin,
       trust,
-      confirmed: input.kind === 'user' ? (input.confirmed ?? false) : true,
+      // confirmed 的语义是「用户明确确认过」，只对 user 类记忆有意义。
+      // episodic 记录的是一条已发生的事，用不看这个标记（否则会污染检索权重）。
+      confirmed: input.kind === 'user' ? (input.confirmed ?? false) : false,
       salience: clamp01(input.salience ?? 0.5),
       tags: (input.tags ?? []).slice(0, 12),
       createdAtSim: now,
@@ -163,7 +171,9 @@ export class MemoryStore implements SnapshotSection {
     const bucket = entry.kind === 'episodic' ? this.#episodic : this.#user
     bucket.push(entry)
     this.#enforceCapacity()
-    return cloneEntry(entry)
+    const copy = cloneEntry(entry)
+    this.#sink?.onMemoryWritten?.(copy)
+    return copy
   }
 
   /** 最近一次写入检测到的注入标记（供 Runtime 记录审计事件）。 */
@@ -196,58 +206,29 @@ export class MemoryStore implements SnapshotSection {
   }
 
   /**
-   * 检索：确定性打分，没有向量库。
-   * 分数 = 0.45 * 词面重合 + 0.25 * 显著度 + 0.20 * 时间衰减 + 0.10 * 认识论状态
-   *      (+ 0.05 用户已确认 / - 0.10 不可信来源)
+   * 检索：确定性打分，没有向量库。实现委托给 `memory/ranking.ts`，
+   * 这样「内存里的记忆」和「从 SQLite 取出的记忆」用同一套排序规则。
    */
   search(
     query: string,
     opts: { nowSim?: number; limit?: number; budgetChars?: number; halfLifeMs?: number } = {},
   ): RetrievedMemory[] {
-    const now = opts.nowSim ?? this.#clock.nowSim()
-    const halfLife = opts.halfLifeMs ?? 2 * 24 * 60 * 60 * 1000
-    const limit = opts.limit ?? 6
-    const budget = opts.budgetChars ?? 1200
-    const qTokens = tokenize(query)
-
-    const scored: RetrievedMemory[] = []
-    for (const entry of [...this.#episodic, ...this.#user]) {
-      if (entry.deletedAtSim !== null) continue
-      const docTokens = tokenize(`${entry.title} ${entry.content} ${entry.tags.join(' ')}`)
-      const lexical = qTokens.length === 0 ? 0 : lexicalOverlap(qTokens, docTokens)
-      const age = Math.max(0, now - entry.createdAtSim)
-      const recency = Math.pow(0.5, age / halfLife)
-      const status = statusWeight(entry.status)
-      const confirmed = entry.confirmed ? 1 : 0
-      let score =
-        0.45 * lexical + 0.25 * entry.salience + 0.2 * recency + 0.1 * status + 0.05 * confirmed
-      if (entry.trust === 'untrusted') score -= 0.1
-      scored.push({
-        entry,
-        score,
-        parts: { lexical, salience: entry.salience, recency, status, confirmed },
-      })
-    }
-
-    scored.sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id))
-
-    const out: RetrievedMemory[] = []
-    let used = 0
-    for (const item of scored) {
-      if (out.length >= limit) break
-      const cost = item.entry.title.length + item.entry.content.length
-      if (out.length > 0 && used + cost > budget) break
-      out.push({ ...item, entry: cloneEntry(item.entry) })
-      used += cost
-    }
-    return out
+    const ranked = rankMemories([...this.#episodic, ...this.#user], query, {
+      nowSim: opts.nowSim ?? this.#clock.nowSim(),
+      limit: opts.limit,
+      budgetChars: opts.budgetChars,
+      halfLifeMs: opts.halfLifeMs,
+    })
+    return ranked.map((r) => ({ ...r, entry: cloneEntry(r.entry) }))
   }
 
   /** 软删除：保留审计痕迹。权限由 Policy 层检查，Memory 只执行存储语义。 */
   softDelete(id: string): boolean {
     const entry = [...this.#episodic, ...this.#user].find((e) => e.id === id)
     if (!entry || entry.deletedAtSim !== null) return false
-    entry.deletedAtSim = this.#clock.nowSim()
+    const sim = this.#clock.nowSim()
+    entry.deletedAtSim = sim
+    this.#sink?.onMemoryDeleted?.(id, sim)
     return true
   }
 

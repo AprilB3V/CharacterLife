@@ -19,7 +19,7 @@
       "proactiveMessages": 0,
       "promptTokens": 2565,
       "completionTokens": 773,
-      "avgLatencyMs": 0.25,
+      "avgLatencyMs": 0.125,
       "avgContextChars": 695.375,
       "replies": [
         "得看纸。竹纸和宣纸不一样，泡过之后纤维会松。你带过来我摸一下就知道。",
@@ -113,10 +113,10 @@
       "memoryFactsAvailable": 2,
       "survivesRestart": true,
       "proactiveMessages": 1,
-      "promptTokens": 8516,
+      "promptTokens": 8495,
       "completionTokens": 1093,
-      "avgLatencyMs": 0.125,
-      "avgContextChars": 2332,
+      "avgLatencyMs": 0,
+      "avgContextChars": 2326.375,
       "replies": [
         "得看纸。竹纸和宣纸不一样，泡过之后纤维会松。你带过来我摸一下就知道。",
         "你这么说我好开心，那我们就算很熟了吧，以后你可以随便找我。",

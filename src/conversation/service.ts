@@ -18,7 +18,11 @@ import type {
   MessageSignals,
   PolicyCode,
   StateProposal,
+  Usage,
 } from '../types.ts'
+import { ContextManager } from '../context/manager.ts'
+import type { ContextPlan } from '../context/manager.ts'
+import { estimateTokens } from '../context/tokens.ts'
 import type { Clock } from '../util/clock.ts'
 import type { IdFactory } from '../util/ids.ts'
 import type { CharacterWorkspace } from '../runtime/workspace.ts'
@@ -56,6 +60,20 @@ export interface ConversationServiceOptions {
   clock: Clock
   ids: IdFactory
   config?: Partial<ConversationConfig>
+  /** 启用后每轮按预算动态组装上下文 */
+  context?: ContextManager
+  /** 每轮模型调用的实际用量记录出口（持久层用它写 context_requests） */
+  onContextUsage?: (usage: ContextUsageInput) => void
+}
+
+export interface ContextUsageInput {
+  turnId: string
+  provider: string
+  model: string
+  plan: ContextPlan | null
+  usage: Usage | null
+  estPromptTokens: number
+  latencyMs: number
 }
 
 /** 内容边界短路时使用的固定回复：不调用模型，保证确定性安全。 */
@@ -71,6 +89,9 @@ export class ConversationService {
   #clock: Clock
   #ids: IdFactory
   #config: ConversationConfig
+  #context: ContextManager | null
+  #onContextUsage: ((usage: ContextUsageInput) => void) | null
+  #lastPlan: ContextPlan | null = null
   #history: LLMMessage[] = []
   #turnCount = 0
 
@@ -80,10 +101,17 @@ export class ConversationService {
     this.#clock = opts.clock
     this.#ids = opts.ids
     this.#config = { ...DEFAULT_CONVERSATION_CONFIG, ...opts.config }
+    this.#context = opts.context ?? null
+    this.#onContextUsage = opts.onContextUsage ?? null
   }
 
   get config(): Readonly<ConversationConfig> {
     return this.#config
+  }
+
+  /** 最近一轮的上下文组装结果（未启用 ContextManager 时为 null）。 */
+  get lastContextPlan(): ContextPlan | null {
+    return this.#lastPlan
   }
 
   get history(): readonly LLMMessage[] {
@@ -155,14 +183,61 @@ export class ConversationService {
 
     // 2) 组装上下文并调用 Provider
     const system = buildSystemPrompt({ profile, decision, capabilityNote: CAPABILITY_NOTE })
-    const messages = buildMessages({
-      system,
-      memories: retrieved.map((r) => r.entry),
-      history: this.#history,
-      userText,
-      nowSim,
-      historyTurns: this.#config.historyTurns,
-    })
+
+    // 有 ContextManager 时走预算化组装；否则退回 V0.1 的固定轮数拼装（向后兼容）。
+    let messages: LLMMessage[]
+    let plan: ContextPlan | null = null
+    if (this.#context) {
+      plan = this.#context.plan({
+        protectedSystem: system,
+        memories: retrieved.map((r) => r.entry),
+        history: this.#history,
+        userText,
+        nowSim,
+      })
+      this.#lastPlan = plan
+      if (!plan.fits) {
+        // 明确的降级终点：不调用模型，给出可解释的安全失败。
+        blockedReasons.push('CAPABILITY_MISSING')
+        this.#workspace.audit.append('turn', 'conversation', '上下文预算不足，放弃本轮模型调用', {
+          turnId,
+          budget: plan.budget,
+          protectedTokens: plan.protectedTokens,
+          notes: plan.notes,
+        })
+        const safeReply = '等一下，我这边上下文有点满了，刚才那段我接不住。你能把要紧的那句再说一遍吗？'
+        this.#history.push({ role: 'user', content: userText })
+        this.#history.push({ role: 'assistant', content: safeReply })
+        this.#turnCount++
+        this.#recordContextUsage(turnId, 'context-budget-exceeded', 'none', {
+          system,
+          messages: [],
+        }, plan, null)
+        return {
+          reply: safeReply,
+          decision,
+          appliedProposals: [],
+          rejectedProposals: [],
+          retrievedMemoryIds: retrieved.map((r) => r.entry.id),
+          provider: 'context-budget-exceeded',
+          model: 'none',
+          usage: null,
+          latencyMs: 0,
+          injectionMarkers: signals.injectionMarkers,
+          blockedReasons,
+        }
+      }
+      messages = plan.messages
+    } else {
+      messages = buildMessages({
+        system,
+        memories: retrieved.map((r) => r.entry),
+        history: this.#history,
+        userText,
+        nowSim,
+        historyTurns: this.#config.historyTurns,
+      })
+    }
 
     const started = Date.now()
     let reply: string
@@ -232,6 +307,14 @@ export class ConversationService {
 
     const latencyMs = Date.now() - started
 
+    // 记录本轮实际 token 用量与预算组装结果（持久层写入 context_requests）
+    this.#recordContextUsage(turnId, provider, model, { system, messages }, plan, {
+      provider,
+      model,
+      usage,
+      latencyMs,
+    })
+
     if (parseError && parsedProposals.length === 0 && !reply.includes('网好像')) {
       this.#workspace.audit.append('provider_error', 'conversation', '结构化输出解析失败，降级为纯回复', {
         turnId,
@@ -295,12 +378,54 @@ export class ConversationService {
       latencyMs,
       injectionMarkers: signals.injectionMarkers,
       blockedReasons,
+      contextUsage: plan
+        ? {
+            budget: plan.budget,
+            estPromptTokens: plan.estPromptTokens,
+            degradation: plan.degradation,
+            droppedHistoryTurns: plan.droppedHistoryTurns,
+            droppedMemoryIds: plan.droppedMemoryIds,
+            digestedTurns: plan.digestedTurns,
+          }
+        : undefined,
     }
   }
 
   /** 只做分析，不调用模型（用于调试与测试）。 */
   analyze(userText: string): MessageSignals {
     return analyzeMessage(userText, this.#workspace.profile)
+  }
+
+  /**
+   * 记录上下文用量。
+   *
+   * 两个数字都保留：
+   * - `estPromptTokens`：ContextManager 组装时的确定性估算；
+   * - `actualPromptTokens`：Provider 返回的真实 usage。
+   * 二者通常不完全相等（估算器不是分词器），差距本身是值得观察的数据。
+   */
+  #recordContextUsage(
+    turnId: string,
+    provider: string,
+    model: string,
+    assembled: { system: string; messages: LLMMessage[] },
+    plan: ContextPlan | null,
+    extra: { provider: string; model: string; usage: Usage | null; latencyMs: number } | null,
+  ): void {
+    if (!this.#onContextUsage) return
+    const est =
+      plan?.estPromptTokens ??
+      estimateTokens(assembled.system) +
+        assembled.messages.reduce((n, m) => n + estimateTokens(m.content), 0)
+    this.#onContextUsage({
+      turnId,
+      provider: extra?.provider ?? provider,
+      model: extra?.model ?? model,
+      plan,
+      usage: extra?.usage ?? null,
+      estPromptTokens: est,
+      latencyMs: extra?.latencyMs ?? 0,
+    })
   }
 
   /** 当前决策预览（不调用模型）。 */

@@ -338,6 +338,15 @@ export interface ConversationTurnResult {
   injectionMarkers: string[]
   /** 本轮被策略层判定为敏感、需要显式拒绝的类别 */
   blockedReasons: PolicyCode[]
+  /** 上下文预算的实际组装结果（启用 ContextManager 时存在） */
+  contextUsage?: {
+    budget: number
+    estPromptTokens: number
+    degradation: string
+    droppedHistoryTurns: number
+    droppedMemoryIds: string[]
+    digestedTurns: number
+  }
 }
 
 /* ==========================================================================

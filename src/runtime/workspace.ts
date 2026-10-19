@@ -19,6 +19,7 @@ import type {
   CharacterProfile,
   CharacterVoice,
   MemoryKind,
+  MemoryEntry,
   MessageSignals,
   Milestone,
   MilestoneKind,
@@ -71,6 +72,22 @@ export interface TrackedPromise {
   status: 'open' | 'kept' | 'broken'
 }
 
+/**
+ * 状态变更旁路监听：持久层用它把每次落地写成可重放的事件。
+ * 工作区不依赖 SQLite，只发通知。
+ */
+export interface StateSink {
+  onStateApplied?(evt: {
+    source: string
+    proposals: StateProposal[]
+    sim: number
+    relationshipTouched: boolean
+    /** 时间线发生变化时附带完整时间线，保证事件重放能精确还原 */
+    timeline?: TimelineEvent[]
+  }): void
+  onEventFired?(evt: { event: TimelineEvent; timeline: TimelineEvent[] }): void
+}
+
 export interface WorkspaceOptions {
   profile: CharacterProfile
   voice: CharacterVoice
@@ -80,6 +97,17 @@ export interface WorkspaceOptions {
   snapshot: SnapshotStore
   audit?: AuditLog
   policy?: PolicyEngine
+  stateSink?: StateSink
+}
+
+/** 可序列化的完整工作区状态，用于 SQLite 快照与事件重放校验。 */
+export interface WorkspaceStateDump {
+  relationship: RelationshipState
+  dynamic: CharacterDynamicState
+  timeline: TimelineEvent[]
+  runtime: unknown
+  episodic: MemoryEntry[]
+  user: MemoryEntry[]
 }
 
 export interface ProposalOutcome {
@@ -119,6 +147,7 @@ export class CharacterWorkspace implements SnapshotSection {
   #rng: Rng
   #voice: CharacterVoice
   #snapshot: SnapshotStore
+  #sink: StateSink | null
 
   #pendingMessages: PendingMessage[] = []
   #promises: TrackedPromise[] = []
@@ -127,6 +156,8 @@ export class CharacterWorkspace implements SnapshotSection {
   #turnCount = 0
   /** 已为哪个静默期记过「边界被尊重」，避免同一个边界被反复计分 */
   #boundaryRespectRecordedFor: number | null = null
+  /** 上次随事件落库的时间线版本，避免每条补丁都重复写整条时间线 */
+  #sinkTimelineVersion = -1
 
   constructor(opts: WorkspaceOptions) {
     this.#clock = opts.clock
@@ -134,6 +165,7 @@ export class CharacterWorkspace implements SnapshotSection {
     this.#rng = opts.rng
     this.#voice = opts.voice
     this.#snapshot = opts.snapshot
+    this.#sink = opts.stateSink ?? null
     this.policy = opts.policy ?? new PolicyEngine()
     this.audit = opts.audit ?? new AuditLog(opts.clock, null)
 
@@ -163,6 +195,48 @@ export class CharacterWorkspace implements SnapshotSection {
       opts.clock.setSim(meta.savedAtSim)
     }
     return { workspace, restored: true }
+  }
+
+  /** 挂载/替换持久层旁路监听（SQLite 恢复流程会用到）。 */
+  setStateSink(sink: StateSink | null): void {
+    this.#sink = sink
+  }
+
+  /**
+   * 导出可序列化状态。
+   * 注意：这是**状态**，不是人格；人格永远来自 Template，不会出现在这里。
+   */
+  dumpState(): WorkspaceStateDump {
+    const all = this.memory.list({ includeDeleted: true })
+    return {
+      relationship: this.relationship,
+      dynamic: this.dynamicState,
+      timeline: this.timeline.list(),
+      runtime: this.toJSON(),
+      episodic: all.filter((e) => e.kind === 'episodic'),
+      user: all.filter((e) => e.kind === 'user'),
+    }
+  }
+
+  /** 从持久化状态恢复（Template 已由调用方校验）。 */
+  restoreState(state: {
+    relationship?: RelationshipState
+    dynamic?: CharacterDynamicState
+    timeline?: TimelineEvent[]
+    runtime?: unknown
+    episodic?: MemoryEntry[]
+    user?: MemoryEntry[]
+  }): void {
+    if (state.episodic || state.user || state.relationship || state.dynamic) {
+      this.memory.fromJSON({
+        episodic: state.episodic ?? [],
+        user: state.user ?? [],
+        dynamicState: state.dynamic,
+        relationship: state.relationship,
+      })
+    }
+    if (state.timeline) this.timeline.fromJSON(state.timeline)
+    if (state.runtime !== undefined && state.runtime !== null) this.fromJSON(state.runtime)
   }
 
   /* ------------------------------------------------------------------ 读取 */
@@ -346,6 +420,18 @@ export class CharacterWorkspace implements SnapshotSection {
 
     // 限速按「批次」计：一次里程碑带来的多条关系变更算一次写入。
     if (relationshipTouched) this.#relationshipWrites.push(this.#clock.nowSim())
+
+    if (applied.length > 0) {
+      const timelineChanged = this.#sinkTimelineVersion !== this.timeline.version
+      if (timelineChanged) this.#sinkTimelineVersion = this.timeline.version
+      this.#sink?.onStateApplied?.({
+        source,
+        proposals: applied,
+        sim: this.#clock.nowSim(),
+        relationshipTouched,
+        timeline: timelineChanged ? this.timeline.list() : undefined,
+      })
+    }
 
     return { applied, rejected }
   }
@@ -815,6 +901,7 @@ export class CharacterWorkspace implements SnapshotSection {
       atSim: event.atSim,
       kind: event.kind,
     })
+    this.#sink?.onEventFired?.({ event, timeline: this.timeline.list() })
   }
 
   #handlePromiseTimeout(promiseId: string): void {

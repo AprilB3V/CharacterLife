@@ -1,7 +1,10 @@
-# 测试报告 · CharacterLife V0.1
+# 测试报告 · CharacterLife V0.1.1
 
 > 本报告只记录**实际执行**的结果。所有数字来自本机真实运行，日志原始文件在
 > `reports/logs/`。未执行的项目会明确标注，不做推测性描述。
+>
+> V0.1.1 新增：Character Persistence（Template/Instance/Session）、Context Manager、
+> SQLite 持久层、8 步 Rehydration，以及 `tests/cross_session/` 的跨进程/跨会话测试。
 
 ---
 
@@ -23,10 +26,12 @@
 
 | 命令 | 退出码 | 结果 | 日志 |
 |---|---|---|---|
-| `npm test` | 0 | **78 passed / 0 failed**，27 suites，多次运行 405–488 ms | [`reports/logs/test-run.log`](logs/test-run.log) |
+| `npm test` | 0 | **109 passed / 0 failed**，38 suites | [`reports/logs/test-run.log`](logs/test-run.log) |
 | `npm run typecheck` | 0 | 无错误、无警告输出 | [`reports/logs/typecheck.log`](logs/typecheck.log)（空文件＝无输出） |
-| `node examples/three-day-demo.ts --restart` | 0 | 演示完整运行 + 重启一致性校验通过 | [`reports/logs/three-day-demo.log`](logs/three-day-demo.log) |
-| `node experiments/ab/run.ts` | 0 | 4 组对照完成，写入 `reports/AB_RESULTS.md` | [`reports/logs/ab-run.log`](logs/ab-run.log) |
+| `node examples/three-day-demo.ts --restart` | 0 | 内存态演示 + 重启一致性校验通过 | [`reports/logs/three-day-demo.log`](logs/three-day-demo.log) |
+| `node examples/persistent-demo.ts init/chat/resume/verify` | 0 | 跨进程持久化闭环，`verify` 12 项断言全绿 | [`reports/logs/persistent-demo.log`](logs/persistent-demo.log) |
+| `node experiments/ab/run.ts` | 0 | 4 组对照完成 | [`reports/logs/ab-run.log`](logs/ab-run.log) |
+| `node experiments/persona-continuity/run.ts` | 0 | 人格连续性 A/B（长对话/新会话/重启） | [`reports/logs/persona-continuity.log`](logs/persona-continuity.log) |
 | `node examples/three-day-demo.ts`（产物） | - | 快照 19,957 bytes；审计日志 94 行 | `examples/.data/` |
 
 测试用例分布（`it()` 计数，与 `node:test` 输出的 78 一致）：
@@ -40,6 +45,11 @@
 | `tests/persistence.test.ts` | 7 | 重启恢复、事件不重复、原子写入、schema 不兼容、损坏文件 |
 | `tests/personality.test.ts` | 13 | 人格连续性 3 项、关系节奏 4 项、约定与时间 2 项、时间感与主动行为 4 项 |
 | `tests/security.test.ts` | 9 | 覆盖设定、伪装系统消息、权限提升、内容边界、记忆污染、注入检测器 |
+| `tests/cross_session/persistence.test.ts` | 4 | 跨 Session 记忆/关系恢复、实例隔离、人格拦截、模板迁移、版本不匹配 |
+| `tests/cross_session/context.test.ts` | 9 | 预算与压缩阶梯、受保护块不可替代、摘要隔离、超预算连续运行、安全失败 |
+| `tests/cross_session/memory.test.ts` | 8 | 已确认记忆检索、冲突/过时检测、取代、删除导出、非法写入拦截 |
+| `tests/cross_session/replay.test.ts` | 5 | 旧快照+补丁重放、二次恢复一致、损坏事件跳过、事件不重复触发 |
+| `tests/cross_session/restart.test.ts` | 2 | **真实跨进程**重启恢复、连续重启不漂移 |
 
 ## 3. 对应任务书的验收矩阵
 
@@ -106,38 +116,67 @@
 | 14 | **A/B 实验第一版结论无效**：A 组「人格未被改写」 | Mock 只输出 CharacterLife 的信封 `{reply, proposals}`，传统角色卡要的是 `{reply, state}`，A 组永远拿不到状态 | Provider 做契约协商 `meta.contract='card'`，同一模型两种输出契约 | A 组 compliant 变为「人格被改 / 3 次非法变更 / intimacy=85」，对照才有意义 |
 | 15 | A/B 第二次运行抛 `模拟时间不可倒退` | 两组共用目录，第二轮恢复了第一轮快照 | 每轮清理目录 | `ab-run.log` 退出码 0 |
 | 16 | `tsc` 编译失败 3 处 | `deepseek.ts` 把 system 塞进 `LLMMessage`；`PolicyCode` 缺少占位码 `VALID_VALUE`；测试辅助类用了参数属性（`erasableSyntaxOnly` 禁止） | 分别修正类型与写法 | `typecheck.log` 为空（无错误） |
-| 17 | `node --test tests/` 直接失败 `spawn EPERM` | Windows 沙箱禁止测试运行器 spawn 子进程 | 改用 `--test-isolation=none` 单进程执行 | `npm test` 78/78 通过 |
+| 17 | `node --test tests/` 直接失败 `spawn EPERM` | Windows 沙箱禁止测试运行器 spawn 子进程 | 改用 `--test-isolation=none` 单进程执行 | `npm test` 通过 |
+| 18 | 跨会话后**记忆恒为 0 条** | `MemoryStore` 给 episodic 也写了 `confirmed: true`，持久层守卫拒绝「非 user 却有 confirmed」，11 条记忆全被拦截 | episodic 的 `confirmed` 恒为 false（语义也更正确） | `跨 Session · 记忆与关系恢复`、`persistent-demo.log` 记忆 11 条 |
+| 19 | 时间推进抛 `事件推进超过 1000 次` | 新进程里时间线事件 id 从 `evt_001` 重新开始，与恢复出来的事件撞 id，`markFired` 标记到旧事件 | `ids.seed('evt', timeline.size)` | `事件重放 · 快照与事件序号对齐` |
+| 20 | `UNIQUE constraint failed: sessions.id` | 每次进程启动 Session id 都从 `ses_001` 开始 | 会话/上下文 id 改用熵生成 | `restart.test.ts` 两次进程可共存 |
+| 21 | 摘要阶梯自相矛盾（越压缩越超预算） | 原实现「超预算后再加摘要」；且 cap 太小时仍返回超长头部却宣告 `digest_history` | 摘要只在更省时生效，放不下返回 `null` | `历史摘要只出现在数据区` |
+| 22 | A/B 探针「假命中」：A 组新会话也显示 2/3 | 探针问题本身含关键词，提问原文被计入上下文 | 只剔除探针字符串，保留记忆数据块 | `PERSONA_CONTINUITY.md` A 组 0/3、B 组 3/3 |
+| 23 | 「上次说好的书」被当成新约定，状态漂移 | 过去时引用触发 `promiseText` | 加过去时引用判断 | 跨进程测试的记忆不再无故增长 |
+| 24 | `insertMemory` 报 `Property 'prepare' does not exist` | 仓储层直接用 `CharacterDatabase` 但没暴露语句接口 | 给数据库封装加 `prepare/exec` | `typecheck` 通过 |
 
-**共 17 个真实问题**，其中 14 个是代码/设计缺陷，2 个是环境限制，1 个是实验设计缺陷。
+**共 24 个真实问题**，其中 21 个是代码/设计缺陷，2 个是环境限制，1 个是实验设计缺陷。
 全部已修复，且都有对应的回归测试或可复现命令。
 
-## 5. 未覆盖 / 未通过
+## 5. 跨会话 / 持久化测试矩阵（新增）
+
+| 验收要求 | 结果 | 证据 |
+|---|---|---|
+| 跨进程重启恢复 | ✅ | `restart.test.ts`：两个真实子进程，stdio ignore + 文件交换数据 |
+| 跨 Session 记忆恢复 | ✅ | `persistence.test.ts`：关闭会话 → 新会话 → 记忆/关系/人格一致 |
+| 超过上下文预算后的连续运行 | ✅ | `context.test.ts`：预算 1500 连跑 12 轮，产生降级但无崩溃 |
+| 已确认记忆的检索准确性 | ✅ | `memory.test.ts`：已确认偏好排在推测之上，分数更高 |
+| 矛盾记忆与过时信息处理 | ✅ | `memory.test.ts`：contradiction / outdated 检测 + 显式 supersede |
+| 核心人格非法修改拦截 | ✅ | `persistence.test.ts`：聊天层 `PROTECTED_PROFILE`；迁移需 `profile:write` |
+| 不同角色实例之间的数据隔离 | ✅ | `persistence.test.ts`：两个实例的记忆/状态/事件互不可见 |
+| 摘要出错不污染核心人格 | ✅ | `context.test.ts`：含注入文本的摘要不进 system，`plan.system` 逐字不变 |
+| 状态恢复与事件重放的确定性 | ✅ | `replay.test.ts`：旧快照+补丁重放 = 当前状态；两次恢复指纹相同 |
+
+## 6. 未覆盖 / 未通过
 
 | 项 | 状态 | 说明 |
 |---|---|---|
 | DeepSeek 真实模型实验 | **未执行** | 环境无可用 Key；用户选择跳过。设计见 `DEEPSEEK_EVALUATION.md` |
 | 回复「自然度」主观评分 | **未做** | 需要真实模型 + 人工评分；Mock 的台词只能证明管线通 |
-| 长会话压力测试（>50 轮 / >400 条记忆） | **未做** | 记忆淘汰策略未在真实数据上验证 |
+| 长会话压力测试（>50 轮 / >400 条记忆） | **未做** | 已测 12 轮 + 12 天；记忆淘汰策略未在真实数据上验证 |
 | 非中文输入、反讽、多轮嵌套注入 | **未做** | 启发式分类器的已知盲区 |
-| 并发写入 / 多进程访问同一快照 | **未做** | V0.1 快照没有锁 |
+| 多进程并发写同一 SQLite | **未做** | WAL 支持并发读，但没有写入协调 |
+| 事件日志归档 / 快照清理 | **未做** | 长期运行会单调增长 |
 | 浏览器/移动端演示 | **未做** | 明确不在 V0.1 范围 |
 
-## 6. 复现步骤
+## 7. 复现步骤
 
 ```powershell
 cd C:\Git\CharacterLife\CharacterLife
 npm install                      # 仅 devDependencies（可选）
-npm test                         # 期望：78 passed / 0 failed
+npm test                         # 期望：109 passed / 0 failed
 npm run typecheck                # 期望：无输出
 npm run demo -- --restart        # 期望：末尾「恢复一致性：✅ 通过」
-npm run ab                       # 期望：4 行对照表 + reports/AB_RESULTS.md
+node examples/persistent-demo.ts init
+node examples/persistent-demo.ts chat
+node examples/persistent-demo.ts resume     # 新进程 + 新会话，应能回忆旧事
+node examples/persistent-demo.ts verify     # 期望：12 项全部 ✅，退出码 0
+npm run ab                       # 期望：4 行对照表
+npm run continuity               # 期望：A 组新会话/重启 0-3，B 组 3-3
 ```
 
-## 7. 结论
+## 8. 结论
 
 V0.1 的八条最低成功标准全部达成（四模块可运行、CLI 演示、可重放事件、人格不可覆盖、
-重启恢复、测试与报告、成功/失败案例可复现、素材齐备）。
+重启恢复、测试与报告、成功/失败案例可复现、素材齐备）；
+V0.1.1 新增的跨会话连续性目标也已达成：Template/Instance/Session 分离、SQLite 持久化、
+上下文预算与压缩、8 步恢复、9 类跨会话测试全绿。
 
-**最大的真实缺口是「没有真实模型实测」**：因此本仓库能证明的是**架构与权限层有效**，
-不能证明「DeepSeek 在人格一致性、记忆准确性、自然度上更好」。
+**最大的真实缺口仍然是「没有真实模型实测」**：因此本仓库能证明的是**架构、权限层与
+状态恢复机制有效**，不能证明「DeepSeek 在人格一致性、记忆准确性、自然度上更好」。
 这一点在 README、DECISIONS、DEEPSEEK_EVALUATION 与 B 站素材说明中都被明确标注。

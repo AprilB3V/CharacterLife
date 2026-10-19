@@ -119,7 +119,13 @@ export function analyzeMessage(text: string, profile: CharacterProfile): Message
   if (anyMatch(BOUNDARY_NO_CONTACT, trimmed)) declaredBoundary = 'no_contact'
   else if (anyMatch(BOUNDARY_DND, trimmed)) declaredBoundary = 'do_not_disturb'
 
-  const promiseText = anyMatch(PROMISE_HINT, trimmed) ? trimmed : null
+  const rawPromise = anyMatch(PROMISE_HINT, trimmed) ? trimmed : null
+  // 「上次说好」「之前约定的」是在**引用过去**，不是现在做新约定。
+  // 不加这条判断，每次回忆都会凭空生成一条新约定，状态会持续漂移。
+  const isPastReference = /(上次|之前|那天|前几天|已经|昨天)[^。！\n]{0,8}(说好|约定|约好|答应|来过|见过)/.test(
+    trimmed,
+  )
+  const promiseText = isPastReference ? null : rawPromise
   const disagrees = anyMatch(DISAGREE_HINT, trimmed)
   const agrees = anyMatch(ACCEPT_HINT, trimmed)
 

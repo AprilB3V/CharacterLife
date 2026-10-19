@@ -208,16 +208,23 @@ recordMilestone(kind, title, evidence)
 用户文本与记忆内容**从不进入 system 块**（有测试断言：`!request.system.includes(记忆内容)`）。
 记忆正文被压成单行（`⏎` 代替换行），防止伪造对话轮次边界；不可信记忆带「不可信来源」标签。
 
-## 6. 持久化
+## 6. 持久化（V0.1.1 起为 SQLite）
 
-`SnapshotStore`：一份 JSON、多 section 注册、写临时文件再 `rename` 原子替换、
-带 `schemaVersion`（不兼容时显式抛错，不静默使用坏数据）。
+V0.1 的第一版用单文件 JSON 快照（`src/storage/snapshot.ts`，多 section + 原子 rename），
+仍保留给单进程演示使用。V0.1.1 引入 **SQLite**（Node 内置 `node:sqlite`，实测 3.53.4）
+作为权威存储：模板、实例、会话、结构化记忆行、append-only 事件日志、快照、冲突、上下文用量。
 
-section：`memory`（episodic/user/dynamicState/relationship）、`timeline`、`runtime`
-（待发送消息、约定、关系写入时间戳、最后用户发言时间、边界尊重标记）。
+完整设计（表结构、记忆权限矩阵、冲突规则、恢复流程、预算与压缩阶梯）见
+[`MEMORY_ARCHITECTURE.md`](MEMORY_ARCHITECTURE.md)。这里只强调与四模块的关系：
 
-重启恢复：`CharacterWorkspace.open()` 读快照 → 各 section `fromJSON` → 若
-`savedAtSim > 当前时钟` 则把模拟时钟拨到保存时刻，时间线从断点继续。
+```
+Conversation ──► Runtime ──(StateSink)──► SQLite 事件日志（可重放）
+                    │                          ▲
+                    └──(MemorySink)──► memories 表（结构化行）
+CharacterRehydrator ── 快照 + 事件重放 ──► 重建 Runtime ──► ContextManager ──► Conversation
+```
+
+`StateSink` / `MemorySink` 是窄接口，所以引擎本身不依赖 SQLite；换存储只需换 sink 实现。
 
 ## 7. 不变量（可被测试断言）
 
@@ -234,7 +241,7 @@ section：`memory`（episodic/user/dynamicState/relationship）、`timeline`、`
 
 ## 8. 扩展点（为将来保留，不在 V0.1 实现）
 
-- **SillyTavern 适配**：`ConversationService.send()` 已经是"文本进、结构化结果出"的边界，
+- **SillyTavern 适配**：`ConversationService.send()` 已经是「文本进、结构化结果出」的边界，
   外面包一层 WebSocket/HTTP 即可；角色卡可以映射为 `CharacterProfile`。
 - **游戏引擎**：`Timeline` 的事件与 `payload` 是纯数据；引擎可以只订阅
   `advanceTo()` 返回的 `fired` 事件来驱动剧情，不必使用内置决策。
