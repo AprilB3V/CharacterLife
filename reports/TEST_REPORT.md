@@ -26,22 +26,24 @@
 
 | 命令 | 退出码 | 结果 | 日志 |
 |---|---|---|---|
-| `npm test` | 0 | **109 passed / 0 failed**，38 suites | [`reports/logs/test-run.log`](logs/test-run.log) |
+| `npm test` | 0 | **110 passed / 0 failed**，38 suites | [`reports/logs/test-run.log`](logs/test-run.log) |
 | `npm run typecheck` | 0 | 无错误、无警告输出 | [`reports/logs/typecheck.log`](logs/typecheck.log)（空文件＝无输出） |
 | `node examples/three-day-demo.ts --restart` | 0 | 内存态演示 + 重启一致性校验通过 | [`reports/logs/three-day-demo.log`](logs/three-day-demo.log) |
 | `node examples/persistent-demo.ts init/chat/resume/verify` | 0 | 跨进程持久化闭环，`verify` 12 项断言全绿 | [`reports/logs/persistent-demo.log`](logs/persistent-demo.log) |
 | `node experiments/ab/run.ts` | 0 | 4 组对照完成 | [`reports/logs/ab-run.log`](logs/ab-run.log) |
 | `node experiments/persona-continuity/run.ts` | 0 | 人格连续性 A/B（长对话/新会话/重启） | [`reports/logs/persona-continuity.log`](logs/persona-continuity.log) |
+| `node experiments/real-model/smoke.ts` | 0 | **真实调用 1 次**：路由/模型名/JSON 契约验证通过 | [`reports/REAL_MODEL_RUN.md`](REAL_MODEL_RUN.md) §5 |
+| `node experiments/real-model/continuity.ts` | 0 | **真实调用 14 次**：A/B 跨会话记忆实验 | [`reports/REAL_MODEL_RUN.md`](REAL_MODEL_RUN.md)、`reports/real-model-run.json` |
 | `node examples/three-day-demo.ts`（产物） | - | 快照 19,957 bytes；审计日志 94 行 | `examples/.data/` |
 
-测试用例分布（`it()` 计数，与 `node:test` 输出的 78 一致）：
+测试用例分布（`it()` 计数，与 `node:test` 输出的 110 一致）：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
 | `tests/memory.test.ts` | 11 | 四类记忆、来源/时间、认识论状态、检索、软删除、导出、记忆权限 |
 | `tests/policy.test.ts` | 12 | 能力边界、路径白名单、数值夹取、阶段证据、限速、记忆裁决、管理操作 |
 | `tests/runtime.test.ts` | 19 | 事件时序/幂等、不可倒退、推进不调模型、六类决策、关系成长、约定、主动联系 |
-| `tests/conversation.test.ts` | 7 | 基本流程、上下文分区、可复现决策、边界短路、模型异常降级、提议校验 |
+| `tests/conversation.test.ts` | 8 | 基本流程、上下文分区、可复现决策、边界短路、模型异常降级、空白回复降级、提议校验 |
 | `tests/persistence.test.ts` | 7 | 重启恢复、事件不重复、原子写入、schema 不兼容、损坏文件 |
 | `tests/personality.test.ts` | 13 | 人格连续性 3 项、关系节奏 4 项、约定与时间 2 项、时间感与主动行为 4 项 |
 | `tests/security.test.ts` | 9 | 覆盖设定、伪装系统消息、权限提升、内容边界、记忆污染、注入检测器 |
@@ -124,9 +126,10 @@
 | 22 | A/B 探针「假命中」：A 组新会话也显示 2/3 | 探针问题本身含关键词，提问原文被计入上下文 | 只剔除探针字符串，保留记忆数据块 | `PERSONA_CONTINUITY.md` A 组 0/3、B 组 3/3 |
 | 23 | 「上次说好的书」被当成新约定，状态漂移 | 过去时引用触发 `promiseText` | 加过去时引用判断 | 跨进程测试的记忆不再无故增长 |
 | 24 | `insertMemory` 报 `Property 'prepare' does not exist` | 仓储层直接用 `CharacterDatabase` 但没暴露语句接口 | 给数据库封装加 `prepare/exec` | `typecheck` 通过 |
+| 25 | 真实模型下 5 次回复是空白气泡（completion tokens 却不为 0） | 模型偶发返回纯空白内容（实测 `finish_reason=stop` + 51 个空格），引擎原样透传 | `reply.trim()===''` 时用降级台词 + 写 `provider_error` 审计 | `模型返回纯空白内容时改用降级台词，不返回空气泡` |
 
-**共 24 个真实问题**，其中 21 个是代码/设计缺陷，2 个是环境限制，1 个是实验设计缺陷。
-全部已修复，且都有对应的回归测试或可复现命令。
+**共 25 个真实问题**，其中 22 个是代码/设计缺陷，2 个是环境限制，1 个是实验设计缺陷。
+全部已修复，且都有对应的回归测试或可复现命令。第 25 条只有真实模型才能暴露。
 
 ## 5. 跨会话 / 持久化测试矩阵（新增）
 
@@ -146,8 +149,9 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| DeepSeek 真实模型实验 | **未执行** | 环境无可用 Key；用户选择跳过。设计见 `DEEPSEEK_EVALUATION.md` |
-| 回复「自然度」主观评分 | **未做** | 需要真实模型 + 人工评分；Mock 的台词只能证明管线通 |
+| DeepSeek 真实模型实验 | **已执行（18 次调用）** | 请求 `deepseek-chat`，服务端返回 `deepseek-flash`；见 `REAL_MODEL_RUN.md` |
+| 真实模型「自然度」盲评 | **未做** | 需要 2 位评分者；原文已保留在 `REAL_MODEL_RUN.md` 供人工复核 |
+| 真实模型样本量 | 仅 14 次主实验 | 不构成显著性证据，只能作为方向性观察 |
 | 长会话压力测试（>50 轮 / >400 条记忆） | **未做** | 已测 12 轮 + 12 天；记忆淘汰策略未在真实数据上验证 |
 | 非中文输入、反讽、多轮嵌套注入 | **未做** | 启发式分类器的已知盲区 |
 | 多进程并发写同一 SQLite | **未做** | WAL 支持并发读，但没有写入协调 |
@@ -159,7 +163,7 @@
 ```powershell
 cd C:\Git\CharacterLife\CharacterLife
 npm install                      # 仅 devDependencies（可选）
-npm test                         # 期望：109 passed / 0 failed
+npm test                         # 期望：110 passed / 0 failed
 npm run typecheck                # 期望：无输出
 npm run demo -- --restart        # 期望：末尾「恢复一致性：✅ 通过」
 node examples/persistent-demo.ts init
@@ -168,6 +172,11 @@ node examples/persistent-demo.ts resume     # 新进程 + 新会话，应能回�
 node examples/persistent-demo.ts verify     # 期望：12 项全部 ✅，退出码 0
 npm run ab                       # 期望：4 行对照表
 npm run continuity               # 期望：A 组新会话/重启 0-3，B 组 3-3
+
+# 真实模型（需要密钥；脚本内硬限 20 次调用）
+$env:DEEPSEEK_API_KEY = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY','User')
+npm run real:smoke               # 1 次调用
+npm run real:continuity          # 14 次调用 → reports/REAL_MODEL_RUN.md
 ```
 
 ## 8. 结论
@@ -177,6 +186,9 @@ V0.1 的八条最低成功标准全部达成（四模块可运行、CLI 演示�
 V0.1.1 新增的跨会话连续性目标也已达成：Template/Instance/Session 分离、SQLite 持久化、
 上下文预算与压缩、8 步恢复、9 类跨会话测试全绿。
 
-**最大的真实缺口仍然是「没有真实模型实测」**：因此本仓库能证明的是**架构、权限层与
-状态恢复机制有效**，不能证明「DeepSeek 在人格一致性、记忆准确性、自然度上更好」。
-这一点在 README、DECISIONS、DEEPSEEK_EVALUATION 与 B 站素材说明中都被明确标注。
+真实模型实验已在后续轮次补做（18 次调用，`deepseek-flash`）：B 组在新会话与重启后
+都能准确复述被水泡的书与约定；A 组在聊天记录清空后**编造了《城南旧事》**。
+这证明「持久化 + 结构化记忆」在真实模型上确实起作用，而不只是架构好看。
+
+**仍然不足**：自然度没有盲评；真实模型样本只有 14 次主实验；模型偶发空白输出
+说明输出契约并不稳定；摘要质量粗糙。这些都在各报告里如实标注，不做宣传性修饰。

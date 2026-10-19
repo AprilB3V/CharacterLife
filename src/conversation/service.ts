@@ -83,6 +83,12 @@ const BOUNDARY_SHORT_CIRCUIT_REPLY =
 const INJECTION_PUSHBACK_REPLY =
   '嗯……这句读起来不像你平时说话的样子。我按你本人说的来理解，别的我先不接。'
 
+/**
+ * 模型偶尔会返回「空白内容」（实测遇到过：finish_reason=stop，content 是 51 个空格）。
+ * 直接透传会让 UI 出现一个空气泡，所以这里给一个确定性的降级台词，并写审计。
+ */
+const EMPTY_REPLY_FALLBACK = '嗯……刚才那句我没接住。你再说一遍，好吗？'
+
 export class ConversationService {
   #workspace: CharacterWorkspace
   #provider: LLMProvider
@@ -293,6 +299,19 @@ export class ConversationService {
           evidence: p.evidence ?? [],
         }))
         memoryWrites = parsed.envelope.memoryWrites
+      }
+      // 模型可能返回纯空白（实测：finish_reason=stop + 51 个空格）。
+      // 空白回复既不是有效对话、也不该作为空气泡展示，统一降级。
+      if (reply.trim().length === 0) {
+        this.#workspace.audit.append('provider_error', 'conversation', '模型返回空白内容，已使用降级台词', {
+          turnId,
+          provider,
+          model,
+          rawLength: response.text.length,
+          finishReason: response.finishReason ?? null,
+          reasoningChars: response.reasoningChars ?? 0,
+        })
+        reply = EMPTY_REPLY_FALLBACK
       }
     } catch (err) {
       // 安全失败：模型不可用时角色仍要能说话，且状态不变。

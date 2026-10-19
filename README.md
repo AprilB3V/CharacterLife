@@ -135,7 +135,7 @@ npm run continuity   # A：纯 Prompt + 近期对话 / B：持久化人格+状�
 ## 8. 测试
 
 ```bash
-npm test           # 109 项测试（内存中运行，见下方说明）
+npm test           # 110 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 
@@ -172,9 +172,19 @@ $env:DEEPSEEK_BASE_URL = "https://api.deepseek.com"      # 可选
 `DeepSeekProvider` 走官方 `POST /chat/completions`，用 `response_format: {type:'json_object'}`
 拿结构化信封。**仓库内不含任何真实 Key**，`.env*` 已在 `.gitignore` 中。
 
-> ⚠️ 交付时**没有执行真实 DeepSeek 调用**：本次开发环境中脚本读不到可用密钥，
-> 用户选择跳过真实模型实验。因此 `reports/` 中所有对话结果都来自 Mock，不是模型实测。
-> 详见 [`reports/DEEPSEEK_EVALUATION.md`](reports/DEEPSEEK_EVALUATION.md)。
+已在真实密钥下验证过（18 次调用，详见 [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)）：
+
+```powershell
+$env:DEEPSEEK_API_KEY = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY','User')
+npm run real:smoke        # 1 次调用：确认路由 / 模型名 / JSON 契约
+npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内硬限 20 次）
+```
+
+- 请求 `deepseek-chat` → 服务端返回 **`deepseek-flash`**；
+- 平均延迟约 1.2 s；14 次主实验共 11,869 prompt / 1,588 completion tokens；
+- **B 组在新会话与重启后都准确复述了「被水泡的《陶庵梦忆》」与「明天下午的约定」**；
+- **A 组（纯 Prompt）在聊天记录清空后编造了《城南旧事》** —— 正是项目要解决的问题 4；
+- 真实模型偶发返回**纯空白内容**，引擎已加降级台词并写审计（有回归测试）。
 
 ## 10. 目录结构
 
@@ -215,6 +225,7 @@ $env:DEEPSEEK_BASE_URL = "https://api.deepseek.com"      # 可选
 - [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)：真实测试结果与开发中真实失败案例
 - [`reports/DEEPSEEK_EVALUATION.md`](reports/DEEPSEEK_EVALUATION.md)：本次 DeepSeek 工程表现与局限
 - [`reports/AB_RESULTS.md`](reports/AB_RESULTS.md)：A/B 对照实验数据（Mock）
+- [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)：真实 DeepSeek 调用记录（18 次，含逐次原文与空回复诊断）
 - [`reports/PERSONA_CONTINUITY.md`](reports/PERSONA_CONTINUITY.md)：人格连续性 A/B（长对话/新会话/重启）
 - [`media/BILIBILI_NOTES.md`](media/BILIBILI_NOTES.md)：视频素材说明
 

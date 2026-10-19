@@ -99,6 +99,11 @@ export class TraditionalCharacterCard {
     return { traits: [...this.#state.traits], interests: [...this.#state.interests], intimacy: this.#state.intimacy }
   }
 
+  /** 传统角色卡的「新会话」：清空聊天记录（不保留任何状态以外的上下文）。 */
+  resetHistory(): void {
+    this.#history = []
+  }
+
   async send(userText: string): Promise<CardTurnResult> {
     const before = this.state
     const system = cardSystemPrompt(this.#profile, this.#state)

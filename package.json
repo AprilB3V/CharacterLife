@@ -12,6 +12,8 @@
     "demo:persistent": "node examples/persistent-demo.ts",
     "ab": "node experiments/ab/run.ts",
     "continuity": "node experiments/persona-continuity/run.ts",
+    "real:smoke": "node experiments/real-model/smoke.ts",
+    "real:continuity": "node experiments/real-model/continuity.ts",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
     "demo:persistent": "node examples/persistent-demo.ts",

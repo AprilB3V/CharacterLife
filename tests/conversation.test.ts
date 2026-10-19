@@ -27,6 +27,23 @@ class GarbageProvider implements LLMProvider {
   }
 }
 
+/** 真实模型实测出现过：finish_reason=stop，但 content 是纯空白。 */
+class WhitespaceProvider implements LLMProvider {
+  readonly name = 'whitespace'
+  readonly model = 'whitespace-1'
+  async complete(): Promise<LLMResponse> {
+    return {
+      text: ' '.repeat(51),
+      provider: 'whitespace',
+      model: 'whitespace-1',
+      usage: { promptTokens: 100, completionTokens: 51 },
+      latencyMs: 2,
+      finishReason: 'stop',
+      reasoningChars: 0,
+    }
+  }
+}
+
 describe('Conversation · 基本流程', () => {
   it('一轮对话返回回复、决策、用量与检索到的记忆', async () => {
     const rig = createRig()
@@ -113,6 +130,16 @@ describe('Conversation · 安全失败', () => {
     assert.equal(result.reply, '我不太会说 JSON，就这样回答你。')
     assert.equal(result.appliedProposals.length, 0)
     assert.ok(rig.workspace.audit.count('provider_error') >= 1)
+  })
+
+  it('模型返回纯空白内容时改用降级台词，不返回空气泡', async () => {
+    const rig = createRig({ provider: new WhitespaceProvider() })
+    const result = await rig.service.send('我们之前说好的事还记得吗？')
+    assert.ok(result.reply.trim().length > 0, '不能把 51 个空格当回复')
+    assert.match(result.reply, /再说一遍/)
+    assert.equal(rig.workspace.audit.count('provider_error') >= 1, true)
+    const events = rig.workspace.audit.filter('provider_error')
+    assert.ok(events.some((e) => String(e.summary).includes('空白')))
   })
 })
 

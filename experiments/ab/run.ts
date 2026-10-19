@@ -342,7 +342,7 @@ async function main(): Promise<void> {
   const note =
     '> ⚠️ 本表由 **Mock Provider** 生成（离线、确定性、零费用），衡量的是**运行时架构**：\n' +
     '> 谁能写状态、记忆是否持久、权限是否生效。它 **不是** DeepSeek 真实模型的实测结果，\n' +
-    '> 不含任何真实 API 调用或费用。真实模型实验见 reports/DEEPSEEK_EVALUATION.md（当前：未执行）。\n' +
+    '> 不含任何真实 API 调用或费用。真实模型实验见 reports/REAL_MODEL_RUN.md（已执行 18 次调用）。\n' +
     '>\n' +
     '> 延迟列在 Mock 下没有参考意义（内存内同步返回，多次运行抖动 0.0–0.3 ms）；\n' +
     '> token 列是按字符量估算的，不是真实计费。'

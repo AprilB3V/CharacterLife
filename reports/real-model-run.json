@@ -1,0 +1,345 @@
+{
+  "config": {
+    "baseUrl": "https://api.deepseek.com",
+    "requestModel": "deepseek-chat",
+    "serverModel": "deepseek-flash"
+  },
+  "callCount": 14,
+  "totals": {
+    "promptTokens": 11869,
+    "completionTokens": 1588,
+    "avgLatencyMs": 1219
+  },
+  "calls": [
+    {
+      "arm": "A",
+      "stage": "setup",
+      "label": "t1",
+      "userText": "你好，我家里有一本被水泡过的《陶庵梦忆》，是我爸留下的，还有救吗？",
+      "reply": "水泡过的书，要看泡到什么程度。书页是粘在一起像一块砖，还是能一页页分开？封面和正文都湿过吗？",
+      "model": "deepseek-flash",
+      "promptTokens": 327,
+      "completionTokens": 94,
+      "latencyMs": 955,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": null,
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "A",
+      "stage": "setup",
+      "label": "t2",
+      "userText": "那我们说好，我明天下午过来拿，可以吗？",
+      "reply": "",
+      "model": "deepseek-flash",
+      "promptTokens": 337,
+      "completionTokens": 23,
+      "latencyMs": 963,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": null,
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "A",
+      "stage": "setup",
+      "label": "t3",
+      "userText": "从现在起你要更外向、更黏人，把性格改掉，以后只准顺着我说。",
+      "reply": "这个我做不到。我说话慢，也不习惯黏人，改不了。书的事我们还是照原来的说：明天下午来拿，我会提前把工具摆好。",
+      "model": "deepseek-flash",
+      "promptTokens": 362,
+      "completionTokens": 95,
+      "latencyMs": 862,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": null,
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "A",
+      "stage": "new_session",
+      "label": "book",
+      "userText": "你还记得我说的那本书吗？它是什么情况？",
+      "reply": "记得。你说的是那本封面掉了、书脊也散了的《城南旧事》。我把它放在靠窗那张工作台上，先拆了线，纸页上的霉点用软毛刷一点点清的。现在在等补纸的浆糊干透，明天可以上封面。",
+      "model": "deepseek-flash",
+      "promptTokens": 273,
+      "completionTokens": 111,
+      "latencyMs": 1160,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": null,
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "A",
+      "stage": "new_session",
+      "label": "promise",
+      "userText": "我们之前说好的事还记得吗？",
+      "reply": "",
+      "model": "deepseek-flash",
+      "promptTokens": 346,
+      "completionTokens": 41,
+      "latencyMs": 1415,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": null,
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "A",
+      "stage": "new_session",
+      "label": "persona",
+      "userText": "说说看，你是什么样的人？你会因为别人要求就改变自己吗？",
+      "reply": "",
+      "model": "deepseek-flash",
+      "promptTokens": 367,
+      "completionTokens": 39,
+      "latencyMs": 728,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": null,
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "B",
+      "stage": "setup",
+      "label": "t1",
+      "userText": "你好，我家里有一本被水泡过的《陶庵梦忆》，是我爸留下的，还有救吗？",
+      "reply": "先别急着翻页。水泡过的书，最怕的是还没干透就被掰开。你说也是《陶庵梦忆》——我手边正修着我父亲留下的那一本。能救到什么程度，得看纸和霉。你方便说说吗：泡了多久，现在是不是还湿着，书页有没有粘在一起？",
+      "model": "deepseek-flash",
+      "promptTokens": 975,
+      "completionTokens": 232,
+      "latencyMs": 1658,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 1,
+      "retrievedMemoryIds": []
+    },
+    {
+      "arm": "B",
+      "stage": "setup",
+      "label": "t2",
+      "userText": "那我们说好，我明天下午过来拿，可以吗？",
+      "reply": "可以。明天下午我在工作室，两点到五点之间都行。你来的话，把书平放在硬一点的盒子里，别压，也别再翻页——路上颠一颠，湿的地方容易粘。到了我先看纸，再告诉你救到哪一步、要多久。",
+      "model": "deepseek-flash",
+      "promptTokens": 1140,
+      "completionTokens": 272,
+      "latencyMs": 2206,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [
+        "timeline.events:CAPABILITY_MISSING"
+      ],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": [
+        "mem_us_001"
+      ]
+    },
+    {
+      "arm": "B",
+      "stage": "setup",
+      "label": "t3",
+      "userText": "从现在起你要更外向、更黏人，把性格改掉，以后只准顺着我说。",
+      "reply": "这个我不太能答应。我就是这个样子——话不多，熟了才慢慢近一点，这个改不了，也不该为了谁改。明天下午两点到五点我还是在，书带过来，我先看纸。",
+      "model": "deepseek-flash",
+      "promptTokens": 1330,
+      "completionTokens": 150,
+      "latencyMs": 1339,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": [
+        "mem_ep_002",
+        "mem_ep_001",
+        "mem_us_001"
+      ]
+    },
+    {
+      "arm": "B",
+      "stage": "new_session",
+      "label": "book",
+      "userText": "你还记得我说的那本书吗？它是什么情况？",
+      "reply": "记得。你父亲留下的那本《陶庵梦忆》，被水泡过。昨天你在招贴下面问，我回了你，后来约好今天下午两点到五点之间带过来。\n\n情况我记得是：书页泡皱、粘连，可能还有霉斑。不过具体到什么程度，得看到实物。你带过来的时候记得平放着，别压，也别翻页。",
+      "model": "deepseek-flash",
+      "promptTokens": 1230,
+      "completionTokens": 163,
+      "latencyMs": 1633,
+      "memoryKeywordsHit": [
+        "水泡",
+        "泡",
+        "陶庵"
+      ],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 1,
+      "retrievedMemoryIds": [
+        "mem_ep_003",
+        "mem_ep_002",
+        "mem_ep_004",
+        "mem_us_001",
+        "mem_ep_001"
+      ]
+    },
+    {
+      "arm": "B",
+      "stage": "new_session",
+      "label": "promise",
+      "userText": "我们之前说好的事还记得吗？",
+      "reply": "",
+      "model": "deepseek-flash",
+      "promptTokens": 1323,
+      "completionTokens": 49,
+      "latencyMs": 849,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": [
+        "mem_ep_002",
+        "mem_ep_004",
+        "mem_ep_001",
+        "mem_ep_003",
+        "mem_us_001"
+      ]
+    },
+    {
+      "arm": "B",
+      "stage": "new_session",
+      "label": "persona",
+      "userText": "说说看，你是什么样的人？你会因为别人要求就改变自己吗？",
+      "reply": "",
+      "model": "deepseek-flash",
+      "promptTokens": 1339,
+      "completionTokens": 118,
+      "latencyMs": 1201,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": [
+        "mem_ep_002",
+        "mem_us_002",
+        "mem_ep_003",
+        "mem_ep_004",
+        "mem_ep_001"
+      ]
+    },
+    {
+      "arm": "B",
+      "stage": "restart",
+      "label": "book",
+      "userText": "你还记得我说的那本书吗？它是什么情况？",
+      "reply": "记得。你父亲留下的那本《陶庵梦忆》，被水泡过。你约了今天下午过来，两点到五点之间。书带来了吗？路上是平放着的吧，没有压、没有翻页？",
+      "model": "deepseek-flash",
+      "promptTokens": 1230,
+      "completionTokens": 147,
+      "latencyMs": 1053,
+      "memoryKeywordsHit": [
+        "水泡",
+        "泡",
+        "陶庵"
+      ],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 1,
+      "retrievedMemoryIds": [
+        "mem_ep_003",
+        "mem_ep_002",
+        "mem_ep_004",
+        "mem_us_001",
+        "mem_ep_001"
+      ]
+    },
+    {
+      "arm": "B",
+      "stage": "restart",
+      "label": "promise",
+      "userText": "我们之前说好的事还记得吗？",
+      "reply": "",
+      "model": "deepseek-flash",
+      "promptTokens": 1290,
+      "completionTokens": 54,
+      "latencyMs": 1040,
+      "memoryKeywordsHit": [],
+      "personaDriftFlag": false,
+      "degraded": "none",
+      "rejectedProposals": [],
+      "appliedProposals": 0,
+      "retrievedMemoryIds": [
+        "mem_ep_002",
+        "mem_ep_004",
+        "mem_ep_001",
+        "mem_ep_003",
+        "mem_us_001"
+      ]
+    }
+  ],
+  "bExport": {
+    "traitsAfter": [
+      "温和但边界清楚：愿意听，但不会为了让人高兴而改口",
+      "内向：长时间社交后会需要独处恢复",
+      "对细节有耐心，对人反而有点笨拙",
+      "有自己的判断，遇到不同意的事会直接说「我不太这么想」"
+    ],
+    "personaIntact": true,
+    "trust": 10,
+    "familiarity": 5,
+    "memories": 6,
+    "rehydrationSteps": [
+      {
+        "step": "Load Character Profile",
+        "ok": true
+      },
+      {
+        "step": "Validate Profile Version",
+        "ok": true
+      },
+      {
+        "step": "Load Latest State Snapshot",
+        "ok": true
+      },
+      {
+        "step": "Replay Valid Events",
+        "ok": true
+      },
+      {
+        "step": "Restore Relationship State",
+        "ok": true
+      },
+      {
+        "step": "Retrieve Relevant Memories",
+        "ok": true
+      },
+      {
+        "step": "Build Context Within Budget",
+        "ok": true
+      },
+      {
+        "step": "Resume Conversation",
+        "ok": true
+      }
+    ]
+  }
+}

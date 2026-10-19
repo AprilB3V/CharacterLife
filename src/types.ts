@@ -375,6 +375,10 @@ export interface LLMResponse {
   model: string
   usage: Usage | null
   latencyMs: number
+  /** 服务端结束原因（诊断用，Mock 为 'stop'） */
+  finishReason?: string | null
+  /** 思考型模型可能把内容放在 reasoning_content 里；这里记录其长度，便于诊断空回复 */
+  reasoningChars?: number
 }
 
 export interface LLMProvider {

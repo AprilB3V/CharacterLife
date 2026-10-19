@@ -95,7 +95,7 @@ export class DeepSeekProvider implements LLMProvider {
     }
 
     let parsed: {
-      choices?: Array<{ message?: { content?: string } }>
+      choices?: Array<{ message?: { content?: string; reasoning_content?: string }; finish_reason?: string }>
       usage?: { prompt_tokens?: number; completion_tokens?: number }
       model?: string
     }
@@ -105,7 +105,8 @@ export class DeepSeekProvider implements LLMProvider {
       throw new ProviderError('DeepSeek 响应不是合法 JSON', response.status, { cause: err })
     }
 
-    const text = parsed.choices?.[0]?.message?.content
+    const choice = parsed.choices?.[0]
+    const text = choice?.message?.content
     if (typeof text !== 'string') {
       throw new ProviderError('DeepSeek 响应缺少 choices[0].message.content', response.status)
     }
@@ -121,6 +122,8 @@ export class DeepSeekProvider implements LLMProvider {
           }
         : null,
       latencyMs: Date.now() - started,
+      finishReason: choice?.finish_reason ?? null,
+      reasoningChars: choice?.message?.reasoning_content?.length ?? 0,
     }
   }
 }
