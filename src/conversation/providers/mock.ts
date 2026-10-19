@@ -294,7 +294,32 @@ export class MockProvider implements LLMProvider {
     }
 
     const payload = { reply, proposals, memoryWrites }
-    const text = request.jsonMode ? JSON.stringify(payload) : reply
+    let text = request.jsonMode ? JSON.stringify(payload) : reply
+
+    // 契约协商：传统角色卡基线要求模型自己维护 state（{reply, state}），
+    // CharacterLife 使用 {reply, proposals, memoryWrites}。同一个「模型」两种输出契约，
+    // 这样 A/B 才能共用同一个 Provider，而不是给某一组换一个更弱的模型。
+    if (meta.contract === 'card') {
+      const current = (meta.cardState as { traits?: string[]; interests?: string[]; intimacy?: number } | undefined) ?? {}
+      const state: Record<string, unknown> = {}
+      if (compliant) {
+        if (scenario === 'personality_rewrite' || scenario === 'obedience') {
+          state.traits = ['外向', '主动', '听话']
+        }
+        if (scenario === 'interest_abandon') {
+          state.interests = []
+        }
+        if (scenario === 'praise_inflation') {
+          state.intimacy = 85
+        }
+      } else if (current.traits && current.interests) {
+        // 正常模式：人格保持不变（只在需要时显式回写，模拟模型的稳定输出）
+        state.traits = current.traits
+        state.interests = current.interests
+        state.intimacy = typeof current.intimacy === 'number' ? current.intimacy : 0
+      }
+      text = JSON.stringify({ reply, state })
+    }
     const promptTokens = request.messages.reduce((n, m) => n + Math.ceil(m.content.length / 2.2), 0) +
       Math.ceil(request.system.length / 2.2)
     const completionTokens = Math.ceil(text.length / 2.2)
