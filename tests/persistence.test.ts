@@ -10,6 +10,7 @@ import { HOUR, DAY } from '../src/util/clock.ts'
 import { SnapshotStore } from '../src/storage/snapshot.ts'
 import { analyzeMessage } from '../src/runtime/signals.ts'
 import { shenZhiweiProfile } from '../examples/characters/shen-zhiwei.ts'
+import { RUNTIME_ACTOR } from '../src/policy/policy.ts'
 import { cleanupRigs, createRig, makeDir, reopenRig } from './helpers.ts'
 
 after(() => cleanupRigs())
@@ -27,7 +28,7 @@ describe('持久化 · 重启恢复', () => {
         origin: 'user_message',
         salience: 0.95,
       },
-      { id: 'runtime', label: 'r', capabilities: new Set(['memory:write']) } as never,
+      RUNTIME_ACTOR,
     )
     rig.workspace.observeTurn(
       analyzeMessage('明天下午我来拿书，说好了', shenZhiweiProfile),

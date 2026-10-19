@@ -11,6 +11,8 @@
     "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },

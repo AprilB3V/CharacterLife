@@ -19,7 +19,6 @@ import type {
   EpistemicStatus,
   PolicyCode,
   PolicyDecision,
-  ProposalOp,
   ProposalTarget,
   RelationshipState,
   StateProposal,

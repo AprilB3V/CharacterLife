@@ -10,7 +10,7 @@
  * 模型名与路由仅按官方文档配置，属于「未验证配置」。见 reports/DEEPSEEK_EVALUATION.md。
  */
 
-import type { LLMMessage, LLMProvider, LLMRequest, LLMResponse } from '../../types.ts'
+import type { LLMProvider, LLMRequest, LLMResponse } from '../../types.ts'
 
 export interface DeepSeekProviderOptions {
   apiKey: string

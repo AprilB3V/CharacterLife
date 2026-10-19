@@ -19,7 +19,7 @@ export type { IdFactory } from './util/ids.ts'
 export { detectInjectionMarkers, sanitizeForMemory, tokenize, lexicalOverlap } from './util/text.ts'
 
 /* 存储 */
-export { SnapshotStore, } from './storage/snapshot.ts'
+export { SnapshotStore } from './storage/snapshot.ts'
 export type { SnapshotSection, SnapshotMeta } from './storage/snapshot.ts'
 
 /* Memory */

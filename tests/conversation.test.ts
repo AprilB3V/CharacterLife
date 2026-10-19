@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../src/types.ts'
 import { cleanupRigs, createRig, SpyProvider } from './helpers.ts'
 import { MockProvider } from '../src/conversation/providers/mock.ts'
+import { RUNTIME_ACTOR } from '../src/policy/policy.ts'
 
 after(() => cleanupRigs())
 
@@ -38,7 +39,7 @@ describe('Conversation · 基本流程', () => {
         origin: 'user_message',
         salience: 0.9,
       },
-      { id: 'runtime', label: 'r', capabilities: new Set(['memory:write']) } as never,
+      RUNTIME_ACTOR,
     )
     const result = await rig.service.send('我家里那本书还能救吗？')
     assert.ok(result.reply.length > 0)
@@ -61,7 +62,7 @@ describe('Conversation · 基本流程', () => {
         origin: 'user_message',
         salience: 1,
       },
-      { id: 'runtime', label: 'r', capabilities: new Set(['memory:write']) } as never,
+      RUNTIME_ACTOR,
     )
     await rig.service.send('你还记得我喜欢什么颜色吗？')
     const request = spy.lastRequest as LLMRequest

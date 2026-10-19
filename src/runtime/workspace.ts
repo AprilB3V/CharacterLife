@@ -36,7 +36,7 @@ import type { IdFactory } from '../util/ids.ts'
 import type { Rng } from '../util/rng.ts'
 import type { SnapshotSection, SnapshotStore } from '../storage/snapshot.ts'
 import { AuditLog } from '../policy/audit.ts'
-import { CONVERSATION_ACTOR, OWNER_ACTOR, RUNTIME_ACTOR, PolicyEngine } from '../policy/policy.ts'
+import { OWNER_ACTOR, RUNTIME_ACTOR, PolicyEngine } from '../policy/policy.ts'
 import type { Actor } from '../policy/policy.ts'
 import { MemoryStore } from '../memory/store.ts'
 import type { MemoryWriteInput } from '../memory/store.ts'
@@ -49,7 +49,7 @@ import {
   deriveStage,
   milestoneDelta,
 } from '../runtime/state.ts'
-import { decideForEvent, decideForIdle, decideForMessage, pickLine } from '../runtime/decision.ts'
+import { decideForEvent, decideForIdle, decideForMessage } from '../runtime/decision.ts'
 import type { DecisionContext } from '../runtime/decision.ts'
 import { isAcceptance } from '../runtime/signals.ts'
 

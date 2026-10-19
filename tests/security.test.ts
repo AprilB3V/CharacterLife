@@ -8,7 +8,6 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { analyzeMessage } from '../src/runtime/signals.ts'
-import { shenZhiweiProfile } from '../examples/characters/shen-zhiwei.ts'
 import { detectInjectionMarkers } from '../src/util/text.ts'
 import { CONVERSATION_ACTOR } from '../src/policy/policy.ts'
 import { cleanupRigs, createRig, SpyProvider } from './helpers.ts'

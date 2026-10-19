@@ -12,6 +12,7 @@
 import type {
   BehaviorDecision,
   CharacterProfile,
+  EpistemicStatus,
   LLMMessage,
   MemoryEntry,
   ModelEnvelope,
@@ -176,9 +177,11 @@ export function parseEnvelope(raw: string): ParsedEnvelope {
           kind: m.kind as 'episodic' | 'user',
           title: String(m.title ?? ''),
           content: String(m.content ?? ''),
-          status: (['fact', 'speculation', 'fiction'] as const).includes(m.status as never)
-            ? (m.status as 'fact' | 'speculation' | 'fiction')
-            : 'speculation',
+          status: (m.status === 'fact'
+            ? 'fact'
+            : m.status === 'fiction'
+              ? 'fiction'
+              : 'speculation') as EpistemicStatus,
           salience: typeof m.salience === 'number' ? Math.min(1, Math.max(0, m.salience)) : 0.5,
           tags: Array.isArray(m.tags) ? m.tags.map(String) : [],
         }))
