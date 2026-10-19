@@ -1,0 +1,21 @@
+{
+  "name": "characterlife",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.1）",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "demo": "node examples/three-day-demo.ts",
+    "ab": "node experiments/ab/run.ts",
+    "test": "node --test --test-isolation=none tests/*.test.ts",
+    "test:builtin": "node --test tests/",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.2"
+  }
+}
