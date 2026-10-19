@@ -37,9 +37,17 @@ import {
 } from '../adapters/sillytavern/openai.ts'
 import { OWNER_ACTOR } from '../policy/policy.ts'
 
+export interface ApiCredential {
+    token: string
+    platformUserId: string
+}
+
 export interface ApiServerOptions {
   runtime: RuntimeBundle
-  token: string
+    /** Local credential, scoped exclusively to stIdentityUserId. */
+    token?: string
+    /** Server-provisioned identity credentials; mutually exclusive with token. */
+    credentials?: readonly ApiCredential[]
   host?: string
   port?: number
   /** 允许绑定非回环地址（默认 false；公网部署不在本次授权范围） */
@@ -82,14 +90,34 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   if (!LOOPBACK.has(host) && !opts.allowNonLoopback) {
     throw new Error(`拒绝绑定非回环地址 ${host}：需要显式 allowNonLoopback=true（公网部署不在本次授权范围）`)
   }
-  if (!opts.token || opts.token.length < 8) {
-    throw new Error('必须提供至少 8 位的 API Token（环境变量 CHARACTERLIFE_API_TOKEN）')
-  }
+    if (opts.token !== undefined && opts.credentials !== undefined) {
+        throw new Error('token 与 credentials 不能同时配置')
+    }
+    const configuredCredentials = opts.credentials ?? (
+        opts.token === undefined ? [] : [{ token: opts.token, platformUserId: opts.stIdentityUserId ?? 'local-default' }]
+    )
+    if (configuredCredentials.length === 0) {
+        throw new Error('必须提供 API Token 或身份凭据列表')
+    }
+    // Snapshot the allowlist so caller mutations cannot change an authenticated scope.
+    const credentials = configuredCredentials.map((credential) => {
+        if (typeof credential.token !== 'string' || credential.token.trim() !== credential.token || credential.token.length < 8
+            || typeof credential.platformUserId !== 'string' || !credential.platformUserId.trim()
+            || credential.platformUserId.trim() !== credential.platformUserId) {
+            throw new Error('凭据需要至少 8 位 Token 和非空身份')
+        }
+        return {
+            tokenHash: createHash('sha256').update(credential.token).digest('hex'),
+            platformUserId: credential.platformUserId,
+        }
+    })
+    if (new Set(credentials.map((credential) => credential.tokenHash)).size !== credentials.length) {
+        throw new Error('API Token 不得重复配置')
+    }
 
   const { runtime } = opts
   const bodyLimit = opts.bodyLimitBytes ?? 256 * 1024
   const modelId = opts.modelId ?? 'characterlife/shen-zhiwei'
-  const stUser = opts.stIdentityUserId ?? 'local-default'
   const logger = opts.logger ?? ((line: string) => console.log(line))
   const windowMs = opts.rateLimit?.windowMs ?? 60_000
   const maxPerWindow = opts.rateLimit?.max ?? 120
@@ -140,36 +168,35 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
     }
   }
 
-  function authenticate(req: IncomingMessage): void {
-    const header = req.headers.authorization
-    if (typeof header !== 'string' || !header.startsWith('Bearer ')) {
-      throw new HttpError(401, 'UNAUTHORIZED', '缺少 Bearer Token')
+    function authenticate(req: IncomingMessage): { platformUserId: string; tokenHash: string } {
+        const header = req.headers.authorization
+        if (typeof header !== 'string' || !header.startsWith('Bearer ')) {
+            throw new HttpError(401, 'UNAUTHORIZED', '缺少或无效的 Bearer Token')
+        }
+        const providedHash = createHash('sha256').update(header.slice('Bearer '.length).trim()).digest('hex')
+        let principal: (typeof credentials)[number] | undefined
+        for (const credential of credentials) {
+            if (safeEqual(providedHash, credential.tokenHash)) principal = credential
+        }
+        if (!principal) throw new HttpError(401, 'UNAUTHORIZED', '缺少或无效的 Bearer Token')
+        return principal
     }
-    const provided = header.slice('Bearer '.length).trim()
-    if (!safeEqual(provided, opts.token)) {
-      throw new HttpError(401, 'UNAUTHORIZED', 'Token 无效')
-    }
-  }
 
-  /** 解析当前请求代表的平台身份（酒馆默认单用户；显式身份必须是已绑定的）。 */
-  function resolveIdentity(
-    req: IncomingMessage,
-    body?: Record<string, unknown>,
-  ): { platformUserId: string; displayName?: string } {
-    const requested = headerValue(req.headers['x-characterlife-identity']) ?? (typeof body?.identity === 'string' ? body.identity : null)
-    if (requested && requested !== stUser) {
-      const binding = runtime.platformStore.getBinding('sillytavern', requested)
-      if (!binding) {
-        throw new HttpError(
-          400,
-          'IDENTITY_NOT_BOUND',
-          `身份 ${requested} 尚未绑定；请先用 /v1/identity/redeem 消费绑定码`,
-        )
-      }
-      return { platformUserId: requested }
+    // Client identity fields are assertions, never authority to select a subject.
+    function resolveIdentity(
+        req: IncomingMessage,
+        principal: { platformUserId: string },
+        body?: Record<string, unknown>,
+    ): { platformUserId: string; displayName?: string } {
+        const requestedHeader = req.headers['x-characterlife-identity']
+        const requestedBody = body?.identity
+        for (const requested of [requestedHeader, requestedBody]) {
+            if (requested !== undefined && requested !== principal.platformUserId) {
+                throw new HttpError(403, 'IDENTITY_MISMATCH', '请求身份与凭据授权身份不符')
+            }
+        }
+        return { platformUserId: principal.platformUserId }
     }
-    return { platformUserId: stUser, displayName: 'SillyTavern 本地用户' }
-  }
 
   function json(res: ServerResponse, status: number, payload: unknown): void {
     const text = JSON.stringify(payload)
@@ -189,7 +216,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
       json(res, 400, { error: { message: err.message, type: 'invalid_request_error', code: 'BAD_REQUEST' } })
       return
     }
-    json(res, 500, { error: { message: (err as Error).message, type: 'server_error', code: 'INTERNAL' } })
+    json(res, 500, { error: { message: '服务暂时不可用', type: 'server_error', code: 'INTERNAL' } })
   }
 
   async function runTurn(
@@ -198,7 +225,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   ): Promise<{ reply: string; instanceId: string; sessionId: string; promptTokens: number; completionTokens: number }> {
     const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices)
     if (!outcome.reply) {
-      throw new HttpError(502, 'NO_REPLY', outcome.reason ?? '引擎未产生回复')
+      throw new HttpError(502, 'NO_REPLY', '引擎未产生回复')
     }
     return {
       reply: outcome.reply,
@@ -233,10 +260,10 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
           return
         }
 
-        authenticate(req)
+        const principal = authenticate(req)
+        resolveIdentity(req, principal)
 
-        const tokenKey = createHash('sha256').update(opts.token).digest('hex').slice(0, 8)
-        if (!checkRate(tokenKey)) throw new HttpError(429, 'RATE_LIMITED', '请求过于频繁')
+        if (!checkRate(principal.tokenHash)) throw new HttpError(429, 'RATE_LIMITED', '请求过于频繁')
 
         /* ---------------------------- OpenAI 兼容 ---------------------------- */
         if (method === 'GET' && path === '/v1/models') {
@@ -246,7 +273,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
 
         if (method === 'POST' && path === '/v1/chat/completions') {
           const body = readJson(await readBody(req))
-          const identity = resolveIdentity(req, body)
+          const identity = resolveIdentity(req, principal, body)
           const message = runtime.sillyTavernAdapter.build(
             body as Parameters<RuntimeBundle['sillyTavernAdapter']['build']>[0],
             identity,
@@ -289,7 +316,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
         /* ------------------------------ 原生接口 ------------------------------ */
         if (method === 'POST' && path === '/v1/messages') {
           const body = readJson(await readBody(req))
-          const identity = resolveIdentity(req, body)
+          const identity = resolveIdentity(req, principal, body)
           const text = typeof body.text === 'string' ? body.text : ''
           if (text.trim().length === 0) throw new HttpError(400, 'EMPTY_TEXT', 'text 不能为空')
           const notices = Array.isArray(body.notices) ? body.notices.map(String) : []
@@ -322,7 +349,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
 
         if (method === 'POST' && path === '/v1/sessions') {
           const body = readJson(await readBody(req))
-          const identity = resolveIdentity(req, body)
+          const identity = resolveIdentity(req, principal, body)
           const resolved = runtime.identityService.resolveOrCreate(
             'sillytavern',
             identity.platformUserId,
@@ -342,7 +369,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
           if (!runtime.persistence.getInstance(instanceId)) {
             throw new HttpError(404, 'INSTANCE_NOT_FOUND', `实例 ${instanceId} 不存在`)
           }
-          const callerInstance = runtime.identityService.instanceFor('sillytavern', resolveIdentity(req).platformUserId)
+          const callerInstance = runtime.identityService.instanceFor('sillytavern', resolveIdentity(req, principal).platformUserId)
           if (callerInstance !== instanceId) {
             throw new HttpError(403, 'FORBIDDEN', '只能查看自己绑定的角色实例')
           }
@@ -381,7 +408,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
         const memoryMatch = /^\/v1\/memories\/([A-Za-z0-9_\-]+)$/.exec(path)
         if (method === 'DELETE' && memoryMatch) {
           const memoryId = memoryMatch[1]!
-          const identity = resolveIdentity(req)
+          const identity = resolveIdentity(req, principal)
           const instanceId = runtime.identityService.instanceFor('sillytavern', identity.platformUserId)
           if (!instanceId) throw new HttpError(403, 'FORBIDDEN', '当前身份还没有绑定的角色实例')
           const rt = runtime.runtimeManager.get(instanceId)
@@ -396,7 +423,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
 
         /* ------------------------------ 身份绑定 ------------------------------ */
         if (method === 'GET' && path === '/v1/identity/me') {
-          const identity = resolveIdentity(req)
+          const identity = resolveIdentity(req, principal)
           const binding = runtime.platformStore.getBinding('sillytavern', identity.platformUserId)
           json(res, 200, {
             platform: 'sillytavern',
@@ -410,7 +437,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
 
         if (method === 'POST' && path === '/v1/identity/bind-code') {
           const body = readJson(await readBody(req))
-          const identity = resolveIdentity(req, body)
+          const identity = resolveIdentity(req, principal, body)
           const resolved = runtime.identityService.resolveOrCreate(
             'sillytavern',
             identity.platformUserId,
@@ -433,7 +460,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
 
         if (method === 'POST' && path === '/v1/identity/redeem') {
           const body = readJson(await readBody(req))
-          const identity = resolveIdentity(req, body)
+          const identity = resolveIdentity(req, principal, body)
           const code = typeof body.code === 'string' ? body.code.trim() : ''
           if (!/^\d{8}$/.test(code)) throw new HttpError(400, 'BAD_CODE', '绑定码必须是 8 位数字')
           const result = runtime.identityService.redeemBindCode({
@@ -458,7 +485,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
         }
 
         if (method === 'DELETE' && path === '/v1/identity/binding') {
-          const identity = resolveIdentity(req)
+          const identity = resolveIdentity(req, principal)
           const ok = runtime.identityService.unbind('sillytavern', identity.platformUserId)
           json(res, 200, { unbound: ok })
           return

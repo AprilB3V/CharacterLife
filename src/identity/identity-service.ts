@@ -50,6 +50,8 @@ export function hashCode(code: string): string {
   return createHash('sha256').update(`characterlife:${code.trim()}`).digest('hex')
 }
 
+// Trusted in-process identity registry, not an authentication boundary.
+// HTTP and platform transports must authenticate the subject before calling it.
 export class IdentityService {
   #persistence: CharacterPersistence
   #platformStore: PlatformStore

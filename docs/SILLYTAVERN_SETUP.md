@@ -20,7 +20,7 @@ node examples/sillytavern/start-server.ts
 CharacterLife API 已启动：http://127.0.0.1:8787
 SillyTavern 配置（Chat Completion → Custom (OpenAI-compatible)）：
   Base URL : http://127.0.0.1:8787/v1
-  API Key  : local-dev-token-123
+  API Key  : 使用已配置的 CHARACTERLIFE_API_TOKEN（不在日志中显示）
   模型      : characterlife/shen-zhiwei
 ```
 
@@ -102,16 +102,43 @@ node experiments/real-clients/sillytavern-smoke.ts
 
 ## 6. 多用户 / 跨设备（限制）
 
-默认所有酒馆请求都映射到同一个本地身份 `local-default`，**同一个 API Token 的用户会共享角色实例**。
+`CHARACTERLIFE_API_TOKEN` 只授权服务端配置的 `CHARACTERLIFE_ST_IDENTITY`（默认 `local-default`）。
+服务端根据凭据确定身份；`X-CharacterLife-Identity` 和请求体 `identity` 仅用于一致性检查。
+任一字段与凭据身份不符都会返回 403 `IDENTITY_MISMATCH`，无论该身份是否已经绑定；
+缺失或错误的凭据返回 401。省略身份字段即可正常使用。
 
-如果需要区分身份：
+多个受信任的本机客户端需要区分用户时，可在自己的启动代码中配置独立凭据：
 
-1. 每个用户先拿到一个绑定码（在 QQ 里 `/bind`，或 `POST /v1/identity/bind-code`）；
-2. 用 `POST /v1/identity/redeem` 消费绑定码，把「酒馆身份」绑到某个实例；
-3. 之后请求带 `X-CharacterLife-Identity: <该身份>`，服务端只接受**已绑定**的身份，否则 400 `IDENTITY_NOT_BOUND`。
+```typescript
+createApiServer({
+    runtime,
+    host: '127.0.0.1',
+    credentials: [
+        { token: process.env.USER_A_API_TOKEN!, platformUserId: 'user-a' },
+        { token: process.env.USER_B_API_TOKEN!, platformUserId: 'user-b' },
+    ],
+})
+```
 
-本项目没有做账号密码体系，也不建议直接暴露到公网 —— 那需要 TLS、独立鉴权与实例配额，
-不在 V0.2 范围内。
+`credentials` 与旧 `token` 选项互斥，不存在全局管理员 Token 或默认身份回退。
+每个 Token 必须唯一，建议使用 `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`
+生成随机凭据，通过受控方式交付给对应用户。凭据列表仅在启动时读取，轮换或撤销后需要重启服务。
+内置 `npm run st:server` 继续使用单用户环境变量配置。
+
+跨平台绑定流程保持不变：已验证的 QQ 身份申请 `/bind`，目标酒馆用户用自己的凭据调用
+`POST /v1/identity/redeem`。目标酒馆身份无需预先创建绑定；绑定码只授权关联实例，不是登录凭据。
+已绑定到其他实例的身份仍须显式解绑后才能改绑，旧实例和记忆不会删除。
+
+旧版本依靠共享 Token 加 Header 切换身份的客户端必须迁移：由管理员在服务端核实原身份归属，
+为每个原有 `platformUserId` 分配独立新 Token，客户端改用相应 Token；原绑定及 SQLite 无需迁移。
+共享过的旧 Token 应撤销、轮换；检查既有异常绑定，等待修复前签发的短期绑定码过期后恢复使用。
+不要把一个共享 Token 配到多个用户；它始终代表同一个主体。
+
+当前安全支持模式为受信任本机进程、回环监听；独立凭据可在该模式下隔离多个身份。
+直接公网或不受信任的多租户部署仍不支持：缺少 TLS、全局绑定码猜测防护、凭据自动过期及配额等能力。
+同一操作系统账户能够读取配置、数据库或进程内存时，不构成用户隔离边界。
+
+完整验收和回滚说明见 [CL-SEC-001 安全报告](../reports/CL-SEC-001.md)。
 
 ## 7. 常见问题
 

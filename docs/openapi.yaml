@@ -4,6 +4,8 @@ info:
   version: 0.2.0
   description: |
     CharacterLife 的本地 HTTP 接口。默认只监听 127.0.0.1，使用 Bearer Token 鉴权。
+    Token 在服务端固定关联一个 sillytavern 身份。客户端身份字段仅作一致性检查，
+    与凭据身份不符时返回 403 IDENTITY_MISMATCH，不能通过已绑定的身份标识切换用户。
     人格与长期记忆由 CharacterLife 持有；外部界面（如 SillyTavern）只负责输入与展示。
 servers:
   - url: http://127.0.0.1:8787
@@ -23,6 +25,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      description: 服务端配置的身份专用凭据；缺失或错误返回 401。
   schemas:
     Error:
       type: object
@@ -164,7 +167,7 @@ paths:
               required: [text]
               properties:
                 text: { type: string }
-                identity: { type: string, description: 可选，必须是已绑定的酒馆身份 }
+                identity: { type: string, description: 可选，只能等于当前凭据关联的酒馆身份，否则返回 403 IDENTITY_MISMATCH }
                 notices:
                   type: array
                   items: { type: string }

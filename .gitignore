@@ -35,3 +35,8 @@ reports/*.json
 backups/
 *.bundle
 *.patch
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/

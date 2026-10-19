@@ -232,7 +232,7 @@ describe('SillyTavern · 会话与记忆', () => {
       const forbidden = await fetch(`${url}/v1/characters/${instanceId}/state`, {
         headers: { ...auth, connection: 'close', 'x-characterlife-identity': 'someone-else' },
       })
-      assert.equal(forbidden.status, 400, '未绑定身份应先被拒绝')
+      assert.equal(forbidden.status, 403, '身份与凭据不符应被拒绝')
     } finally {
       await handle.close()
       rig.runtime.close()

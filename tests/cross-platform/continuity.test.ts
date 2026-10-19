@@ -154,9 +154,9 @@ describe('跨平台 · QQ → 酒馆 记忆连续性', () => {
       const forbidden = await fetch(`${st.url}/v1/characters/${instanceId}/state`, {
         headers: { ...st.auth, connection: 'close', 'x-characterlife-identity': 'intruder' },
       })
-      assert.equal(forbidden.status, 400, '未知身份应先被拒绝绑定校验')
+      assert.equal(forbidden.status, 403, '请求身份不能超出凭据授权范围')
       const body = (await forbidden.json()) as { error: { code: string } }
-      assert.equal(body.error.code, 'IDENTITY_NOT_BOUND')
+      assert.equal(body.error.code, 'IDENTITY_MISMATCH')
     } finally {
       await st.close()
       rig.runtime.close()
