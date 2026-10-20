@@ -101,6 +101,13 @@ describe('World E2E · 聊天 → 动作 → 执行 → 认知', () => {
       const instanceId = first.body.instanceId as string
       assert.ok(instanceId.length > 0)
 
+      // 观测字段：证明动作来自模型，而不是本地固定动作
+      assert.equal(first.body.provider, 'mock')
+      assert.match(String(first.body.model), /^mock/)
+      assert.equal(first.body.worldActions.admitted.length, 1)
+      assert.equal(first.body.worldActions.admitted[0].verb, 'use')
+      assert.equal(first.body.worldActions.admitted[0].status, 'pending')
+
       // 2) 世界领取（此时才真正"下发"给 Godot）
       const leased = await ctx.call(`/v1/world/actions?worldId=${WORLD}`, { token: WORLD_TOKEN })
       assert.equal(leased.status, 200)

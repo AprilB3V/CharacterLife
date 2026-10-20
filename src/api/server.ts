@@ -27,6 +27,7 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import type { RuntimeBundle } from './runtime-factory.ts'
+import type { ConversationWorldActions, WorldEventContext } from '../types.ts'
 import type { NormalizedMessage } from '../adapters/protocol.ts'
 import { safeEqual } from '../adapters/qq/webhook.ts'
 import {
@@ -261,7 +262,17 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   async function runTurn(
     message: NormalizedMessage,
     notices: string[],
-  ): Promise<{ reply: string; instanceId: string; sessionId: string; promptTokens: number; completionTokens: number }> {
+  ): Promise<{
+    reply: string
+    instanceId: string
+    sessionId: string
+    promptTokens: number
+    completionTokens: number
+    provider: string | null
+    model: string | null
+    worldActions: ConversationWorldActions | null
+    worldContext: WorldEventContext | null
+  }> {
     const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices)
     if (!outcome.reply) {
       throw new HttpError(502, 'NO_REPLY', '引擎未产生回复')
@@ -272,6 +283,10 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
       sessionId: outcome.sessionId ?? '',
       promptTokens: outcome.usage?.promptTokens ?? 0,
       completionTokens: outcome.usage?.completionTokens ?? 0,
+      provider: outcome.provider ?? null,
+      model: outcome.model ?? null,
+      worldActions: outcome.worldActions ?? null,
+      worldContext: outcome.worldContext ?? null,
     }
   }
 
@@ -379,6 +394,11 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             reply: result.reply,
             instanceId,
             sessionId: result.sessionId,
+            // 观测字段（附加，不改变既有字段语义）：证明这一轮的动作来自模型
+            provider: result.provider,
+            model: result.model,
+            worldActions: result.worldActions,
+            worldContext: result.worldContext,
             state: view
               ? {
                   name: view.character.name,

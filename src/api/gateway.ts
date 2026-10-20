@@ -25,6 +25,7 @@ import type { PlatformStore } from '../persistence/platform-store.ts'
 import type { IdentityService } from '../identity/identity-service.ts'
 import type { InstanceRuntimeManager } from '../runtime/instance-runtime.ts'
 import type { Clock } from '../util/clock.ts'
+import type { ConversationWorldActions, WorldEventContext } from '../types.ts'
 import { handleCommand } from './commands.ts'
 
 export type InboundStatus =
@@ -47,6 +48,13 @@ export interface InboundOutcome {
   reason: string | null
   /** 本轮实际 token 用量（来自 Provider），OpenAI 兼容层会透传 */
   usage: { promptTokens: number; completionTokens: number } | null
+  /** 本轮真正用的 Provider 名称与模型（证明动作来自模型，而不是本地固定动作） */
+  provider?: string | null
+  model?: string | null
+  /** 本轮世界动作准入结果；未启用世界时为 null */
+  worldActions?: ConversationWorldActions | null
+  /** 本轮结束时的进程内世界上下文；未启用世界时为 null */
+  worldContext?: WorldEventContext | null
 }
 
 export interface GatewayOptions {
@@ -134,6 +142,10 @@ export class MessageGateway {
         delivery: null,
         reason: 'NOT_A_MESSAGE_EVENT',
         usage: null,
+        provider: null,
+        model: null,
+        worldActions: null,
+        worldContext: null,
       }
     }
     return this.handleMessage(adapter, message)
@@ -167,6 +179,10 @@ export class MessageGateway {
         delivery: null,
         reason: 'ALREADY_PROCESSED',
         usage: null,
+        provider: null,
+        model: null,
+        worldActions: null,
+        worldContext: null,
       }
     }
 
@@ -184,6 +200,10 @@ export class MessageGateway {
         delivery: null,
         reason: `RATE_LIMITED: retry after ${limit.retryAfterMs}ms`,
         usage: null,
+        provider: null,
+        model: null,
+        worldActions: null,
+        worldContext: null,
       }
     }
 
@@ -219,7 +239,17 @@ export class MessageGateway {
         const outbound = this.#outbound(message, command.text)
         const delivery = await this.#deliver(adapter, outbound)
         runtimeManager.saveSnapshot(runtime)
-        return { reply: command.text, sessionId, delivery, status: 'command' as InboundStatus }
+        return {
+          reply: command.text,
+          sessionId,
+          delivery,
+          status: 'command' as InboundStatus,
+          // 指令不经过模型，也没有世界动作
+          provider: null,
+          model: null,
+          worldActions: null,
+          worldContext: null,
+        }
       }
 
       // 4.2 未能发出的主动消息：可用则主动推送一条，否则并入本轮作为资料
@@ -269,6 +299,10 @@ export class MessageGateway {
         delivery,
         status: 'replied' as InboundStatus,
         usage: result.usage ?? null,
+        provider: result.provider,
+        model: result.model,
+        worldActions: result.worldActions ?? null,
+        worldContext: result.worldContext ?? null,
       }
     })
 
@@ -288,6 +322,10 @@ export class MessageGateway {
       delivery: outcome.delivery,
       reason: outcome.delivery?.error?.code ?? null,
       usage: outcome.usage ?? null,
+      provider: outcome.provider ?? null,
+      model: outcome.model ?? null,
+      worldActions: outcome.worldActions ?? null,
+      worldContext: outcome.worldContext ?? null,
     }
   }
 
@@ -368,6 +406,10 @@ export class MessageGateway {
       delivery: null,
       reason,
       usage: null,
+      provider: null,
+      model: null,
+      worldActions: null,
+      worldContext: null,
     }
   }
 }
