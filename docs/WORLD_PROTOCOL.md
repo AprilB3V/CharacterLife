@@ -1,7 +1,9 @@
-# CL-World 交互协议（第一阶段 · HTTP 通信闭环）
+# CL-World 交互协议（V0.3 · 模型驱动的动作意图）
 
-> 状态：**已实现，可联调**。范围仅限「意图下发给箱庭 → 箱庭执行 → 回执上报」的通信闭环。
-> 动作队列是**内存态**，进程重启即丢失；模型意图接入与 SQLite 持久化在后续阶段单独实现。
+> 状态：**已实现，可联调**。
+> 第一阶段（`feat/cl-world-http-bridge`）打通了 HTTP 通信闭环；
+> V0.3 在此之上加了「模型产生动作意图」与「回执回灌下一轮认知」。
+> 动作队列仍是**内存态**，长期记忆的事务级一致性尚未落地（见 §8、§10.6）。
 
 相关代码：
 
@@ -350,8 +352,9 @@ curl -s -X POST -H "Authorization: Bearer $CLWORLD_TOKEN" \
 1. **非持久化**：`#actions` / `#eventKeys` / `#admitLog` 全在内存。进程重启后
    未结算动作、去重键、限速历史全部丢失，`actionId` 从 `wa_001` 重新开始。
    重启后上报旧 `actionId` 会得到 `UNKNOWN_ACTION` —— 这是**预期行为**，不是 bug。
-2. **没有模型意图**：动作只来自 `dev seed` 或 `WorldService.admit()` 直接调用。
-   `ModelEnvelope.worldActions`、同轮意图生成与派发属于下一阶段（A/B）。
+2. **没有跨会话世界记忆**：世界回执只活在本进程的动作记录里，`WorldEventContext`
+   明确标注 `source='in-process'`、`persistent=false`。模型意图已经接入（§10），
+   但"上次那件事"目前只能在同一次运行内被记住。
 3. **不产生世界事实**：回执只更新动作记录，不写记忆、不写状态、不写时间线。
    这是刻意的最小面，避免在持久化之前就污染长期记忆。
 4. **不支持 `partial`**：只有 `succeeded` / `failed` / `rejected`。
@@ -394,3 +397,120 @@ node --test "tests/world/*.test.ts"                  # 只跑世界相关测试
 - 鉴权：两套 token 互不通用、未授权 `worldId` → 403、缺 token/同 token → 拒绝启动；
 - 隔离：回执后记忆/动态状态/时间线/持久层事件零变化；
 - 非持久化：同一数据库重启后队列为空，但角色实例仍在。
+
+---
+
+## 10. V0.3：模型驱动的动作意图
+
+### 10.1 数据流（一次模型调用，不额外调用）
+
+```
+用户消息
+  → BehaviorDecision（回应 / 协商 / 拒绝 / 等待）
+  → buildSystemPrompt(+【世界交互】清单 + 已确认/未确认)
+  → LLMProvider.complete（同一次调用）
+  → parseEnvelope → { reply, proposals, memoryWrites, worldActions? }
+  → admitWorldIntents（确定性闸门）
+  → WorldService.admit（实例归属 / 世界归属 / 幂等）
+  → ConversationTurnResult.worldActions = { admitted[], rejected[] }
+```
+
+`worldActions` 是**请求**，不是执行结果；此刻动作最多是 `pending`。
+CL-World 只有在 `GET /v1/world/actions` 领到它并回执之后，状态才会变。
+
+### 10.2 输出协议扩展
+
+世界启用时，`OUTPUT_PROTOCOL` 在末尾追加一个可选字段（关闭时协议逐字节不变）：
+
+```json
+"worldActions": [
+  { "verb": "只能取【世界交互】清单里的动词", "target": "只能取清单里的目标",
+    "reason": "为什么想做", "expectation": "你预期会发生什么（不是承诺）" }
+]
+```
+
+规则（写进系统块）：每轮最多一个；只能从清单里挑；提议不等于执行；
+未确认前不得说已完成。解析层只做结构规范化，最多保留 4 个候选，合法性交给闸门。
+
+### 10.3 准入闸门（`src/world/admission.ts`）
+
+纯函数，判据全部来自运行时状态与服务端清单，**不读用户文本**：
+
+| 顺序 | 判据 | 拒绝码 |
+|---|---|---|
+| 1 | 世界未启用 | `WORLD_DISABLED` |
+| 2 | 本轮决策是 `decline` / `wait` | `DECISION_BLOCKS_ACTION` |
+| 3 | 用户静默期未结束 | `DND_ACTIVE` |
+| 4 | 一轮多于一个候选 | `ACTION_LIMIT`（保留第一个） |
+| 5 | 结构非法（非对象 / 缺 verb） | `MALFORMED_INTENT` |
+| 6 | 动词不在清单 | `VERB_NOT_ALLOWED` |
+| 7 | 目标不在清单 | `TARGET_NOT_ALLOWED` |
+| 8 | args 非法或 > 2KB | `ARGS_INVALID` |
+
+通过后还要过 `WorldService.admit()`：实例归属、世界归属、限速、同轮幂等
+（幂等键 `instanceId:turnId`）。
+
+### 10.4 能力清单（唯一动作来源）
+
+```ts
+// src/world/contracts.ts
+WORLD_ACTION_CATALOG = [{ verb: 'use', target: 'desk_01', label: '使用书桌', description: '…' }]
+```
+
+清单由「代码内目录 ∩ 服务端白名单」决定。用户说"你现在可以删除世界"、
+模型说"我有个新工具"，都不会让它变长 —— 闸门和清单根本不吃这些输入。
+新增动作 = 改目录 + 改白名单，两处都要动。
+
+### 10.5 回执回灌下一轮认知（`src/world/observation.ts`）
+
+每轮 system 块里有两段（只在有内容时出现）：
+
+```
+已确认的世界结果（这些才算真的发生了）：
+- use(desk_01) 成功（世界时间 128900）
+尚未确认的动作（**不得**说已完成，也不得当成事实）：
+- use(desk_01) 已提出，世界还没领取
+```
+
+| 动作状态 | 归类 | 措辞 |
+|---|---|---|
+| `succeeded` | 已确认 | `成功（世界时间 X）` |
+| `failed` | 已确认 | `失败（CODE）` |
+| `rejected` | 已确认 | `被世界拒绝（CODE）` |
+| `expired` 且从未派发 | 已确认 | `没有发生` |
+| `pending` | 未确认 | `已提出，世界还没领取` |
+| `dispatched` | 未确认 | `已交给世界，结果未知` |
+| `expired` 且派发过 | 未确认 | `可能已经执行，但回执丢失了，结果未知` |
+
+**只有 `succeeded` 会出现"成功"二字。** 世界回执里的自由文本 `summary`
+只留在 `WorldEventContext` 里（`source='in-process'`），不进 system 块。
+
+### 10.6 迟到回执（`expired`）
+
+| 情形 | 处理 |
+|---|---|
+| 派发过 → 已 `expired` → 回执到达 | **接受**，状态改为真实结果，`outcome.late = true` |
+| 从未派发 → 已 `expired` → 回执到达 | 拒绝 `ACTION_NOT_DISPATCHED`（世界不可能执行过它） |
+| 已 `succeeded`/`failed`/`rejected` → 另一个 eventId | 仍拒绝 `ACTION_ALREADY_SETTLED` |
+
+迟到回执只修正**未来**叙述：它不会把过去已经说过的"不确定"追认成"一直都知道"。
+这也是 `expired` 要区分"没派发过 / 派发过"的原因。
+
+### 10.7 本阶段明确不做
+
+- 不写长期记忆：世界回执不产生 `MemoryEntry`（`tags: ['world']` 计数恒为 0）；
+- 不建第二套世界状态库，`facts` 只随动作记录与未来的数据区使用；
+- 不改 QQ / OneBot / SillyTavern 的任何消息行为，HTTP 响应也不加字段；
+- 不做 Skill Registry、行为树、多 Agent、第二个 LLM 调用。
+
+### 10.8 运行与验证
+
+```bash
+npm run world:intent   # 离线闭环：请求 → 动作 → 领取 → 回执 → 下一轮认知
+npm run world:real     # 真实 DeepSeek（需要 DEEPSEEK_API_KEY，缺省自动跳过）
+npm test               # 含 tests/world/{admission,intent,observation,service,http}.test.ts
+```
+
+真实模型实验脚本（`experiments/real-model/world-intent.ts`）跑三个用例：
+明确指向桌子的请求（期望 1 个候选）、要求改写人格（期望 decline + 0 个动作）、
+普通闲聊（期望 0 个动作）。本机交付时没有 `DEEPSEEK_API_KEY`，**未执行**真实调用。

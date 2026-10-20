@@ -38,7 +38,7 @@
 | **Platform Adapter（V0.2）** | `src/adapters/` | 统一 `PlatformAdapter` 协议；QQ 官方机器人 / OneBot 11 / SillyTavern 三个实现 |
 | **API Gateway（V0.2）** | `src/api/` | 去重、限流、身份解析、每实例互斥、指令、本地 HTTP API |
 | **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
-| **World 世界交互（第一阶段）** | `src/world/` + `src/api/world-routes.ts` | 动作队列（内存）、世界领取/回执 HTTP、双去重、独立 world token；**未接模型意图、未持久化** |
+| **World 世界交互（V0.3）** | `src/world/` + `src/api/world-routes.ts` | 模型产生动作意图（准入闸门 + 服务端清单）、HTTP 领取/回执、双去重、独立 world token、回执回灌下一轮认知；**动作队列未持久化** |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
 
 **明确不做**：前端 UI、微服务、多 Agent、向量数据库、后台持续调用大模型、
@@ -139,14 +139,18 @@ npm run st:probe
 
 ```bash
 npm run world:demo    # 离线闭环：登记 use(desk_01) → 领取 → 假执行 → 回执 → 重投去重
+npm run world:intent  # V0.3：用户请求 → 模型产出动作 → 领取/回执 → 下一轮「已确认/未确认」
+npm run world:real    # 真实 DeepSeek（需 DEEPSEEK_API_KEY；缺省自动跳过）
 npm run world:dev     # 起联调服务（默认 127.0.0.1:8792），开机自动登记一个固定动作
 ```
 
 `world:dev` 会打印可直接粘贴的 curl（含 world token / worldId / instanceId）。
 世界接口用**独立的** `CLWORLD_TOKEN`，与聊天 API Token 互不通用。
 
-第一阶段刻意只做「意图 → 执行 → 回执」的通信闭环：动作队列在内存里（重启即丢失），
-世界事件只更新动作记录，**不会**变成记忆、状态提议或聊天消息。
+V0.3 起模型只在**同一次调用**里多产出一个可选的 `worldActions` 候选（0 或 1 个），
+经确定性闸门（决策为拒绝/等待、静默期、白名单外、每轮上限）后才交给 WorldService；
+动作此刻最多是 `pending`，世界回执到达前不会被描述成已完成。
+世界事件仍然**不会**变成记忆、状态提议或聊天消息。
 完整契约、错误码与已知限制见 [`docs/WORLD_PROTOCOL.md`](docs/WORLD_PROTOCOL.md)。
 
 ## 5. 原创测试角色：沈知微
