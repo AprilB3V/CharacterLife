@@ -235,3 +235,60 @@ export const WORLD_LIMITS = {
   MAX_LEASE_LIMIT: 8,
   DEFAULT_LEASE_LIMIT: 4,
 } as const
+
+/* ==========================================================================
+ * 回执 `code` 的形态约束（安全边界，不只是格式偏好）
+ *
+ * 世界回执来自外部（CL-World / Godot），是本模块唯一的外部自由文本来源。
+ * 因此 `code` 被收敛为「机器可读的大写错误标识符」：
+ *   - 与 Godot 侧现有的 `ERR_TIMEOUT` / `PATH_BLOCKED` 风格兼容；
+ *   - 只含 A-Z / 0-9 / _，且必须以大写字母开头，长度 ≤ 64；
+ *   - 因此它**不可能**承载中文句子、换行、标点或引用块，
+ *     也就不可能被当作提示词注入的载体。
+ *
+ * 这只是纵深防御的第一层；第二层是 `observation.ts` 根本不把 `code`
+ * 拼进系统提示词（只保留在结构化记录与审计里）。
+ * ========================================================================== */
+
+export const WORLD_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/
+
+export function isWorldCode(value: string): boolean {
+  return WORLD_CODE_PATTERN.test(value)
+}
+
+/* ==========================================================================
+ * 动作参数语义校验（服务端权威）
+ *
+ * 第一阶段刻意不做通用 JSON Schema 系统：只有一个动作，规则写死最可读。
+ * 但校验必须落在 `WorldService.admit()` —— 那是所有登记路径的唯一收口，
+ * 任何绕过模型准入层（admission.ts）的调用方也逃不掉。
+ * ========================================================================== */
+
+/** `use(...)` 的 `seconds` 上限（秒）。 */
+export const WORLD_ARGS_MAX_SECONDS = 10
+
+export type WorldArgsCheck = { ok: true } | { ok: false; reason: string }
+
+/**
+ * 按动词校验参数语义。未登记规则的动词一律失败（默认拒绝，
+ * 与「新增动作 = 改此处 + 服务端白名单」的既有约定一致）。
+ */
+export function checkActionArgs(verb: string, args: Record<string, unknown>): WorldArgsCheck {
+  if (verb !== 'use') {
+    return { ok: false, reason: `动词 ${verb} 没有登记参数规则，拒绝` }
+  }
+  const unknownFields = Object.keys(args).filter((key) => key !== 'seconds')
+  if (unknownFields.length > 0) {
+    return { ok: false, reason: `不支持的参数字段：${unknownFields.join(', ')}（只允许可选的 seconds）` }
+  }
+  if (!Object.prototype.hasOwnProperty.call(args, 'seconds')) return { ok: true }
+  const seconds = args.seconds
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
+    return { ok: false, reason: 'seconds 必须是有限数字' }
+  }
+  if (seconds <= 0) return { ok: false, reason: 'seconds 必须严格大于 0' }
+  if (seconds > WORLD_ARGS_MAX_SECONDS) {
+    return { ok: false, reason: `seconds 不能超过 ${WORLD_ARGS_MAX_SECONDS}` }
+  }
+  return { ok: true }
+}

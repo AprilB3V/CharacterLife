@@ -116,6 +116,11 @@ Authorization: Bearer <CLWORLD_TOKEN>
 }
 ```
 
+**`args` 的语义约束（服务端权威）**：目前只登记了 `use(desk_01)`，因此只接受**可选的 `seconds`**：
+必须是有限数字、严格大于 0、不超过 `10`；出现任何其它字段一律 `ARGS_INVALID`（`未知字段`）。
+该校验收口在 `WorldService.admit()`；模型准入层共用同一份规则（`contracts.checkActionArgs`），
+因此绕过模型闸门的调用路径同样受限。新增动作时必须同时补规则——未登记规则的动词默认拒绝。
+
 语义：
 
 - **返回即领取**：动作立刻进入 `dispatched`，`attempts += 1`，`expiresAtSim` 顺延为租约截止；
@@ -174,7 +179,7 @@ Content-Type: application/json
 | `atWorldTimeMs` | 非负有限数；只存档，不参与判定 |
 | `summary` | ≤200 字符；落库前压平换行（防日志注入） |
 | `facts` | ≤32 条，`key` ≤64 字符，`value` 只能是字符串/数字/布尔；第一阶段只记录不使用 |
-| `code` | 可空，≤64 字符，世界自定义失败码 |
+| `code` | 可空；**必须是安全标识符** `^[A-Z][A-Z0-9_]{0,63}$`（如 `ERR_TIMEOUT`、`PATH_BLOCKED`）。中文、空格、换行、引号一律 `MALFORMED` 拒绝 |
 
 ### 3.3 `POST /v1/world/dev/seed?worldId=...` —— 受控开发入口
 
@@ -475,12 +480,16 @@ WORLD_ACTION_CATALOG = [{ verb: 'use', target: 'desk_01', label: '使用书桌',
 | 动作状态 | 归类 | 措辞 |
 |---|---|---|
 | `succeeded` | 已确认 | `成功（世界时间 X）` |
-| `failed` | 已确认 | `失败（CODE）` |
-| `rejected` | 已确认 | `被世界拒绝（CODE）` |
+| `failed` | 已确认 | `失败（世界时间 X）` |
+| `rejected` | 已确认 | `被世界拒绝（世界时间 X）` |
 | `expired` 且从未派发 | 已确认 | `没有发生` |
 | `pending` | 未确认 | `已提出，世界还没领取` |
 | `dispatched` | 未确认 | `已交给世界，结果未知` |
 | `expired` 且派发过 | 未确认 | `可能已经执行，但回执丢失了，结果未知` |
+
+> **错误码不进提示词**：表中的措辞只表达状态，不含 `code`。
+> 模型只需要知道「失败 / 被拒绝」，不需要读世界的错误码；`code` 保留在
+> `WorldActionOutcome.code` 与 `world_action` 审计事件里，供排障与复盘。
 
 **只有 `succeeded` 会出现"成功"二字。** 世界回执里的自由文本 `summary`
 只留在 `WorldEventContext` 里（`source='in-process'`），不进 system 块。

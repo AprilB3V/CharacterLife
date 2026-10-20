@@ -20,7 +20,7 @@ import type {
   WorldActionCandidate,
 } from '../types.ts'
 import type { WorldActionCapability, WorldActionSpec } from './contracts.ts'
-import { WORLD_LIMITS, findCapability } from './contracts.ts'
+import { WORLD_LIMITS, checkActionArgs, findCapability } from './contracts.ts'
 
 export type WorldIntentRejectCode =
   | 'WORLD_DISABLED'
@@ -197,6 +197,14 @@ export function admitWorldIntents(input: WorldIntentAdmissionInput): WorldIntent
   const args = normalizeArgs(first.args)
   if (!args.ok) {
     rejected.push(reject(first, 'ARGS_INVALID', [args.reason]))
+    return { admitted, rejected }
+  }
+
+  // 语义校验与 `WorldService.admit()` 共用同一份规则（contracts.checkActionArgs），
+  // 避免「模型层放行、服务层拒绝」这种两套口径漂移。
+  const semantic = checkActionArgs(verb, args.args)
+  if (!semantic.ok) {
+    rejected.push(reject(first, 'ARGS_INVALID', [semantic.reason]))
     return { admitted, rejected }
   }
 

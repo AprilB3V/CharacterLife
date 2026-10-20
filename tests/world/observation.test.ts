@@ -102,16 +102,24 @@ describe('World observation · 已确认 / 未确认', () => {
     assert.equal(context.confirmed[0]!.atWorldTimeMs, 128_900)
   })
 
-  it('失败 / 被拒绝 → 已确认，但措辞是失败而不是完成', () => {
+  it('失败 / 被拒绝 → 已确认，措辞是失败而不是完成；错误码不进提示词', () => {
     for (const result of ['failed', 'rejected'] as const) {
       const { service, admit, report } = makeWorld()
       const action = admit()
       service.lease(WORLD, 4)
       report(action.actionId, result)
-      const lines = worldContextLines(buildWorldEventContext(service.list({ instanceId: INSTANCE })))
+      const context = buildWorldEventContext(service.list({ instanceId: INSTANCE }))
+      const lines = worldContextLines(context)
       assert.equal(lines.confirmed.length, 1)
-      assert.match(lines.confirmed[0]!, result === 'failed' ? /失败（DESK_BUSY）/ : /被世界拒绝（DESK_BUSY）/)
+      // F1：世界错误码（DESK_BUSY）留在结构化记录里，不拼进提示词。
+      assert.match(
+        lines.confirmed[0]!,
+        result === 'failed' ? /^use\(desk_01\) 失败（世界时间 128900）$/ : /^use\(desk_01\) 被世界拒绝（世界时间 128900）$/,
+      )
+      assert.ok(!lines.confirmed[0]!.includes('DESK_BUSY'), '错误码不得出现在提示词行里')
       assert.ok(!lines.confirmed[0]!.includes('成功'))
+      // 但结构化记录必须保留它，供审计与排障。
+      assert.equal(context.confirmed[0]!.code, 'DESK_BUSY')
     }
   })
 

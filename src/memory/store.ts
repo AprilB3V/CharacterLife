@@ -35,6 +35,17 @@ export const MEMORY_SCHEMA_VERSION = 1
 /** 记忆容量上限：超过后按「低价值优先淘汰」清理，防止无限增长。 */
 const MAX_ENTRIES = 400
 
+/**
+ * 只有**权威来源**才能打的标签。
+ *
+ * 世界真值只能来自 CL-World 回执（运行时事件）。模型的自述哪怕把
+ * `status` 写成 `fact`、把标签写成 `world`，也不能冒充世界事实 ——
+ * 权威判据始终是 `origin`。这里额外过滤保留标签，是为了防止将来有人
+ * 误用 `tags.includes('world')` 当作真值来源（纵深防御，不替代 origin）。
+ */
+const RESERVED_MEMORY_TAGS: ReadonlySet<string> = new Set(['world'])
+const AUTHORITATIVE_ORIGINS: ReadonlySet<MemoryOrigin> = new Set<MemoryOrigin>(['runtime_event'])
+
 export interface MemoryWriteInput {
   kind: MemoryKind
   title: string
@@ -161,7 +172,9 @@ export class MemoryStore implements SnapshotSection {
       // episodic 记录的是一条已发生的事，用不看这个标记（否则会污染检索权重）。
       confirmed: input.kind === 'user' ? (input.confirmed ?? false) : false,
       salience: clamp01(input.salience ?? 0.5),
-      tags: (input.tags ?? []).slice(0, 12),
+      tags: (input.tags ?? [])
+        .filter((tag) => !RESERVED_MEMORY_TAGS.has(tag) || AUTHORITATIVE_ORIGINS.has(input.origin))
+        .slice(0, 12),
       createdAtSim: now,
       createdAtWall: this.#clock.nowWall().toISOString(),
       sourceRef: input.sourceRef ?? null,

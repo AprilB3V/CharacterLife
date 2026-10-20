@@ -7,6 +7,9 @@
  * 2. 进 system 块的只有**结构性**描述（动作 id、动词、目标、结果码、世界时间）。
  *    世界回执里的自由文本 `summary` 留在 `WorldEventContext` 里，供调用方或
  *    将来的数据区使用，绝不拼进系统指令区。
+ *    外部错误码 `code` 同理：它保留在 `WorldObservation`（结构化记录）与审计里，
+ *    **不**进入提示词。模型只需要理解「失败 / 被拒绝」，不需要读世界的错误码；
+ *    这样系统块里就不存在任何外部可控文本。
  *
  * 本文件是纯函数，不引用 Runtime / 存储。
  */
@@ -84,16 +87,16 @@ function describeAction(o: WorldObservation): string {
   return `${o.verb}(${o.target ?? '*'})`
 }
 
-/** 已确认结果的结构性描述（不含世界自由文本）。 */
+/** 已确认结果的结构性描述（不含世界自由文本，也不含世界错误码）。 */
 function confirmedLine(o: WorldObservation): string {
   const at = o.atWorldTimeMs === null ? '' : `（世界时间 ${o.atWorldTimeMs}）`
   switch (o.status) {
     case 'succeeded':
       return `${describeAction(o)} 成功${at}`
     case 'failed':
-      return `${describeAction(o)} 失败${o.code ? `（${o.code}）` : ''}${at}`
+      return `${describeAction(o)} 失败${at}`
     case 'rejected':
-      return `${describeAction(o)} 被世界拒绝${o.code ? `（${o.code}）` : ''}${at}`
+      return `${describeAction(o)} 被世界拒绝${at}`
     case 'expired':
       return `${describeAction(o)} 没有发生${at}`
     default:

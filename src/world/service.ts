@@ -26,7 +26,7 @@ import type {
   WorldIngestErrorCode,
   WorldIngestResult,
 } from './contracts.ts'
-import { WORLD_LIMITS, WORLD_RESULTS, manifestFor } from './contracts.ts'
+import { WORLD_LIMITS, WORLD_RESULTS, checkActionArgs, isWorldCode, manifestFor } from './contracts.ts'
 import type { WorldActionCapability } from './contracts.ts'
 import { isTerminalStatus, narrationFor } from './state.ts'
 
@@ -147,8 +147,11 @@ export function validateWorldEvent(raw: unknown): ValidatedEvent {
     return fail(eventId, 'MALFORMED', `summary 超过 ${WORLD_LIMITS.MAX_SUMMARY_CHARS} 字符`)
   }
   if (raw.code !== null && raw.code !== undefined) {
-    if (typeof raw.code !== 'string' || raw.code.length > WORLD_LIMITS.MAX_CODE_CHARS) {
-      return fail(eventId, 'MALFORMED', 'code 非法')
+    // F1：只接受形如 ERR_TIMEOUT / PATH_BLOCKED 的大写标识符。
+    // 拒绝中文、空格、换行、引号等一切非标识符字符 —— 这段文本来自外部世界，
+    // 不能让它有机会变成提示词内容。
+    if (typeof raw.code !== 'string' || !isWorldCode(raw.code)) {
+      return fail(eventId, 'MALFORMED', 'code 必须是形如 ERR_TIMEOUT 的大写错误标识符（A-Z/0-9/_，≤64）')
     }
   }
 
@@ -309,7 +312,7 @@ export class WorldService {
       }
     }
 
-    const argsCheck = checkArgs(spec.args)
+    const argsCheck = checkArgs(spec.verb, spec.args)
     if (argsCheck) return { ok: false, code: argsCheck.code, reasons: [argsCheck.message] }
 
     if (this.#admittedRecently(input.instanceId, now) >= this.#maxActionsPerSimHour) {
@@ -636,7 +639,7 @@ export class WorldService {
   }
 }
 
-function checkArgs(args: unknown): { code: WorldAdmitErrorCode; message: string } | null {
+function checkArgs(verb: string, args: unknown): { code: WorldAdmitErrorCode; message: string } | null {
   if (!isPlainObject(args)) return { code: 'ARGS_INVALID', message: 'args 必须是普通对象' }
   if (depthOf(args) > WORLD_LIMITS.MAX_ARGS_DEPTH) {
     return { code: 'ARGS_INVALID', message: `args 嵌套超过 ${WORLD_LIMITS.MAX_ARGS_DEPTH} 层` }
@@ -651,5 +654,9 @@ function checkArgs(args: unknown): { code: WorldAdmitErrorCode; message: string 
   if (Buffer.byteLength(serialized, 'utf8') > WORLD_LIMITS.MAX_ARGS_BYTES) {
     return { code: 'ARGS_TOO_LARGE', message: `args 序列化超过 ${WORLD_LIMITS.MAX_ARGS_BYTES} 字节` }
   }
+  // F2：语义校验放在这里，而不是只放在模型准入层（admission.ts）。
+  // admit() 是所有登记路径的唯一收口，绕过模型闸门的调用方同样受约束。
+  const semantic = checkActionArgs(verb, args)
+  if (!semantic.ok) return { code: 'ARGS_INVALID', message: semantic.reason }
   return null
 }
