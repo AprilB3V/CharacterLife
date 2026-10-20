@@ -58,7 +58,7 @@ set "CL_NEW_SESSION=1"
 npm run world:say -- "桌边现在是什么情况？"
 ```
 
-## 3. 正常执行
+## 3. 正常执行（第一轮，16:30–16:32）
 
 **T1**（真实模型）：
 
@@ -71,7 +71,7 @@ Provider：deepseek / deepseek-flash
               "status": "pending", "narration": "intent" } ], "rejected": [] }
 ```
 
-**Godot 侧真实执行**（JSONL，`cl_backend_started` 之后）：
+**Godot 侧真实执行**（第一轮）：
 
 ```
 cl_action_received   wa_001   localActionId=cl:<进程标识>:wa_001
@@ -80,9 +80,13 @@ actor_step × 11
 interaction_started  verb=toggle
 desk_state_changed   interaction_count=1 is_active=true
 action_status        completed
-cl_action_result     result=succeeded atWorldTimeMs=4291
+cl_action_result     result=succeeded atWorldTimeMs=17651
 cl_event_delivered   duplicate=false
 ```
+
+> 第一轮 Godot 进程的 JSONL 没有单独留存这个值，`17651` 来自 CL 侧下一轮
+> `worldContext.confirmed` 的权威记录（见 T2）。完整逐行 JSONL 见 §5（那是**第二轮**，
+> 所以世界时间是 `4291`）。
 
 **T2**（同一进程下一轮）：
 
@@ -105,7 +109,12 @@ Provider：deepseek / deepseek-flash
 
 三轮都没有登记世界动作；`worldActions.admitted` 恒为空数组。
 
-## 5. 世界离线不谎报
+## 5. 世界离线不谎报（第二轮，16:33–16:34）
+
+> 这一轮为了复现「箱庭不在线」，**重启过 CL**。因此这里的 `wa_001` 是**新分配的**
+> 动作（CL 队列在内存，id 从 `wa_001` 重新开始），世界时间是 `4291`，
+> 与 §3 第一轮那个 `wa_001`（世界时间 `17651`）不是同一次执行。
+> 这正是 §7 问题 3 说的「重启幂等」限制。
 
 关闭 Godot，再在同一实例上继续：
 
@@ -144,11 +153,14 @@ O3  重新启动 Godot 后
 ## 7. 本轮观察到的真实问题
 
 1. **`deepseek-flash` 在带历史的多轮追问里会返回纯空白**（实测 `19` 个空格，`finish_reason=stop`），
-   触发既有的 `EMPTY_REPLY_FALLBACK`。同一句话在没有历史的新会话里能正常回答；
-   最小复现见 §8。这与 V0.2 记录过的"51 个空格"是同一类问题，属于模型侧行为，本次未修。
+   触发既有的 `EMPTY_REPLY_FALLBACK`。**已单独复现并定位**，见
+   [`WORLD_BLANK_REPLY.md`](WORLD_BLANK_REPLY.md)：短问题 + 自然语言历史时 3/3 空白，
+   换成 JSON 信封历史后 0/3，原因与 `response_format=json_object` 的契约冲突有关。
 2. **模型会把自己编造的场景细节写进记忆**：T2 里"旧书/镇纸/铅笔"没有世界回执依据，
    但被写进 episodic 记忆，后续轮次作为资料检索回来，于是越说越具体。
-   系统块已加规则 5（"回执没说的细节不要编"），能降低但不能根除。
+   **已修复（P0）**：`character_message` 来源的记忆认识论上限被压到 `speculation`，
+   模型写 `status=fact` 会被降级并写审计；`user_message` / `runtime_event` 不受影响。
+   规则与测试见 `docs/WORLD_PROTOCOL.md` §10.9 与 `tests/world/memory-provenance.test.ts`。
 3. **CL 与 Godot 重启后 `actionId` 会重用**：CL 动作队列在内存（`wa_001` 从头开始），
    Godot 的跨重启幂等表也是空的，但同一 Godot 进程内保留旧映射，
    于是重启 CL 后旧进程会把新 `wa_001` 判成重复（`cl_action_duplicate`），动作不执行。
@@ -158,14 +170,14 @@ O3  重新启动 Godot 后
 ## 8. 最小复现（问题 1）
 
 ```bash
-# 同一 system prompt，仅历史不同
-node probe.ts   # no-history  → 231 字符正常回复
-                # with-history → 19 个空格
+# 同一 system prompt，仅历史形态不同；PROBE_REPEAT=3
+node experiments/real-model/blank-reply-probe.ts "最近工作累不累？"
+# A 无历史        0 / 3 空白
+# B 自然语言历史  3 / 3 空白（34 / 60 / 59 个空白字符）
+# C JSON 信封历史 0 / 3 空白
 ```
 
-历史里 assistant 消息是自然语言正文，而请求 `response_format=json_object`；
-模型可能因此认为上一轮格式不合法而放弃输出。若要修，方向是让历史里的 assistant
-内容保持 JSON 信封形状（属于 provider/上下文层改动，不在本轮范围）。
+完整记录、原因判断与修复建议见 [`WORLD_BLANK_REPLY.md`](WORLD_BLANK_REPLY.md)。
 
 ## 9. 未做 / 不宣称
 

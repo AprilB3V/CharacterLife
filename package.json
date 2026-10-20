@@ -26,6 +26,7 @@
     "real:smoke": "node experiments/real-model/smoke.ts",
     "real:continuity": "node experiments/real-model/continuity.ts",
     "world:real": "node experiments/real-model/world-intent.ts",
+    "real:blank": "node experiments/real-model/blank-reply-probe.ts",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
     "typecheck": "tsc -p tsconfig.json",
