@@ -166,25 +166,6 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     nowIso: () => new Date().toISOString(),
   })
 
-  const runtimeManager = new InstanceRuntimeManager({
-    persistence,
-    provider,
-    clock,
-    ids,
-    rng: new SeededRng(20250104),
-    auditFile: config.auditFile ?? null,
-    budget: config.budget,
-    probeQuery: '那本被水泡过的书',
-  })
-
-  const gateway = new MessageGateway({
-    platformStore,
-    identityService,
-    runtimeManager,
-    clock,
-    bindTargetPlatform: config.bindTargetPlatform ?? 'sillytavern',
-  })
-
   // 世界交互：只在显式启用且配置了世界白名单时创建。
   // 实例归属由持久层权威解析，任何调用方都无法自行指定 worldId。
   const worldConfig = config.world
@@ -206,6 +187,26 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
           maxActionsPerSimHour: worldConfig.maxActionsPerSimHour,
         })
       : null
+
+  const runtimeManager = new InstanceRuntimeManager({
+    persistence,
+    provider,
+    clock,
+    ids,
+    rng: new SeededRng(20250104),
+    auditFile: config.auditFile ?? null,
+    budget: config.budget,
+    probeQuery: '那本被水泡过的书',
+    world,
+  })
+
+  const gateway = new MessageGateway({
+    platformStore,
+    identityService,
+    runtimeManager,
+    clock,
+    bindTargetPlatform: config.bindTargetPlatform ?? 'sillytavern',
+  })
 
   const sillyTavernAdapter = new SillyTavernAdapter()
   gateway.registerAdapter(sillyTavernAdapter)

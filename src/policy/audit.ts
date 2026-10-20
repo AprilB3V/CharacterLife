@@ -21,6 +21,7 @@ export type AuditEventType =
   | 'event_fired'
   | 'decision'
   | 'boundary_declared'
+  | 'world_action'
   | 'snapshot_saved'
   | 'memory_exported'
   | 'provider_error'

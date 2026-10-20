@@ -65,7 +65,11 @@ export type { StateSlice } from './runtime/state.ts'
 
 /* Conversation */
 export { ConversationService, DEFAULT_CONVERSATION_CONFIG } from './conversation/service.ts'
-export type { ConversationConfig, ConversationServiceOptions } from './conversation/service.ts'
+export type {
+  ConversationConfig,
+  ConversationServiceOptions,
+  ConversationWorldBinding,
+} from './conversation/service.ts'
 export { MockProvider, createMockProvider } from './conversation/providers/mock.ts'
 export type { MockProviderOptions } from './conversation/providers/mock.ts'
 export {
@@ -79,9 +83,12 @@ export {
   buildSystemPrompt,
   buildMessages,
   renderMemoryData,
+  renderWorldPromptSection,
   parseEnvelope,
   CAPABILITY_NOTE,
+  OUTPUT_PROTOCOL,
 } from './conversation/context.ts'
+export type { ParseEnvelopeOptions, SystemPromptInput, WorldPromptContext } from './conversation/context.ts'
 
 /* ==========================================================================
  * V0.1.1 新增：Character Persistence / Context Manager / Rehydration

@@ -13,12 +13,14 @@
 import type {
   BehaviorDecision,
   ConversationTurnResult,
+  ConversationWorldActions,
   LLMMessage,
   LLMProvider,
   MessageSignals,
   PolicyCode,
   StateProposal,
   Usage,
+  WorldActionCandidate,
 } from '../types.ts'
 import { ContextManager } from '../context/manager.ts'
 import type { ContextPlan } from '../context/manager.ts'
@@ -28,12 +30,29 @@ import type { IdFactory } from '../util/ids.ts'
 import type { CharacterWorkspace } from '../runtime/workspace.ts'
 import { analyzeMessage } from '../runtime/signals.ts'
 import { CONVERSATION_ACTOR } from '../policy/policy.ts'
+import { admitWorldIntents } from '../world/admission.ts'
+import type { WorldService } from '../world/service.ts'
+import type { WorldActionCapability } from '../world/contracts.ts'
 import {
   CAPABILITY_NOTE,
   buildMessages,
   buildSystemPrompt,
   parseEnvelope,
 } from './context.ts'
+import type { WorldPromptContext } from './context.ts'
+
+/**
+ * 一轮对话与世界的绑定关系。
+ *
+ * `instanceId` / `worldId` 由服务端（实例记录）决定，模型与用户都无法指定。
+ */
+export interface ConversationWorldBinding {
+  service: WorldService
+  instanceId: string
+  worldId: string
+  /** 上一轮结束时已经确认/未确认的动作（本轮提示词用） */
+  context?: WorldPromptContext
+}
 
 export interface ConversationConfig {
   temperature: number
@@ -64,6 +83,8 @@ export interface ConversationServiceOptions {
   context?: ContextManager
   /** 每轮模型调用的实际用量记录出口（持久层用它写 context_requests） */
   onContextUsage?: (usage: ContextUsageInput) => void
+  /** 世界交互绑定；不给 = 本部署没有世界，提示词与信封保持旧协议 */
+  world?: ConversationWorldBinding | null
 }
 
 export interface ContextUsageInput {
@@ -97,6 +118,7 @@ export class ConversationService {
   #config: ConversationConfig
   #context: ContextManager | null
   #onContextUsage: ((usage: ContextUsageInput) => void) | null
+  #world: ConversationWorldBinding | null
   #lastPlan: ContextPlan | null = null
   #history: LLMMessage[] = []
   #turnCount = 0
@@ -109,6 +131,7 @@ export class ConversationService {
     this.#config = { ...DEFAULT_CONVERSATION_CONFIG, ...opts.config }
     this.#context = opts.context ?? null
     this.#onContextUsage = opts.onContextUsage ?? null
+    this.#world = opts.world ?? null
   }
 
   get config(): Readonly<ConversationConfig> {
@@ -140,6 +163,17 @@ export class ConversationService {
 
     const signals = analyzeMessage(userText, profile)
     const decision = this.#workspace.decide(signals)
+
+    // 世界交互：清单来自服务端（代码常量 ∩ 白名单），与用户文本无关。
+    const world = this.#world
+    const worldManifest: WorldActionCapability[] = world ? world.service.manifest() : []
+    const worldPrompt: WorldPromptContext | undefined = world
+      ? {
+          manifest: worldManifest,
+          confirmed: world.context?.confirmed ?? [],
+          unconfirmed: world.context?.unconfirmed ?? [],
+        }
+      : undefined
 
     const retrieved = this.#workspace.memory.search(userText, {
       nowSim,
@@ -188,7 +222,10 @@ export class ConversationService {
     }
 
     // 2) 组装上下文并调用 Provider
-    const system = buildSystemPrompt({ profile, decision, capabilityNote: CAPABILITY_NOTE })
+    //    世界关闭时不传 world → 提示词与旧版本逐字节一致。
+    const system = buildSystemPrompt(
+      worldPrompt ? { profile, decision, capabilityNote: CAPABILITY_NOTE, world: worldPrompt } : { profile, decision, capabilityNote: CAPABILITY_NOTE },
+    )
 
     // 有 ContextManager 时走预算化组装；否则退回 V0.1 的固定轮数拼装（向后兼容）。
     let messages: LLMMessage[]
@@ -260,6 +297,7 @@ export class ConversationService {
       tags?: string[]
     }> = []
     let parseError: string | null = null
+    let worldCandidates: WorldActionCandidate[] = []
 
     try {
       const response = await this.#provider.complete({
@@ -273,6 +311,8 @@ export class ConversationService {
           action: decision.action,
           responseStyle: decision.responseStyle,
           characterName: profile.name,
+          // 世界是否启用：离线 Mock 用它决定要不要产出动作候选；真实 Provider 不使用。
+          worldEnabled: world !== null,
           // 传输层元数据：让离线 Mock 能拿到「纯用户输入」，而不必从拼接后的提示词里猜。
           // 真实 Provider 不使用它，也不会把它写进提示词。
           userText,
@@ -282,7 +322,7 @@ export class ConversationService {
       model = response.model
       usage = response.usage
 
-      const parsed = parseEnvelope(response.text)
+      const parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
       parseError = parsed.error
       reply = parsed.fallbackText
       if (parsed.envelope) {
@@ -299,6 +339,7 @@ export class ConversationService {
           evidence: p.evidence ?? [],
         }))
         memoryWrites = parsed.envelope.memoryWrites
+        worldCandidates = parsed.envelope.worldActions ?? []
       }
       // 模型可能返回纯空白（实测：finish_reason=stop + 51 个空格）。
       // 空白回复既不是有效对话、也不该作为空气泡展示，统一降级。
@@ -341,13 +382,20 @@ export class ConversationService {
       })
     }
 
-    // 3) 提议交给工作区校验：聊天层用 CONVERSATION_ACTOR 的身份提交
+    // 3) 世界动作：先过确定性准入闸门，再交给 WorldService 登记。
+    //    注意这一步**不写任何角色状态**，也不代表动作已执行。
+    let worldActions: ConversationWorldActions | undefined
+    if (world) {
+      worldActions = this.#admitWorldCandidates(world, worldCandidates, decision, turnId, nowSim)
+    }
+
+    // 4) 提议交给工作区校验：聊天层用 CONVERSATION_ACTOR 的身份提交
     const outcome = this.#workspace.submitProposals(parsedProposals, CONVERSATION_ACTOR, {
       source: `turn:${turnId}`,
     })
     for (const r of outcome.rejected) blockedReasons.push(r.decision.code)
 
-    // 4) 记忆写入（含不可信内容降级）
+    // 5) 记忆写入（含不可信内容降级）
     for (const write of memoryWrites) {
       this.#workspace.writeMemory(
         {
@@ -364,7 +412,7 @@ export class ConversationService {
       )
     }
 
-    // 5) 运行时观察：边界、约定、分歧修复（关系只能从这里变化）
+    // 6) 运行时观察：边界、约定、分歧修复（关系只能从这里变化）
     this.#workspace.observeTurn(signals, userText, turnId)
 
     this.#history.push({ role: 'user', content: userText })
@@ -407,12 +455,82 @@ export class ConversationService {
             digestedTurns: plan.digestedTurns,
           }
         : undefined,
+      ...(worldActions ? { worldActions } : {}),
     }
   }
 
   /** 只做分析，不调用模型（用于调试与测试）。 */
   analyze(userText: string): MessageSignals {
     return analyzeMessage(userText, this.#workspace.profile)
+  }
+
+  /**
+   * 世界动作准入：确定性闸门 + 服务端登记。
+   *
+   * 返回给调用方的是「动作 id + 准入结果 + 当前状态」，不是执行结果 ——
+   * 动作此刻最多是 `pending`，世界还没看到它。
+   */
+  #admitWorldCandidates(
+    world: ConversationWorldBinding,
+    candidates: readonly WorldActionCandidate[],
+    decision: BehaviorDecision,
+    turnId: string,
+    nowSim: number,
+  ): ConversationWorldActions {
+    const admission = admitWorldIntents({
+      candidates,
+      decision,
+      dynamic: this.#workspace.dynamicState,
+      manifest: world.service.manifest(),
+      worldEnabled: true,
+      nowSim,
+      turnId,
+    })
+
+    const admitted: ConversationWorldActions['admitted'] = []
+    const rejected: ConversationWorldActions['rejected'] = admission.rejected.map((r) => ({
+      verb: r.verb,
+      target: r.target,
+      code: r.code,
+      reasons: r.reasons,
+    }))
+
+    for (const spec of admission.admitted) {
+      const registered = world.service.admit({
+        worldId: world.worldId,
+        instanceId: world.instanceId,
+        spec,
+      })
+      if (registered.ok) {
+        admitted.push({
+          actionId: registered.action.actionId,
+          verb: registered.action.verb,
+          target: registered.action.target,
+          status: registered.action.status,
+          narration: registered.action.narration,
+        })
+      } else {
+        rejected.push({
+          verb: spec.verb,
+          target: spec.target,
+          code: registered.code,
+          reasons: registered.reasons,
+        })
+      }
+    }
+
+    if (admitted.length > 0 || rejected.length > 0) {
+      this.#workspace.audit.append(
+        'world_action',
+        'conversation',
+        admitted.length > 0
+          ? `登记世界动作 ${admitted.map((a) => `${a.actionId}:${a.verb}(${a.target ?? '*'})`).join(', ')}`
+          : '世界动作被拒绝',
+        { turnId, admitted, rejected },
+      )
+    }
+
+    return { admitted, rejected }
   }
 
   /**

@@ -398,6 +398,11 @@ export interface ConversationTurnResult {
   injectionMarkers: string[]
   /** 本轮被策略层判定为敏感、需要显式拒绝的类别 */
   blockedReasons: PolicyCode[]
+  /**
+   * 本轮的世界动作准入结果。
+   * 未启用世界交互时为 undefined（调用方据此判断"这个部署没有世界"）。
+   */
+  worldActions?: ConversationWorldActions
   /** 上下文预算的实际组装结果（启用 ContextManager 时存在） */
   contextUsage?: {
     budget: number
@@ -466,4 +471,9 @@ export interface ModelEnvelope {
     salience?: number
     tags?: string[]
   }>
+  /**
+   * 可选：世界动作候选（0 或 1 个）。
+   * 世界功能关闭时解析器不会产出这个字段，旧协议与旧行为完全不变。
+   */
+  worldActions?: WorldActionCandidate[]
 }

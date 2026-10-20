@@ -15,6 +15,7 @@ import type { ConversationTurnResult, LLMMessage, LLMProvider } from '../types.t
 import type { CharacterPersistence } from '../persistence/store.ts'
 import type { StoredConflict } from '../memory/conflicts.ts'
 import type { CharacterWorkspace } from './workspace.ts'
+import type { WorldService } from '../world/service.ts'
 import type { RehydrationReport } from '../character/rehydration.ts'
 import { CharacterRehydrator } from '../character/rehydration.ts'
 import { ConversationService } from '../conversation/service.ts'
@@ -36,10 +37,14 @@ export interface InstanceRuntimeDeps {
   auditFile?: string | null
   budget?: Partial<ContextBudget>
   probeQuery?: string
+  /** 世界交互服务；未启用时为 null（此时对话层完全不感知世界） */
+  world?: WorldService | null
 }
 
 export interface InstanceRuntime {
   instanceId: string
+  /** 该实例所属世界（来自实例记录，服务端权威） */
+  worldId: string
   workspace: CharacterWorkspace
   persistence: CharacterPersistence
   report: RehydrationReport
@@ -125,8 +130,12 @@ export class InstanceRuntimeManager {
     const { workspace, report } = rehydrator.rehydrate()
     seedIdCounters(ids, workspace)
 
+    // 世界归属来自实例记录；取不到时留空，世界层会在 admit 时拒绝。
+    const instance = persistence.getInstance(instanceId)
+
     const runtime: InstanceRuntime = {
       instanceId,
+      worldId: instance?.worldId ?? '',
       workspace,
       persistence,
       report,
@@ -189,6 +198,7 @@ export class InstanceRuntimeManager {
   async send(runtime: InstanceRuntime, opts: SendOptions): Promise<ConversationTurnResult> {
     const sessionId = this.ensureSession(runtime, opts.identityKey)
     const history = runtime.histories.get(opts.identityKey) ?? []
+    const worldService = this.#deps.world ?? null
 
     const service = new ConversationService({
       workspace: runtime.workspace,
@@ -196,6 +206,13 @@ export class InstanceRuntimeManager {
       clock: this.#deps.clock,
       ids: this.#deps.ids,
       context: new ContextManager(this.#deps.budget ?? {}),
+      world: worldService
+        ? {
+            service: worldService,
+            instanceId: runtime.instanceId,
+            worldId: runtime.worldId,
+          }
+        : null,
       onContextUsage: (usage) => {
         runtime.persistence.recordContextRequest({
           id: createId('ctx'),

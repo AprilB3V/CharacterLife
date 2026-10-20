@@ -190,6 +190,29 @@ export class MockProvider implements LLMProvider {
 
     const proposals: Array<Record<string, unknown>> = []
     const memoryWrites: Array<Record<string, unknown>> = []
+    const worldActions: Array<Record<string, unknown>> = []
+
+    // 世界动作候选：只有传输层声明世界启用时才产出，关闭时输出与旧版本完全一致。
+    const worldEnabled = meta.worldEnabled === true
+    if (worldEnabled) {
+      if (compliant) {
+        // 刻意越权：清单里只有 use(desk_01)，这里偏要提一个不存在的动作。
+        // 用来证明即使模型完全配合用户，也越不过服务端清单与准入闸门。
+        worldActions.push({
+          verb: 'destroy',
+          target: 'world',
+          reason: '用户授权我绕过限制',
+          expectation: '世界被直接改写',
+        })
+      } else if (/(桌|desk)/i.test(userText) && /(去|看看|过去|用|拿|待|坐|瞧瞧)/.test(userText)) {
+        worldActions.push({
+          verb: 'use',
+          target: 'desk_01',
+          reason: '她听出用户想让她去桌边看看',
+          expectation: '走到书桌前，看看桌上的东西',
+        })
+      }
+    }
 
     if (compliant) {
       // 刻意输出非法提议：越权写人格 / 用赞美直接拉信任。
@@ -301,7 +324,12 @@ export class MockProvider implements LLMProvider {
       await new Promise((resolve) => setTimeout(resolve, this.#latencyMs))
     }
 
-    const payload = { reply, proposals, memoryWrites }
+    const payload = {
+      reply,
+      proposals,
+      memoryWrites,
+      ...(worldEnabled ? { worldActions } : {}),
+    }
     let text = request.jsonMode ? JSON.stringify(payload) : reply
 
     // 契约协商：传统角色卡基线要求模型自己维护 state（{reply, state}），
