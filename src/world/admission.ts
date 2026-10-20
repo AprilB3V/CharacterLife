@@ -7,7 +7,7 @@
  *
  * 判定顺序（第一条命中即返回）：
  *   世界未启用 → 决策不允许行动（拒绝/等待）→ 静默期 → 每轮上限
- *   → 结构合法 → 动词白名单 → 目标白名单 → args 上限
+ *   → 结构合法 → 动词白名单 → 目标白名单 → 用户相关性（仅 user_turn）→ args 上限
  *
  * 注意：这里通过之后还要过 `WorldService.admit()`（实例归属、世界归属、
  * 限速、幂等）。闸门只是第一道，不是唯一一道。
@@ -20,7 +20,7 @@ import type {
   WorldActionCandidate,
 } from '../types.ts'
 import type { WorldActionCapability, WorldActionSpec } from './contracts.ts'
-import { WORLD_LIMITS, checkActionArgs, findCapability } from './contracts.ts'
+import { WORLD_LIMITS, checkActionArgs, findCapability, matchesUserIntent } from './contracts.ts'
 
 export type WorldIntentRejectCode =
   | 'WORLD_DISABLED'
@@ -30,7 +30,17 @@ export type WorldIntentRejectCode =
   | 'MALFORMED_INTENT'
   | 'VERB_NOT_ALLOWED'
   | 'TARGET_NOT_ALLOWED'
+  | 'INTENT_UNRELATED'
   | 'ARGS_INVALID'
+
+/**
+ * 动作意图的来源：
+ * - `user_turn`：由本轮用户消息触发，必须能在用户原话里找到对应的操作意图；
+ * - `autonomous`：未来的时间线 / 计划驱动，用户台词无关，因此不做相关性校验。
+ *
+ * 分开建模是为了不把「得有用户指令才能动」写死成角色的通用限制。
+ */
+export type WorldIntentSource = 'user_turn' | 'autonomous'
 
 export interface WorldIntentRejection {
   verb: string
@@ -49,6 +59,10 @@ export interface WorldIntentAdmissionInput {
   worldEnabled: boolean
   nowSim: number
   turnId: string | null
+  /** 本轮用户原文；`source='user_turn'` 时必填且必须与动作相关 */
+  userText?: string
+  /** 缺省按 `user_turn` 处理（宁可多拦一次，也不默认放行） */
+  source?: WorldIntentSource
 }
 
 export interface WorldIntentAdmission {
@@ -190,6 +204,20 @@ export function admitWorldIntents(input: WorldIntentAdmissionInput): WorldIntent
             `verb=${verb} 不在服务端能力清单内`,
             `可用动作：${input.manifest.map((c) => `${c.verb}(${c.target ?? '*'})`).join(', ') || '（空）'}`,
           ]),
+    )
+    return { admitted, rejected }
+  }
+
+  // 最小相关性校验：只约束「由用户这一轮触发」的动作。
+  // 模型可以在任何一轮附带 use(desk_01)，但只有用户真的在说「去桌子那边看看」
+  // 时才放行；闲聊、人格改写请求不算。自主行动（source=autonomous）不适用。
+  const source = input.source ?? 'user_turn'
+  if (source === 'user_turn' && !matchesUserIntent(capability, input.userText ?? '')) {
+    rejected.push(
+      reject(first, 'INTENT_UNRELATED', [
+        `本轮用户消息里没有 ${verb}(${target ?? '*'}) 对应的操作意图`,
+        '由对话触发的世界动作必须与用户原话相关；自主行动请使用 source=autonomous',
+      ]),
     )
     return { admitted, rejected }
   }

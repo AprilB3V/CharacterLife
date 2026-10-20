@@ -390,7 +390,7 @@ export class ConversationService {
     //    注意这一步**不写任何角色状态**，也不代表动作已执行。
     let worldActions: ConversationWorldActions | undefined
     if (world) {
-      worldActions = this.#admitWorldCandidates(world, worldCandidates, decision, turnId, nowSim)
+      worldActions = this.#admitWorldCandidates(world, worldCandidates, decision, turnId, nowSim, userText)
     }
     // 4) 提议交给工作区校验：聊天层用 CONVERSATION_ACTOR 的身份提交
     const outcome = this.#workspace.submitProposals(parsedProposals, CONVERSATION_ACTOR, {
@@ -485,6 +485,7 @@ export class ConversationService {
     decision: BehaviorDecision,
     turnId: string,
     nowSim: number,
+    userText: string,
   ): ConversationWorldActions {
     const admission = admitWorldIntents({
       candidates,
@@ -494,6 +495,9 @@ export class ConversationService {
       worldEnabled: true,
       nowSim,
       turnId,
+      // 由对话触发 → 必须与用户原话相关（见 admission.ts 的最小相关性校验）
+      source: 'user_turn',
+      userText,
     })
 
     const admitted: ConversationWorldActions['admitted'] = []

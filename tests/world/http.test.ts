@@ -64,17 +64,41 @@ interface Ctx {
   close: () => Promise<void>
 }
 
+/**
+ * 在本地起一个可用的 HTTP 服务。
+ *
+ * `port: 0` 由系统分配，但 undici 有一份「禁止请求的端口」名单（bad port），
+ * 偶尔会撞上，导致 fetch 直接抛错而不是连不上。这里探测一次 /healthz，
+ * 撞上就换一个端口重来 —— 这是测试装置的稳健性，与产品行为无关。
+ */
+async function listenOnFreePort(
+  make: () => ReturnType<typeof createApiServer>,
+): Promise<{ handle: ReturnType<typeof createApiServer>; url: string }> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const handle = make()
+    const { url } = await handle.listen()
+    try {
+      await fetch(`${url}/healthz`, { headers: { connection: 'close' } })
+      return { handle, url }
+    } catch {
+      await handle.close()
+    }
+  }
+  throw new Error('无法获得一个可用的本地端口（连续命中 undici 禁用端口）')
+}
+
 async function boot(opts: { dbPath?: string; world?: boolean; devMode?: boolean } = {}): Promise<Ctx> {
   const runtime = makeRuntime(opts)
   const instanceId = runtime.identityService.resolveOrCreate('world', 'cl-world-instance').instance.id
-  const api = createApiServer({
-    runtime,
-    port: 0,
-    token: CHAT_TOKEN,
-    logger: () => {},
-    ...(runtime.world ? { world: { token: WORLD_TOKEN, devMode: opts.devMode === true } } : {}),
-  })
-  const { url } = await api.listen()
+  const { handle: api, url } = await listenOnFreePort(() =>
+    createApiServer({
+      runtime,
+      port: 0,
+      token: CHAT_TOKEN,
+      logger: () => {},
+      ...(runtime.world ? { world: { token: WORLD_TOKEN, devMode: opts.devMode === true } } : {}),
+    }),
+  )
   async function request(
     path: string,
     init: { token?: string | null; method?: string; body?: unknown } = {},

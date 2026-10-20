@@ -48,6 +48,9 @@ function admit(candidates: unknown[], overrides: Partial<Parameters<typeof admit
     worldEnabled: true,
     nowSim: 1000,
     turnId: 'turn_001',
+    // 默认给一句「真的在要求去桌边」的用户原话；相关性用例会显式覆盖它
+    userText: '去桌子旁看看',
+    source: 'user_turn',
     ...overrides,
   })
 }
@@ -141,6 +144,47 @@ describe('World admission · 闸门判据', () => {
     assert.equal(spec.expectation!.length, 200)
     assert.equal(spec.evidence.length, 8)
     assert.equal(spec.evidence[0]!.length, 128)
+  })
+})
+
+describe('World admission · 用户相关性（只约束对话触发）', () => {
+  it('闲聊里模型附带 use(desk_01) → INTENT_UNRELATED', () => {
+    const result = admit([{ verb: 'use', target: 'desk_01' }], { userText: '今天天气不错，你在做什么？' })
+    assert.equal(result.admitted.length, 0)
+    assert.equal(result.rejected[0]!.code, 'INTENT_UNRELATED')
+  })
+
+  it('缺 userText 的对话轮次一律拒绝（fail closed）', () => {
+    const result = admit([{ verb: 'use', target: 'desk_01' }], { userText: undefined })
+    assert.equal(result.admitted.length, 0)
+    assert.equal(result.rejected[0]!.code, 'INTENT_UNRELATED')
+  })
+
+  it('只提到桌子但没有操作意图 → INTENT_UNRELATED', () => {
+    const result = admit([{ verb: 'use', target: 'desk_01' }], { userText: '这张桌子真好看，是旧货吗？' })
+    assert.equal(result.admitted.length, 0)
+    assert.equal(result.rejected[0]!.code, 'INTENT_UNRELATED')
+  })
+
+  it('多种说法都能识别为「真的要她过去」', () => {
+    for (const text of [
+      '去桌子旁看看',
+      '你能帮我去书桌那边一下吗？',
+      '过去瞧瞧桌子上有什么',
+      '走到桌前待一会儿',
+      'use the desk please',
+    ]) {
+      const result = admit([{ verb: 'use', target: 'desk_01' }], { userText: text })
+      assert.equal(result.admitted.length, 1, text)
+    }
+  })
+
+  it('自主行动（source=autonomous）不做相关性校验，保留扩展空间', () => {
+    const result = admit([{ verb: 'use', target: 'desk_01' }], {
+      userText: '今天天气不错',
+      source: 'autonomous',
+    })
+    assert.equal(result.admitted.length, 1)
   })
 })
 

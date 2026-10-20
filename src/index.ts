@@ -50,7 +50,7 @@ export type {
   TrackedPromise,
 } from './runtime/workspace.ts'
 export { Timeline } from './runtime/timeline.ts'
-export { analyzeMessage, isAcceptance } from './runtime/signals.ts'
+export { analyzeMessage, isAcceptance, detectPersonalityRewrite } from './runtime/signals.ts'
 export { decideForMessage, decideForIdle, decideForEvent } from './runtime/decision.ts'
 export {
   createInitialDynamicState,
@@ -281,8 +281,17 @@ export type {
   WorldIntentAdmissionInput,
   WorldIntentRejection,
   WorldIntentRejectCode,
+  WorldIntentSource,
 } from './world/admission.ts'
-export { WORLD_RESULTS, WORLD_EVENT_KINDS, WORLD_LIMITS, WORLD_ACTION_CATALOG, manifestFor, findCapability } from './world/contracts.ts'
+export {
+  WORLD_RESULTS,
+  WORLD_EVENT_KINDS,
+  WORLD_LIMITS,
+  WORLD_ACTION_CATALOG,
+  manifestFor,
+  findCapability,
+  matchesUserIntent,
+} from './world/contracts.ts'
 export type { WorldActionCapability } from './world/contracts.ts'
 export type {
   WorldActionResult,

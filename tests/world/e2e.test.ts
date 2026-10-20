@@ -34,6 +34,23 @@ class RecordingProvider implements LLMProvider {
   }
 }
 
+/** 同 http.test.ts：撞上 undici 禁用端口时换一个重来。 */
+async function listenOnFreePort(
+  make: () => ReturnType<typeof createApiServer>,
+): Promise<{ handle: ReturnType<typeof createApiServer>; url: string }> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const handle = make()
+    const { url } = await handle.listen()
+    try {
+      await fetch(`${url}/healthz`, { headers: { connection: 'close' } })
+      return { handle, url }
+    } catch {
+      await handle.close()
+    }
+  }
+  throw new Error('无法获得一个可用的本地端口（连续命中 undici 禁用端口）')
+}
+
 async function boot() {
   const provider = new RecordingProvider(new MockProvider({ mode: 'in-character' }))
   const runtime = assembleRuntime({
@@ -42,14 +59,15 @@ async function boot() {
     provider,
     world: { enabled: true, worldIds: [WORLD], allowedVerbs: ['use'], allowedTargets: ['desk_01'] },
   })
-  const api = createApiServer({
-    runtime,
-    port: 0,
-    token: CHAT_TOKEN,
-    logger: () => {},
-    world: { token: WORLD_TOKEN },
-  })
-  const { url } = await api.listen()
+  const { handle: api, url } = await listenOnFreePort(() =>
+    createApiServer({
+      runtime,
+      port: 0,
+      token: CHAT_TOKEN,
+      logger: () => {},
+      world: { token: WORLD_TOKEN },
+    }),
+  )
   const call = async (
     path: string,
     init: { token: string; method?: string; body?: unknown },
@@ -82,6 +100,13 @@ describe('World E2E · 聊天 → 动作 → 执行 → 认知', () => {
       assert.equal(typeof first.body.reply, 'string')
       const instanceId = first.body.instanceId as string
       assert.ok(instanceId.length > 0)
+
+      // 观测字段：证明动作来自模型，而不是本地固定动作
+      assert.equal(first.body.provider, 'mock')
+      assert.match(String(first.body.model), /^mock/)
+      assert.equal(first.body.worldActions.admitted.length, 1)
+      assert.equal(first.body.worldActions.admitted[0].verb, 'use')
+      assert.equal(first.body.worldActions.admitted[0].status, 'pending')
 
       // 2) 世界领取（此时才真正"下发"给 Godot）
       const leased = await ctx.call(`/v1/world/actions?worldId=${WORLD}`, { token: WORLD_TOKEN })

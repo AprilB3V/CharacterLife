@@ -41,6 +41,13 @@ function line(text = ''): void {
   console.log(text)
 }
 
+/** 日志里只出现掩码；完整值仅在显式要求时回显。 */
+function maskSecret(value: string): string {
+  if (process.env.CLWORLD_SHOW_TOKENS === 'true') return value
+  if (value.length <= 6) return '***'
+  return `${value.slice(0, 3)}***${value.slice(-2)}（长度 ${value.length}）`
+}
+
 async function main(): Promise<void> {
   const runtime = assembleRuntime({
     dbPath: DB_PATH,
@@ -75,13 +82,16 @@ async function main(): Promise<void> {
   const { url } = await api.listen()
 
   line('')
-  line('CharacterLife × CL-World 联调入口（第一阶段 · 内存动作队列 · 重启即丢失）')
+  line('CharacterLife × CL-World 联调入口（内存动作队列 · 重启即丢失）')
   line('─'.repeat(72))
   line(`  HTTP        ${url}`)
   line(`  worldId     ${WORLD_ID}`)
   line(`  instanceId  ${instanceId}`)
-  line(`  世界 Token   ${WORLD_TOKEN}`)
-  line(`  聊天 Token   ${CHAT_TOKEN}（仅供其它既有接口使用，**不能**调世界接口）`)
+  line(`  Provider    ${runtime.provider.name} / ${runtime.provider.model}`)
+  // token 只回显掩码：控制台输出同样算日志，不能把凭据写进去。
+  // 需要核对完整值时显式设置 CLWORLD_SHOW_TOKENS=true。
+  line(`  世界 Token   ${maskSecret(WORLD_TOKEN)}（Godot 侧用同一个 CLWORLD_TOKEN）`)
+  line(`  聊天 Token   ${maskSecret(CHAT_TOKEN)}（仅供 /v1/messages 等既有接口，**不能**调世界接口）`)
   line(`  数据库       ${DB_PATH}（只存角色状态；动作队列不在库里）`)
   line('')
 
@@ -110,27 +120,32 @@ async function main(): Promise<void> {
     line('')
   }
 
+  // 下面的示例统一用 shell 变量占位，避免把 token 打进日志
   line('① 世界领取待执行动作（领取即进入 dispatched）')
-  line(`  curl -s -H "Authorization: Bearer ${WORLD_TOKEN}" \\`)
+  line('  curl -s -H "Authorization: Bearer %CLWORLD_TOKEN%" \\')
   line(`    "${url}/v1/world/actions?worldId=${WORLD_ID}&limit=4"`)
   line('')
   line('② 世界上报执行结果（action_result，结果只能是 succeeded / failed / rejected）')
   line(`  curl -s -X POST "${url}/v1/world/events" \\`)
-  line(`    -H "Authorization: Bearer ${WORLD_TOKEN}" -H "Content-Type: application/json" \\`)
+  line('    -H "Authorization: Bearer %CLWORLD_TOKEN%" -H "Content-Type: application/json" \\')
   line(`    -d '{"worldId":"${WORLD_ID}","events":[{"eventId":"evt-001","instanceId":"${instanceId}",` +
     `"actionId":"wa_001","kind":"action_result","result":"succeeded","atWorldTimeMs":128900,` +
     `"summary":"角色在书桌前停留约 2 秒","facts":[{"key":"desk_01.used","value":true}],"code":null}]}'`)
   line('')
   line('  注意（Windows）：上面的单引号 JSON 在 PowerShell/cmd 里会被拆参数，改用文件更稳：')
   line('    curl -s -X POST "' + url + '/v1/world/events" \\')
-  line(`      -H "Authorization: Bearer ${WORLD_TOKEN}" -H "Content-Type: application/json" \\`)
+  line('      -H "Authorization: Bearer %CLWORLD_TOKEN%" -H "Content-Type: application/json" \\')
   line('      --data-binary "@event.json"')
   line('')
   line('③ 再登记一个动作（仅 dev 模式；不需要重启）')
-  line(`  curl -s -X POST -H "Authorization: Bearer ${WORLD_TOKEN}" \\`)
+  line('  curl -s -X POST -H "Authorization: Bearer %CLWORLD_TOKEN%" \\')
   line(`    "${url}/v1/world/dev/seed?worldId=${WORLD_ID}"`)
   line('')
-  line('④ 反例：用聊天 Token 调世界接口 → 401 UNAUTHORIZED')
+  line('④ 真实模型联调：另开一个终端')
+  line('  set "CHARACTERLIFE_API_TOKEN=<与上面同一聊天 Token>"')
+  line('  npm run world:say -- "去桌子旁看看"')
+  line('')
+  line('⑤ 反例：用聊天 Token 调世界接口 → 401 UNAUTHORIZED')
   line('')
   line('Ctrl+C 退出。动作队列不落库，重启后 actionId 会从 wa_001 重新开始。')
   line('')
