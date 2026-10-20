@@ -244,6 +244,66 @@ export interface PolicyDecision {
 }
 
 /* ==========================================================================
+ * World · 世界动作（模型输出与调用方结果的结构）
+ *
+ * 只放「模型能产出」与「调用方能读到」的形状；动作记录、回执与队列
+ * 由 `src/world/` 持有。这里刻意不引用世界模块，保持类型图是单向的。
+ * ========================================================================== */
+
+/**
+ * 动作生命周期。
+ *
+ * pending   已登记，等待世界领取
+ * dispatched 世界已领取，结果未知
+ * succeeded/failed/rejected  终局（由世界回执决定）
+ * expired   窗口/租约耗尽仍无回执
+ */
+export type WorldActionStatus =
+  | 'pending'
+  | 'dispatched'
+  | 'succeeded'
+  | 'failed'
+  | 'rejected'
+  | 'expired'
+
+/**
+ * 叙述许可：该状态下允许回复里出现哪种时态。
+ * 派生值，不入库、不可由模型覆盖。
+ */
+export type WorldActionNarration = 'intent' | 'uncertain' | 'done' | 'failed'
+
+/**
+ * 模型给出的动作候选（不可信输入，必须经准入闸门与白名单校验）。
+ *
+ * 注意：这不是执行指令，也不是 `StateProposal`。它只是一个「请求」。
+ */
+export interface WorldActionCandidate {
+  verb: string
+  target?: string | null
+  args?: Record<string, unknown>
+  reason?: string
+  evidence?: string[]
+  expectation?: string | null
+}
+
+/** 一轮对话里世界动作的准入结果（暴露给调用方）。 */
+export interface ConversationWorldActions {
+  admitted: Array<{
+    actionId: string
+    verb: string
+    target: string | null
+    status: WorldActionStatus
+    narration: WorldActionNarration
+  }>
+  rejected: Array<{
+    verb: string
+    target: string | null
+    code: string
+    reasons: string[]
+  }>
+}
+
+/* ==========================================================================
  * Conversation · 聊天区
  * ========================================================================== */
 

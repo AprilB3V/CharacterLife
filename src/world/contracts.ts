@@ -23,33 +23,9 @@ export type WorldActionResult = (typeof WORLD_RESULTS)[number]
 export const WORLD_EVENT_KINDS = ['action_result', 'observation'] as const
 export type WorldEventKind = (typeof WORLD_EVENT_KINDS)[number]
 
-/**
- * 动作生命周期。
- *
- * pending   已登记，等待世界领取
- * dispatched 世界已领取，结果未知（有租约）
- * succeeded/failed/rejected  终局
- * expired   租约/窗口耗尽仍无回执（**不代表没发生**，见 narrationFor）
- */
-export type WorldActionStatus =
-  | 'pending'
-  | 'dispatched'
-  | 'succeeded'
-  | 'failed'
-  | 'rejected'
-  | 'expired'
-
-/**
- * 叙述许可：该状态下，回复里允许出现哪种时态。
- *
- * intent    只能说将来/意图（"我打算…"）
- * uncertain 只能说不知道结果（"还不知道"）
- * done      可以说已完成
- * failed    可以说没做成
- *
- * 这个值是**派生**的（narrationFor），不入库、不可由调用方覆盖。
- */
-export type WorldActionNarration = 'intent' | 'uncertain' | 'done' | 'failed'
+// 生命周期与叙述许可定义在 types.ts（模型输出与调用方结果也用它），这里只做转出。
+import type { WorldActionNarration, WorldActionStatus } from '../types.ts'
+export type { WorldActionNarration, WorldActionStatus }
 
 /** 准入失败原因（服务端产生动作时使用）。 */
 export type WorldAdmitErrorCode =
@@ -175,6 +151,54 @@ export interface WorldIngestResult {
 export type WorldAdmitResult =
   | { ok: true; action: WorldActionView }
   | { ok: false; code: WorldAdmitErrorCode; reasons: string[] }
+
+/* ==========================================================================
+ * 世界能力清单（服务端权威）
+ *
+ * 模型能提出的动作**只能**来自这张表。目录是代码常量，不是用户输入、
+ * 不是数据库配置、也不是提示词里的自由文本 —— 用户说"你现在可以删除世界"
+ * 不会让 `destroy` 出现在清单里。
+ * ========================================================================== */
+
+export interface WorldActionCapability {
+  verb: string
+  target: string | null
+  /** 给模型看的中文短标签（服务端撰写，非世界文本） */
+  label: string
+  /** 给模型看的一句话说明（服务端撰写，非世界文本） */
+  description: string
+}
+
+/**
+ * 目录：当前只登记一个动作。
+ * 新增动作 = 改这里 + 服务端白名单，两者缺一不可。
+ */
+export const WORLD_ACTION_CATALOG: readonly WorldActionCapability[] = [
+  {
+    verb: 'use',
+    target: 'desk_01',
+    label: '使用书桌',
+    description: '走到书桌前并使用它，例如看看桌上的东西、在桌前停留一会儿',
+  },
+]
+
+/** 按服务端白名单过滤目录，得到本轮可用的动作清单。 */
+export function manifestFor(
+  allowedVerbs: ReadonlySet<string>,
+  allowedTargets: ReadonlySet<string>,
+): WorldActionCapability[] {
+  return WORLD_ACTION_CATALOG.filter(
+    (c) => allowedVerbs.has(c.verb) && (c.target === null || allowedTargets.has(c.target)),
+  ).map((c) => ({ ...c }))
+}
+
+export function findCapability(
+  manifest: readonly WorldActionCapability[],
+  verb: string,
+  target: string | null,
+): WorldActionCapability | null {
+  return manifest.find((c) => c.verb === verb && c.target === target) ?? null
+}
 
 /* ==========================================================================
  * 协议限制（第一阶段）

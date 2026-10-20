@@ -267,7 +267,15 @@ export type { InstanceRuntime, InstanceRuntimeDeps, SendOptions } from './runtim
 export { WorldService, validateWorldEvent } from './world/service.ts'
 export type { WorldServiceOptions } from './world/service.ts'
 export { narrationFor, isTerminalStatus, allowsCompletionClaim } from './world/state.ts'
-export { WORLD_RESULTS, WORLD_EVENT_KINDS, WORLD_LIMITS } from './world/contracts.ts'
+export { admitWorldIntents } from './world/admission.ts'
+export type {
+  WorldIntentAdmission,
+  WorldIntentAdmissionInput,
+  WorldIntentRejection,
+  WorldIntentRejectCode,
+} from './world/admission.ts'
+export { WORLD_RESULTS, WORLD_EVENT_KINDS, WORLD_LIMITS, WORLD_ACTION_CATALOG, manifestFor, findCapability } from './world/contracts.ts'
+export type { WorldActionCapability } from './world/contracts.ts'
 export type {
   WorldActionResult,
   WorldActionStatus,

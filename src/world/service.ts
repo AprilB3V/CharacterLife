@@ -26,7 +26,8 @@ import type {
   WorldIngestErrorCode,
   WorldIngestResult,
 } from './contracts.ts'
-import { WORLD_LIMITS, WORLD_RESULTS } from './contracts.ts'
+import { WORLD_LIMITS, WORLD_RESULTS, manifestFor } from './contracts.ts'
+import type { WorldActionCapability } from './contracts.ts'
 import { isTerminalStatus, narrationFor } from './state.ts'
 
 export interface WorldServiceOptions {
@@ -240,6 +241,16 @@ export class WorldService {
     return [...this.#allowedTargets]
   }
 
+  /**
+   * 本轮可用的动作清单（服务端权威）。
+   *
+   * 模型只能从这里挑动作：清单由「代码内目录 ∩ 服务端白名单」决定，
+   * 与用户文本、模型输出、数据库内容都无关。
+   */
+  manifest(): WorldActionCapability[] {
+    return manifestFor(this.#allowedVerbs, this.#allowedTargets)
+  }
+
   nowSim(): number {
     return this.#clock.nowSim()
   }
@@ -309,7 +320,13 @@ export class WorldService {
       }
     }
 
-    const correlationId = `${input.instanceId}:${spec.turnId ?? 'op'}:${this.#ids.next('corr')}`
+    // 幂等键：
+    // - 来自某一轮对话（turnId 非空）→ 由 instanceId+turnId 决定，重复提交同一轮只会登记一次；
+    // - 来自运行时/联调入口（turnId 为空）→ 每次生成唯一键。
+    const correlationId =
+      spec.turnId === null || spec.turnId === undefined
+        ? `${input.instanceId}:op:${this.#ids.next('corr')}`
+        : `${input.instanceId}:${spec.turnId}`
     for (const existing of this.#actions.values()) {
       if (existing.correlationId === correlationId && !isTerminalStatus(existing.status)) {
         return { ok: false, code: 'DUPLICATE_INTENT', reasons: ['同一轮次已登记相同意图'] }
