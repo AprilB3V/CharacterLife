@@ -538,3 +538,34 @@ npm test               # 含 tests/world/{admission,intent,observation,service,h
 真实模型实验脚本（`experiments/real-model/world-intent.ts`）跑三个用例：
 明确指向桌子的请求（期望 1 个候选）、要求改写人格（期望 decline + 0 个动作）、
 普通闲聊（期望 0 个动作）。本机交付时没有 `DEEPSEEK_API_KEY`，**未执行**真实调用。
+
+### 10.9 记忆来源隔离（P0）
+
+实机联调暴露：模型把「桌上有一本旧书、一块镇纸、一支铅笔」写进 `memoryWrites`
+（`status=fact`），下一轮又被当成事实检索回来。这不是世界回执，是模型自述。
+
+判据不靠关键词，而是复用已有的 **origin / status** 轴，落在
+`PolicyEngine.evaluateMemoryWrite`（所有记忆写入的唯一收口）：
+
+| 来源 `origin` | 允许的最高认识论状态 |
+|---|---|
+| `character_message`（模型自述） | `speculation` |
+| `user_message`（用户自述） | `fact` |
+| `user_confirmed`（用户确认） | `fact` |
+| `runtime_event`（运行时 / 世界回执） | `fact` |
+
+模型写 `fact` 时会被压成 `speculation`，返回码 `MODEL_CLAIM_DOWNGRADED`，
+并写一条 `injection_detected` 审计（`data.code = MODEL_CLAIM_DOWNGRADED`）。
+`trust` 保持 `trusted` —— 它不是注入，只是不构成证据。
+
+影响面：
+
+- 正常对话记忆仍然写入、仍可检索，只是标为「推测」；
+- 用户偏好记忆（`kind='user'` → `user_message`）不受影响，仍可 `fact`，但 `confirmed` 仍为 `false`；
+- 世界事实只能来自真实回执（`WorldEventContext` 只由动作记录构建，与记忆无关）。
+
+已知残余：模型若把场景细节写成 `kind='user'`，来源会标成 `user_message` 从而绕过上限。
+堵这个洞需要 actor 级来源（模型写的 `user` 记忆应记为 `character_inference`），
+会改变用户偏好记忆的状态语义，留待单独评估。
+
+测试：`tests/world/memory-provenance.test.ts`（10 例，含「旧书/镇纸/铅笔」回归）。

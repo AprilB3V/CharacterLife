@@ -233,6 +233,11 @@ export type PolicyCode =
   | 'BOUNDARY_CONFLICT'
   | 'RATE_LIMITED'
   | 'UNTRUSTED_CONTENT_ESCALATION'
+  /**
+   * 模型自述被降级：角色自己说出/写下的内容不能建立「事实」。
+   * 来源仍是 `character_message`，只是认识论上限被压到 `speculation`。
+   */
+  | 'MODEL_CLAIM_DOWNGRADED'
 
 export interface PolicyDecision {
   allowed: boolean

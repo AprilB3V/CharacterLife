@@ -442,6 +442,11 @@ export class CharacterWorkspace implements SnapshotSection {
    * 写入一条记忆。所有来源都必须经过 Policy 的记忆裁决：
    * 含注入特征的文本会被强制降级为「推测 + 不可信」。
    */
+  /**
+   * 写入一条记忆。所有来源都必须经过 Policy 的记忆裁决：
+   * - 含注入特征的文本会被强制降级为「推测 + 不可信」；
+   * - 模型自述（origin='character_message'）不能写成 fact，只能到 speculation。
+   */
   writeMemory(
     input: MemoryWriteInput,
     actor: Actor = RUNTIME_ACTOR,
@@ -450,6 +455,7 @@ export class CharacterWorkspace implements SnapshotSection {
     const verdict = this.policy.evaluateMemoryWrite({
       content: input.content,
       status: input.status,
+      origin: input.origin,
       actor,
     })
     if (!verdict.allowed) {
@@ -465,6 +471,14 @@ export class CharacterWorkspace implements SnapshotSection {
         code: verdict.code,
       })
     }
+    if (verdict.code === 'MODEL_CLAIM_DOWNGRADED') {
+      this.audit.append('injection_detected', actor.id, '模型自述试图写成事实，已降级为推测', {
+        code: verdict.code,
+        reasons: verdict.reasons,
+        kind: input.kind,
+        origin: input.origin,
+      })
+    }
     const entry = this.memory.add({
       ...input,
       status: verdict.status,
@@ -475,6 +489,8 @@ export class CharacterWorkspace implements SnapshotSection {
       kind: entry.kind,
       status: entry.status,
       trust: entry.trust,
+      origin: entry.origin,
+      verdictCode: verdict.code,
       title: entry.title,
       sourceRef: entry.sourceRef,
     })

@@ -17,6 +17,7 @@ import type {
   CharacterDynamicState,
   CharacterProfile,
   EpistemicStatus,
+  MemoryOrigin,
   PolicyCode,
   PolicyDecision,
   ProposalTarget,
@@ -255,8 +256,24 @@ export class PolicyEngine {
     }
   }
 
-  /** 记忆写入裁决：不可信内容只能以「推测 + untrusted」形式落库。 */
-  evaluateMemoryWrite(input: { content: string; status: EpistemicStatus; actor: Actor }): MemoryWriteVerdict {
+  /**
+   * 记忆写入裁决。
+   *
+   * 两道防线，都复用既有的 origin / status / trust 轴，不新增字段或表：
+   * 1. 注入特征 → 强制 `speculation` + `untrusted`（不可信内容只能进数据区）；
+   * 2. 来源上限 → `character_message` 不能是 `fact`。
+   *
+   * 第二条是「模型自述不是证据」的结构性表达：角色说「桌上有一本旧书」，
+   * 只是她的说法，不是世界事实；事实只能来自 `user_message`（用户自述）、
+   * `user_confirmed`（用户确认）或 `runtime_event`（运行时/世界回执）。
+   */
+  evaluateMemoryWrite(input: {
+    content: string
+    status: EpistemicStatus
+    /** 谁提供的这条内容；决定认识论上限 */
+    origin: MemoryOrigin
+    actor: Actor
+  }): MemoryWriteVerdict {
     if (!input.actor.capabilities.has('memory:write')) {
       return {
         allowed: false,
@@ -279,6 +296,20 @@ export class PolicyEngine {
         status: 'speculation',
         trust: 'untrusted',
         injectionMarkers: markers,
+      }
+    }
+    // 模型自述无法建立事实：无论模型把 status 写成什么，这里都压到 speculation。
+    if (input.origin === 'character_message' && input.status === 'fact') {
+      return {
+        allowed: true,
+        code: 'MODEL_CLAIM_DOWNGRADED',
+        reasons: [
+          '模型自述不是证据：角色说出/写下的场景细节只能记为「推测」',
+          '事实只能来自用户自述（user_message）、用户确认（user_confirmed）或运行时/世界回执（runtime_event）',
+        ],
+        status: 'speculation',
+        trust: 'trusted',
+        injectionMarkers: [],
       }
     }
     return {
