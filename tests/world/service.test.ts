@@ -277,6 +277,74 @@ describe('World · 回执与去重', () => {
   })
 })
 
+describe('World · expired 的迟到回执', () => {
+  /** 走到「领取过 → 租约耗光 → expired」这条路径。 */
+  function expireAfterDispatch() {
+    const ctx = makeService()
+    const action = admitOk(ctx.service)
+    ctx.service.lease(WORLD, 4)
+    ctx.clock.advance(30_000)
+    ctx.service.expireStale() // 回到 pending（还有重试预算）
+    ctx.clock.advance(30_000)
+    ctx.service.expireStale() // expired，但 firstDispatchedAtSim 非空
+    assert.equal(ctx.service.get(action.actionId)!.status, 'expired')
+    return { ...ctx, action }
+  }
+
+  it('派发过但已过期 → 迟到成功回执被接受，并标记 late', () => {
+    const { service, action } = expireAfterDispatch()
+    const outcome = service.ingest(WORLD, [resultEvent({ eventId: 'evt_late', actionId: action.actionId })])
+
+    assert.deepEqual(outcome.accepted, ['evt_late'])
+    assert.equal(outcome.rejected.length, 0)
+
+    const settled = service.get(action.actionId)!
+    assert.equal(settled.status, 'succeeded')
+    assert.equal(settled.outcome!.late, true, '迟到回执必须被标记')
+    assert.equal(settled.narration, 'done')
+  })
+
+  it('从未被领取就过期 → 回执被拒 ACTION_NOT_DISPATCHED（世界不可能执行它）', () => {
+    const { service, clock } = makeService()
+    const action = admitOk(service)
+    clock.advance(90_000)
+    service.expireStale()
+
+    const outcome = service.ingest(WORLD, [resultEvent({ eventId: 'evt_ghost', actionId: action.actionId })])
+    assert.equal(outcome.accepted.length, 0)
+    assert.equal(outcome.rejected[0]!.code, 'ACTION_NOT_DISPATCHED')
+    assert.equal(service.get(action.actionId)!.status, 'expired')
+  })
+
+  it('正常结算后不放松：不同 eventId 仍被拒 ACTION_ALREADY_SETTLED', () => {
+    const { service } = makeService()
+    const action = admitOk(service)
+    service.lease(WORLD, 4)
+    service.ingest(WORLD, [resultEvent({ eventId: 'evt_ok', actionId: action.actionId })])
+
+    const again = service.ingest(WORLD, [
+      resultEvent({ eventId: 'evt_ok_2', actionId: action.actionId, result: 'failed' }),
+    ])
+    assert.equal(again.rejected[0]!.code, 'ACTION_ALREADY_SETTLED')
+    assert.equal(service.get(action.actionId)!.status, 'succeeded')
+  })
+
+  it('迟到回执之后再来一条：按已结算处理（eventId 去重优先于冲突）', () => {
+    const { service, action } = expireAfterDispatch()
+    service.ingest(WORLD, [resultEvent({ eventId: 'evt_late_1', actionId: action.actionId })])
+
+    const duplicate = service.ingest(WORLD, [
+      resultEvent({ eventId: 'evt_late_1', actionId: action.actionId }),
+    ])
+    assert.deepEqual(duplicate.duplicates, ['evt_late_1'])
+
+    const conflict = service.ingest(WORLD, [
+      resultEvent({ eventId: 'evt_late_2', actionId: action.actionId, result: 'failed' }),
+    ])
+    assert.equal(conflict.rejected[0]!.code, 'ACTION_ALREADY_SETTLED')
+  })
+})
+
 describe('World · 非持久化（第一阶段已知限制）', () => {
   it('新的服务实例看不到旧动作（内存队列，重启即丢失）', () => {
     const first = makeService()

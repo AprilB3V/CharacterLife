@@ -501,7 +501,20 @@ export class WorldService {
         })
         continue
       }
-      if (isTerminalStatus(action.status)) {
+
+      // 迟到回执：动作已过期，但真值优先。
+      // - 从未被领取过 → 世界不可能执行它，回执不可信；
+      // - 领取过 → 可能真的执行了，只是回执晚到，接受并标记 late。
+      const late = action.status === 'expired'
+      if (late && action.firstDispatchedAtSim === null) {
+        result.rejected.push({
+          eventId: event.eventId,
+          code: 'ACTION_NOT_DISPATCHED',
+          message: `动作 ${event.actionId} 从未被领取，世界不可能执行它`,
+        })
+        continue
+      }
+      if (!late && isTerminalStatus(action.status)) {
         result.rejected.push({
           eventId: event.eventId,
           code: 'ACTION_ALREADY_SETTLED',
@@ -521,6 +534,7 @@ export class WorldService {
         summary: event.summary,
         atWorldTimeMs: event.atWorldTimeMs,
         receivedAtSim: now,
+        late,
       }
       result.accepted.push(event.eventId)
       result.applied.actionsUpdated += 1

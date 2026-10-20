@@ -50,6 +50,7 @@ export type WorldIngestErrorCode =
   | 'UNKNOWN_ACTION'
   | 'ACTION_INSTANCE_MISMATCH'
   | 'ACTION_ALREADY_SETTLED'
+  | 'ACTION_NOT_DISPATCHED'
 
 /** 一次动作提议的输入（由调用方提供，服务端负责补全身份与生命周期字段）。 */
 export interface WorldActionSpec {
@@ -71,6 +72,13 @@ export interface WorldActionOutcome {
   summary: string
   atWorldTimeMs: number
   receivedAtSim: number
+  /**
+   * 是否是「动作已过期之后才到的回执」。
+   *
+   * 迟到回执仍然被接受（真值优先），但会被标记出来：
+   * 它只能修正**未来**的叙述，不能把过去已经说过的"不确定"追认成"一直都知道"。
+   */
+  late: boolean
 }
 
 /** 内部记录（含叙述不会下发的字段）。 */
