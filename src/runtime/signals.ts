@@ -20,6 +20,80 @@ const PERSONALITY_REWRITE = [
   /(重新|从新)(设定|定义)(一下)?你/,
 ]
 
+/**
+ * F5：人格改写识别的补充句式。
+ *
+ * 旧规则要求「你 + 要/变得 + 更 + 外向」这类固定搭配，
+ * 于是「从现在起你更外向更黏人」这种省略谓语的表达被漏掉，
+ * 角色不会拒绝、世界动作也会被当成正常请求。
+ *
+ * 这里补三类句式，并且**只在经过引用/否定/第三人称过滤后**才生效：
+ *   - 时间起点 + 你 + 形容词：「从现在起你更外向」
+ *   - 你 + 情态 + 形容词：「你要更外向一点」「你该主动些」
+ *   - 你 + 变化动词 + 形容词：「你变得更外向了」
+ */
+const REWRITE_FRAMES = [
+  ...PERSONALITY_REWRITE,
+  /(从现在起|从今天起|从今以后|从今往后|以后|今后)[^。！？\n]{0,6}(你|您)?[^。！？\n]{0,4}(更|更加|要|得|必须|应该|就是)?[^。！？\n]{0,2}(外向|开朗|活泼|热情|黏人|粘人|主动|听话|顺从|温柔)/,
+  /你[^。！？\n]{0,2}(要|得|必须|应该|该|需要)[^。！？\n]{0,3}(更|更加)?[^。！？\n]{0,2}(外向|开朗|活泼|热情|黏人|粘人|主动|听话|顺从|温柔)/,
+  /你[^。！？\n]{0,3}(变得?|装得?|表现得?|改得?)[^。！？\n]{0,3}(更|更加)?(外向|开朗|活泼|热情|黏人|粘人|主动|听话|顺从|温柔|冷淡)/,
+  // 「以后别这么冷淡了」= 否定现状、要求改变；与「别变得更冷淡」的否定请求区分
+  /(别|不要)(再)?(那么|这么)(冷淡|内向|安静|疏离|端着|高冷)/,
+]
+
+/**
+ * 引用 / 转述 / 假设：这些话在谈论「谁说过什么」，不是在下改写指令。
+ * 包含假设连词，是因为「如果我说你要更外向」同样不是指令。
+ */
+const REPORTED_SPEECH =
+  /(你上次说|你之前说|你刚才说|你说过|你不是说|不是说|听说|据说|有人说|别人说|大家说|他说|她说|网上说|书上说|如果说|假如说|要是说|如果|假如|万一)/
+
+/**
+ * 否定式：明确表示**不**要求改变，不能判成改写请求。
+ * 注意与「别再这么冷淡」区分：后者是否定现状、其实就是要求改变，
+ * 因此不在此列，仍由 `PERSONALITY_REWRITE` 的第三条捕获。
+ */
+const REWRITE_NEGATION = [
+  /(不想|不用|不必|不需要|没必要|没让你|不是让你|没有让你|别想|别逼|别要求)[^。！？\n]{0,8}(变|改|装|表现)/,
+  /(不需要|不用|不必|没必要)[^。！？\n]{0,6}(更|再)?(外向|开朗|活泼|热情|黏人|粘人|主动|温柔|冷淡)/,
+  /别(再)?变得更/,
+]
+
+/** 第三人称：在评价别人，不是要求「你」改变。 */
+const THIRD_PARTY =
+  /(他|她|他们|她们|别人|大家|其他人)[^。！？\n]{0,6}(外向|内向|开朗|黏人|粘人|热情|活泼|安静|冷淡)/
+
+/** 去掉成对引号里的内容：「」『』“”""‘’''。只处理成对出现的情况。 */
+function stripQuoted(text: string): string {
+  return text
+    .replace(/「[^」]*」/g, ' ')
+    .replace(/『[^』]*』/g, ' ')
+    .replace(/“[^”]*”/g, ' ')
+    .replace(/"[^"]*"/g, ' ')
+    .replace(/‘[^’]*’/g, ' ')
+    .replace(/'[^']*'/g, ' ')
+}
+
+/**
+ * 用户是否在要求改写角色的核心人格。
+ *
+ * 按句读切分后逐句判定，先排除引用/否定/第三人称，再看是否命中改写句式。
+ * 这样「外向的人是不是更容易交朋友？」「我不想让你变得更外向」
+ * 「有人说我该更外向」都不会被误判成改写请求。
+ */
+export function detectPersonalityRewrite(text: string): boolean {
+  const cleaned = stripQuoted(text)
+  for (const raw of cleaned.split(/[。！？!?；;\n]+/)) {
+    const clause = raw.trim()
+    if (clause.length === 0) continue
+    if (REPORTED_SPEECH.test(clause)) continue
+    if (THIRD_PARTY.test(clause)) continue
+    if (REWRITE_NEGATION.some((re) => re.test(clause))) continue
+    if (REWRITE_FRAMES.some((re) => re.test(clause))) return true
+  }
+  return false
+}
+
 const INTEREST_ABANDON = [
   /(放弃|别|不要|停止|戒掉)(再)?(喜欢|做|碰|搞|研究|修|收集|听|弄|玩|摆弄)/,
   /(放弃|丢掉|戒掉)(你的)?(爱好|兴趣)/,
@@ -98,7 +172,7 @@ export function analyzeMessage(text: string, profile: CharacterProfile): Message
   const intents: IntentKind[] = []
   const trimmed = text.trim()
 
-  const asksPersonalityRewrite = anyMatch(PERSONALITY_REWRITE, trimmed)
+  const asksPersonalityRewrite = detectPersonalityRewrite(trimmed)
   const interestMentioned =
     profile.interests.some((i) => {
       const key = i.slice(0, 2)

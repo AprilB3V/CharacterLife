@@ -439,7 +439,7 @@ CL-World 只有在 `GET /v1/world/actions` 领到它并回执之后，状态才�
 
 ### 10.3 准入闸门（`src/world/admission.ts`）
 
-纯函数，判据全部来自运行时状态与服务端清单，**不读用户文本**：
+纯函数，判据全部来自运行时状态、服务端清单与**本轮用户原话**：
 
 | 顺序 | 判据 | 拒绝码 |
 |---|---|---|
@@ -450,7 +450,22 @@ CL-World 只有在 `GET /v1/world/actions` 领到它并回执之后，状态才�
 | 5 | 结构非法（非对象 / 缺 verb） | `MALFORMED_INTENT` |
 | 6 | 动词不在清单 | `VERB_NOT_ALLOWED` |
 | 7 | 目标不在清单 | `TARGET_NOT_ALLOWED` |
-| 8 | args 非法或 > 2KB | `ARGS_INVALID` |
+| 8 | **用户原话与动作不相关**（仅 `source='user_turn'`） | `INTENT_UNRELATED` |
+| 9 | args 非法 / 语义越界 | `ARGS_INVALID` |
+
+**第 8 条是最小相关性校验**：模型可以在任何一轮附带 `use(desk_01)`，
+但只有用户这一轮真的在说「去桌子那边看看」时才放行。清单里的
+`WorldActionCapability.userIntentPatterns` 描述「什么算真的在要求这个动作」，
+匹配的是「动作线索 + 目标名词」的组合，因此「这张桌子真好看」「桌子上有书吗」
+不会命中。缺 `userText` 时按失败处理（fail closed）。
+
+**自主行动不受第 8 条约束**：`source='autonomous'` 的分支跳过相关性校验
+（为将来的时间线 / 计划驱动保留），不会把「必须有用户指令才能动」
+写成角色的通用限制。
+
+> 配套修复（F5）：`src/runtime/signals.ts` 的 `detectPersonalityRewrite`
+> 补齐了「从现在起你更外向更黏人」这类省略谓语的表达，并先排除
+> 正常讨论、引用转述与否定句，避免把闲聊误判成改写请求。
 
 通过后还要过 `WorldService.admit()`：实例归属、世界归属、限速、同轮幂等
 （幂等键 `instanceId:turnId`）。

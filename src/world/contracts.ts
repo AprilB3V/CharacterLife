@@ -175,6 +175,16 @@ export interface WorldActionCapability {
   label: string
   /** 给模型看的一句话说明（服务端撰写，非世界文本） */
   description: string
+  /**
+   * 用户表达里必须出现其中一种线索，才允许**由这一轮对话**触发该动作。
+   *
+   * 这是「最小相关性校验」：模型可以在任何一轮里附带一个 `use(desk_01)`，
+   * 但只有用户真的在说「去桌子那边看看」时才放行；闲聊和人格改写请求不算。
+   *
+   * 只约束 `source='user_turn'`。自主行动（未来的时间线 / 计划驱动）不走这条，
+   * 因此不会把「必须有用户指令才能动」变成角色的通用限制。
+   */
+  userIntentPatterns: readonly RegExp[]
 }
 
 /**
@@ -187,8 +197,27 @@ export const WORLD_ACTION_CATALOG: readonly WorldActionCapability[] = [
     target: 'desk_01',
     label: '使用书桌',
     description: '走到书桌前并使用它，例如看看桌上的东西、在桌前停留一会儿',
+    userIntentPatterns: [
+      // 动词在前：「去桌子旁看看」「走到书桌前」「过去瞧瞧那张桌子」
+      /(去|过去|走|走到|走向|到|靠近|看看|瞧瞧|瞅瞅|看一下|用|用一下|坐|待|呆|站)[^。！？\n]{0,8}(桌子|书桌|桌边|桌前|桌面|台面)/,
+      // 动词在后：「桌子那边看看」「书桌用一下」「桌前待一会儿」
+      /(桌子|书桌|桌边|桌前|桌面|台面)[^。！？\n]{0,8}(看看|瞧瞧|瞅瞅|看一下|用|用一下|坐|待|呆|过去|去|那边|这儿)/,
+      // 英文表达：「go to the desk」「use the desk」
+      /(use|go|walk|check|look)[^.!?\n]{0,20}desk/i,
+    ],
   },
 ]
+
+/**
+ * 用户这句话是否真的在表达「去做这个动作」。
+ *
+ * 刻意保守：只匹配「动作线索 + 目标名词」的组合，
+ * 因此「这张桌子真好看」「桌子上有书吗」不会命中。
+ */
+export function matchesUserIntent(capability: WorldActionCapability, userText: string): boolean {
+  if (userText.length === 0) return false
+  return capability.userIntentPatterns.some((re) => re.test(userText))
+}
 
 /** 按服务端白名单过滤目录，得到本轮可用的动作清单。 */
 export function manifestFor(
