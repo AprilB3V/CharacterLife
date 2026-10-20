@@ -36,6 +36,8 @@ import {
   SillyTavernRequestError,
 } from '../adapters/sillytavern/openai.ts'
 import { OWNER_ACTOR } from '../policy/policy.ts'
+import { createWorldRouter } from './world-routes.ts'
+import type { WorldRouter } from './world-routes.ts'
 
 export interface ApiCredential {
     token: string
@@ -58,6 +60,17 @@ export interface ApiServerOptions {
   bodyLimitBytes?: number
   rateLimit?: { windowMs?: number; max?: number }
   logger?: (line: string) => void
+  /**
+   * 世界交互的独立凭据。
+   *
+   * 只有 `runtime.world` 非空时才需要；此时缺 token 会**拒绝启动**（fail closed）。
+   * 该 token 与聊天 API token 必须不同，否则同样拒绝启动。
+   */
+  world?: {
+    token: string
+    /** 打开受控开发入口（dev seed）；生产必须为 false */
+    devMode?: boolean
+  }
 }
 
 export interface ApiServerHandle {
@@ -124,6 +137,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   const buckets = new Map<string, { count: number; resetAt: number }>()
   let url: string | null = null
 
+
   const checkRate = (key: string): boolean => {
     const now = Date.now()
     const bucket = buckets.get(key)
@@ -134,6 +148,31 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
     if (bucket.count >= maxPerWindow) return false
     bucket.count++
     return true
+  }
+
+  // 世界交互凭据：与聊天凭据完全分离。
+  // 启用世界但没给 token、或两个 token 相同，都在启动时直接失败（fail closed）。
+  let worldRouter: WorldRouter | null = null
+  if (runtime.world) {
+    const worldToken = opts.world?.token
+    if (typeof worldToken !== 'string' || worldToken.trim().length < 16) {
+      throw new Error('已启用世界交互，但未提供至少 16 位的 world token；拒绝启动')
+    }
+    const worldTokenHash = createHash('sha256').update(worldToken).digest('hex')
+    if (credentials.some((credential) => credential.tokenHash === worldTokenHash)) {
+      throw new Error('world token 不得与任何聊天 API Token 相同')
+    }
+    worldRouter = createWorldRouter({
+      service: runtime.world,
+      token: worldToken,
+      devMode: opts.world?.devMode === true,
+      // 实例由持久层权威解析，**不接受**请求体指定
+      resolveInstance: (worldId) => runtime.persistence.listInstances({ worldId })[0]?.id ?? null,
+      readBody,
+      readJson,
+      json,
+      checkRate,
+    })
   }
 
   async function readBody(req: IncomingMessage): Promise<string> {
@@ -257,6 +296,13 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
       try {
         if (method === 'GET' && (path === '/healthz' || path === '/health')) {
           json(res, 200, { ok: true, service: 'characterlife', uptimeSec: Math.round(process.uptime()) })
+          return
+        }
+
+        // 世界交互使用独立 token：不能复用聊天鉴权，也不能被聊天 token 调用。
+        if (path === '/v1/world' || path.startsWith('/v1/world/')) {
+          if (!worldRouter) throw new HttpError(404, 'WORLD_DISABLED', '世界交互未启用')
+          await worldRouter.handle(req, res)
           return
         }
 

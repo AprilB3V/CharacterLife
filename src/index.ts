@@ -259,3 +259,30 @@ export { assembleRuntime, loadEnvConfig, defaultTemplate, chooseProvider } from 
 export type { RuntimeConfig, RuntimeBundle, EnvConfig } from './api/runtime-factory.ts'
 export { InstanceRuntimeManager, seedIdCounters, snapshotInstance } from './runtime/instance-runtime.ts'
 export type { InstanceRuntime, InstanceRuntimeDeps, SendOptions } from './runtime/instance-runtime.ts'
+
+/* ==========================================================================
+ * 世界交互（第一阶段：HTTP 闭环 · 内存队列）
+ * ========================================================================== */
+
+export { WorldService, validateWorldEvent } from './world/service.ts'
+export type { WorldServiceOptions } from './world/service.ts'
+export { narrationFor, isTerminalStatus, allowsCompletionClaim } from './world/state.ts'
+export { WORLD_RESULTS, WORLD_EVENT_KINDS, WORLD_LIMITS } from './world/contracts.ts'
+export type {
+  WorldActionResult,
+  WorldActionStatus,
+  WorldActionNarration,
+  WorldActionSpec,
+  WorldActionRecord,
+  WorldActionView,
+  WorldActionOutcome,
+  WorldEvent,
+  WorldEventKind,
+  WorldIngestResult,
+  WorldAdmitResult,
+  WorldAdmitErrorCode,
+  WorldIngestErrorCode,
+} from './world/contracts.ts'
+export { createWorldRouter, WORLD_DEV_ACTION } from './api/world-routes.ts'
+export type { WorldRouter, WorldRouterOptions } from './api/world-routes.ts'
+export type { WorldRuntimeConfig } from './api/runtime-factory.ts'

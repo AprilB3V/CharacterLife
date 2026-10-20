@@ -30,7 +30,33 @@ import { MockProvider } from '../conversation/providers/mock.ts'
 import { DeepSeekProvider, deepSeekConfigFromEnv } from '../conversation/providers/deepseek.ts'
 import type { LLMProvider } from '../types.ts'
 import type { ContextBudget } from '../context/manager.ts'
+import { WorldService } from '../world/service.ts'
 import { shenZhiweiProfile, shenZhiweiTimeline, shenZhiweiVoice } from '../../examples/characters/shen-zhiwei.ts'
+
+/**
+ * 世界交互配置（第一阶段）。
+ *
+ * 只有 `enabled === true` 且至少给了一个 `worldIds` 才会创建 WorldService；
+ * 否则 `runtime.world === null`，HTTP 层不挂载任何 `/v1/world/*` 路由，
+ * 既有启动路径的行为完全不变。
+ */
+export interface WorldRuntimeConfig {
+  enabled?: boolean
+  /** 授权世界白名单（服务端权威，token 之外的第二道校验） */
+  worldIds?: string[]
+  /** 动词白名单；缺省只允许 `use` */
+  allowedVerbs?: string[]
+  /** 目标白名单；缺省只允许 `desk_01` */
+  allowedTargets?: string[]
+  /** 动作从登记到被领取的最长等待（模拟时间毫秒，默认 90s） */
+  actionTtlMs?: number
+  /** 单次领取的租约时长（模拟时间毫秒，默认 30s） */
+  leaseTtlMs?: number
+  /** 最多领取次数（默认 2） */
+  maxAttempts?: number
+  /** 每实例每模拟小时准入上限（默认 120；第一阶段为联调放宽） */
+  maxActionsPerSimHour?: number
+}
 
 export interface RuntimeConfig {
   dbPath: string
@@ -41,6 +67,8 @@ export interface RuntimeConfig {
   clock?: Clock
   budget?: Partial<ContextBudget>
   auditFile?: string | null
+  /** 世界交互（第一阶段：内存动作队列，未启用则不挂载任何世界路由） */
+  world?: WorldRuntimeConfig
   /** QQ 凭证（没有则只挂 Mock/不挂 QQ） */
   qq?: {
     appId: string
@@ -71,6 +99,8 @@ export interface RuntimeBundle {
   identityService: IdentityService
   runtimeManager: InstanceRuntimeManager
   gateway: MessageGateway
+  /** 世界交互服务；未启用时为 null（内存队列，重启即丢失） */
+  world: WorldService | null
   qqAdapter: QQAdapter | null
   onebotAdapter: OneBotAdapter | null
   onebotClient: OneBotApiClient | null
@@ -155,6 +185,28 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     bindTargetPlatform: config.bindTargetPlatform ?? 'sillytavern',
   })
 
+  // 世界交互：只在显式启用且配置了世界白名单时创建。
+  // 实例归属由持久层权威解析，任何调用方都无法自行指定 worldId。
+  const worldConfig = config.world
+  const world =
+    worldConfig?.enabled === true && (worldConfig.worldIds?.length ?? 0) > 0
+      ? new WorldService({
+          clock,
+          ids,
+          lookupInstance: (instanceId) => {
+            const instance = persistence.getInstance(instanceId)
+            return instance ? { worldId: instance.worldId } : null
+          },
+          worldIds: worldConfig.worldIds,
+          allowedVerbs: worldConfig.allowedVerbs ?? ['use'],
+          allowedTargets: worldConfig.allowedTargets ?? ['desk_01'],
+          actionTtlSim: worldConfig.actionTtlMs,
+          leaseTtlSim: worldConfig.leaseTtlMs,
+          maxAttempts: worldConfig.maxAttempts,
+          maxActionsPerSimHour: worldConfig.maxActionsPerSimHour,
+        })
+      : null
+
   const sillyTavernAdapter = new SillyTavernAdapter()
   gateway.registerAdapter(sillyTavernAdapter)
 
@@ -194,6 +246,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     identityService,
     runtimeManager,
     gateway,
+    world,
     qqAdapter,
     onebotAdapter,
     onebotClient,
@@ -216,6 +269,8 @@ export interface EnvConfig {
   stIdentity: string
   deepseekModel: string
   qq: { appId: string; appSecret: string; proactive: boolean } | null
+  /** 世界交互（缺省 null；只有 CLWORLD_ENABLED=true 才返回对象） */
+  world: (WorldRuntimeConfig & { token: string | null; devMode: boolean }) | null
   onebot: {
     baseUrl: string
     accessToken: string | null
@@ -238,6 +293,29 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
     port: Number(env.CHARACTERLIFE_PORT ?? 8787),
     stIdentity: env.CHARACTERLIFE_ST_IDENTITY ?? 'local-default',
     deepseekModel: env.DEEPSEEK_MODEL ?? 'deepseek-chat',
+    // 世界交互默认关闭：不设 CLWORLD_ENABLED=true 时整条链路不存在。
+    world:
+      env.CLWORLD_ENABLED === 'true'
+        ? {
+            enabled: true,
+            token: env.CLWORLD_TOKEN ?? null,
+            devMode: env.CLWORLD_DEV_MODE === 'true',
+            worldIds: (env.CLWORLD_WORLD_IDS ?? '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0),
+            allowedVerbs: (env.CLWORLD_ALLOWED_VERBS ?? 'use')
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0),
+            allowedTargets: (env.CLWORLD_ALLOWED_TARGETS ?? 'desk_01')
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0),
+            actionTtlMs: env.CLWORLD_ACTION_TTL_MS ? Number(env.CLWORLD_ACTION_TTL_MS) : undefined,
+            leaseTtlMs: env.CLWORLD_LEASE_TTL_MS ? Number(env.CLWORLD_LEASE_TTL_MS) : undefined,
+          }
+        : null,
     qq:
       env.QQBOT_APP_ID && env.QQBOT_APP_SECRET
         ? {

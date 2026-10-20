@@ -16,6 +16,8 @@
     "onebot:server": "node examples/onebot/server.ts",
     "st:demo": "node examples/sillytavern/demo.ts",
     "st:server": "node examples/sillytavern/start-server.ts",
+    "world:dev": "node examples/world/dev-server.ts",
+    "world:demo": "node examples/world/world-demo.ts",
     "st:probe": "node experiments/real-clients/sillytavern-smoke.ts",
     "ab": "node experiments/ab/run.ts",
     "continuity": "node experiments/persona-continuity/run.ts",
