@@ -24,6 +24,25 @@ function line(s = ''): void {
   console.log(s)
 }
 
+async function startNewSession(): Promise<void> {
+  const res = await fetch(`${BASE}/v1/sessions`, {
+    method: 'POST',
+    headers: {
+      connection: 'close',
+      'content-type': 'application/json',
+      authorization: `Bearer ${TOKEN}`,
+      'x-characterlife-identity': IDENTITY,
+    },
+    body: '{}',
+  })
+  if (!res.ok) {
+    console.error(`新会话失败：HTTP ${res.status}`)
+    return
+  }
+  const body = (await res.json()) as { sessionId?: string }
+  line(`（已开启新会话 ${String(body.sessionId ?? '')}；人格/关系/记忆不变）`)
+}
+
 async function main(): Promise<void> {
   if (TOKEN.length < 8) {
     console.error('缺少 CHARACTERLIFE_API_TOKEN（≥8 位）。示例：')
@@ -34,6 +53,10 @@ async function main(): Promise<void> {
     console.error('用法：npm run world:say -- "去桌子旁看看"')
     process.exit(2)
   }
+
+  // 已知模型问题：带历史的多轮追问里 deepseek-flash 偶尔返回纯空白，
+  // 触发降级台词。需要一段干净上下文时用 CL_NEW_SESSION=1 先开新会话。
+  if (process.env.CL_NEW_SESSION === '1') await startNewSession()
 
   const started = Date.now()
   // 每次调用都是新的一条消息：带上唯一 x-request-id。

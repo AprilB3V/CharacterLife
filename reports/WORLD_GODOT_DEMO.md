@@ -51,6 +51,13 @@ npm run world:say -- "你能帮我去桌子旁看看吗？"
 `world:say` 每次带唯一 `x-request-id`：不带的话服务端用「身份 + 轮数 + 原文」哈希做消息 id，
 同一句话发第二次会被判成重复消息（HTTP 502 `NO_REPLY`）。
 
+若某轮遇到问题 1（模型返回空白 → 降级台词），加 `CL_NEW_SESSION=1` 先开一个新会话再问：
+
+```bat
+set "CL_NEW_SESSION=1"
+npm run world:say -- "桌边现在是什么情况？"
+```
+
 ## 3. 正常执行
 
 **T1**（真实模型）：
