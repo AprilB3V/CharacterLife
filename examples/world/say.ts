@@ -36,6 +36,10 @@ async function main(): Promise<void> {
   }
 
   const started = Date.now()
+  // 每次调用都是新的一条消息：带上唯一 x-request-id。
+  // 不带的话服务端会用「身份 + 轮数 + 原文」的哈希做消息 id，
+  // 同一句话重复发送会被判成重复消息，拿不到回复。
+  const requestId = `say-${started.toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const response = await fetch(`${BASE}/v1/messages`, {
     method: 'POST',
     headers: {
@@ -43,6 +47,7 @@ async function main(): Promise<void> {
       'content-type': 'application/json',
       authorization: `Bearer ${TOKEN}`,
       'x-characterlife-identity': IDENTITY,
+      'x-request-id': requestId,
     },
     body: JSON.stringify({ text }),
   })

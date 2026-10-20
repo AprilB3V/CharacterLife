@@ -99,6 +99,7 @@ export function renderWorldPromptSection(world: WorldPromptContext): string {
     '2. 只能从上面的清单里挑动词与目标，不要自己发明。',
     '3. 提议不等于执行。在世界回报结果之前，你不能说已经做完，只能用「我打算…」「我去看看」这种说法。',
     '4. 回复正文照常写，动作只放在 worldActions 字段里。',
+    '5. 关于世界，你只知道下面列出的那些；回执没有说的细节（例如桌上有什么、灯亮不亮）不要编，可以说「没看清」。',
   )
   if (world.confirmed.length > 0) {
     lines.push('已确认的世界结果（这些才算真的发生了）：', ...world.confirmed.map((s) => `- ${s}`))
