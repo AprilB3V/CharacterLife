@@ -16,6 +16,7 @@ import type { CharacterPersistence } from '../persistence/store.ts'
 import type { StoredConflict } from '../memory/conflicts.ts'
 import type { CharacterWorkspace } from './workspace.ts'
 import type { WorldService } from '../world/service.ts'
+import { buildWorldEventContext, worldContextLines } from '../world/observation.ts'
 import type { RehydrationReport } from '../character/rehydration.ts'
 import { CharacterRehydrator } from '../character/rehydration.ts'
 import { ConversationService } from '../conversation/service.ts'
@@ -211,6 +212,10 @@ export class InstanceRuntimeManager {
             service: worldService,
             instanceId: runtime.instanceId,
             worldId: runtime.worldId,
+            // 上一轮为止的世界上下文：只有成功回执才会被描述成"成功"。
+            context: worldContextLines(
+              buildWorldEventContext(worldService.list({ instanceId: runtime.instanceId })),
+            ),
           }
         : null,
       onContextUsage: (usage) => {

@@ -274,6 +274,7 @@ export type { InstanceRuntime, InstanceRuntimeDeps, SendOptions } from './runtim
 export { WorldService, validateWorldEvent } from './world/service.ts'
 export type { WorldServiceOptions } from './world/service.ts'
 export { narrationFor, isTerminalStatus, allowsCompletionClaim } from './world/state.ts'
+export { buildWorldEventContext, worldContextLines } from './world/observation.ts'
 export { admitWorldIntents } from './world/admission.ts'
 export type {
   WorldIntentAdmission,

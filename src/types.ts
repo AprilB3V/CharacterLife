@@ -303,6 +303,38 @@ export interface ConversationWorldActions {
   }>
 }
 
+/**
+ * 一条世界动作的观察结果。
+ *
+ * `summary` 是世界回执里的**自由文本**，只给调用方与将来的数据区使用；
+ * 进入 system 块的一律是结构性字段（动词/目标/结果码），见 `worldContextLines`。
+ */
+export interface WorldObservation {
+  actionId: string
+  verb: string
+  target: string | null
+  status: WorldActionStatus
+  narration: WorldActionNarration
+  atWorldTimeMs: number | null
+  summary: string | null
+  code: string | null
+}
+
+/**
+ * 本进程内的世界事件上下文。
+ *
+ * `persistent: false` 是刻意的：长期记忆尚未落实事务级一致性，
+ * 所以这里只代表「当前进程已经确认过的事」，不能当作跨会话世界记忆。
+ */
+export interface WorldEventContext {
+  source: 'in-process'
+  persistent: false
+  /** 已确认的结果（成功 / 失败 / 未发生） */
+  confirmed: WorldObservation[]
+  /** 尚未确认的动作（等待领取、已派出、可能已执行但回执丢失） */
+  unconfirmed: WorldObservation[]
+}
+
 /* ==========================================================================
  * Conversation · 聊天区
  * ========================================================================== */
@@ -403,6 +435,11 @@ export interface ConversationTurnResult {
    * 未启用世界交互时为 undefined（调用方据此判断"这个部署没有世界"）。
    */
   worldActions?: ConversationWorldActions
+  /**
+   * 本轮结束时（进程内）的世界事件上下文：下一次模型调用会看到的那份。
+   * 未启用世界交互时为 undefined。
+   */
+  worldContext?: WorldEventContext
   /** 上下文预算的实际组装结果（启用 ContextManager 时存在） */
   contextUsage?: {
     budget: number

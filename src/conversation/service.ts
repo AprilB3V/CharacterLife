@@ -33,6 +33,7 @@ import { CONVERSATION_ACTOR } from '../policy/policy.ts'
 import { admitWorldIntents } from '../world/admission.ts'
 import type { WorldService } from '../world/service.ts'
 import type { WorldActionCapability } from '../world/contracts.ts'
+import { buildWorldEventContext } from '../world/observation.ts'
 import {
   CAPABILITY_NOTE,
   buildMessages,
@@ -50,8 +51,11 @@ export interface ConversationWorldBinding {
   service: WorldService
   instanceId: string
   worldId: string
-  /** 上一轮结束时已经确认/未确认的动作（本轮提示词用） */
-  context?: WorldPromptContext
+  /**
+   * 上一轮结束时的世界上下文（结构性描述，不含世界自由文本）。
+   * 由 runtime 层用 `worldContextLines(buildWorldEventContext(...))` 生成。
+   */
+  context?: { confirmed: string[]; unconfirmed: string[] }
 }
 
 export interface ConversationConfig {
@@ -388,7 +392,6 @@ export class ConversationService {
     if (world) {
       worldActions = this.#admitWorldCandidates(world, worldCandidates, decision, turnId, nowSim)
     }
-
     // 4) 提议交给工作区校验：聊天层用 CONVERSATION_ACTOR 的身份提交
     const outcome = this.#workspace.submitProposals(parsedProposals, CONVERSATION_ACTOR, {
       source: `turn:${turnId}`,
@@ -433,6 +436,11 @@ export class ConversationService {
       intents: signals.intents,
     })
 
+    // 本轮结束时的（进程内）世界上下文：下一次模型调用会看到的那一份。
+    const worldContext = world
+      ? buildWorldEventContext(world.service.list({ instanceId: world.instanceId }))
+      : undefined
+
     return {
       reply,
       decision,
@@ -456,6 +464,7 @@ export class ConversationService {
           }
         : undefined,
       ...(worldActions ? { worldActions } : {}),
+      ...(worldContext ? { worldContext } : {}),
     }
   }
 
