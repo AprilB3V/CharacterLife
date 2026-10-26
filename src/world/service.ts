@@ -25,8 +25,10 @@ import type {
   WorldEvent,
   WorldIngestErrorCode,
   WorldIngestResult,
+  WorldCatalogName,
+  WorldObservationRecord,
 } from './contracts.ts'
-import { WORLD_LIMITS, WORLD_RESULTS, checkActionArgs, isWorldCode, manifestFor } from './contracts.ts'
+import { WORLD_CATALOGS, WORLD_LIMITS, WORLD_RESULTS, checkActionArgs, isWorldCode, manifestFor } from './contracts.ts'
 import type { WorldActionCapability } from './contracts.ts'
 import { isTerminalStatus, narrationFor } from './state.ts'
 
@@ -49,6 +51,15 @@ export interface WorldServiceOptions {
   maxAttempts?: number
   /** 每实例每模拟小时的准入上限 */
   maxActionsPerSimHour?: number
+  /** 使用哪个命名动作目录（V0.4）；默认 `default`，与第一阶段逐字一致 */
+  catalog?: WorldCatalogName
+  /**
+   * 是否接受 `kind=observation` 的世界事件（V0.4）。
+   * 默认 false：第一阶段部署里观察事件仍按 UNSUPPORTED_KIND 拒绝，行为不变。
+   */
+  acceptObservations?: boolean
+  /** 观察暂存上限（全服务），超出丢最旧的；默认 500 */
+  maxObservations?: number
 }
 
 /** 事件校验结果：失败时尽量带回 eventId，便于逐条报告。 */
@@ -202,6 +213,11 @@ export class WorldService {
   #leaseTtlSim: number
   #maxAttempts: number
   #maxActionsPerSimHour: number
+  #catalog: WorldCatalogName
+  #acceptObservations: boolean
+  #maxObservations: number
+  #observations: WorldObservationRecord[] = []
+  #observationSeq = 0
 
   #actions = new Map<string, WorldActionRecord>()
   /** 事件去重键：`${worldId}\u0000${eventId}` */
@@ -220,6 +236,17 @@ export class WorldService {
     this.#leaseTtlSim = opts.leaseTtlSim ?? 30_000
     this.#maxAttempts = opts.maxAttempts ?? 2
     this.#maxActionsPerSimHour = opts.maxActionsPerSimHour ?? 120
+    this.#catalog = opts.catalog ?? 'default'
+    this.#acceptObservations = opts.acceptObservations ?? false
+    this.#maxObservations = opts.maxObservations ?? 500
+  }
+
+  get catalog(): WorldCatalogName {
+    return this.#catalog
+  }
+
+  get acceptsObservations(): boolean {
+    return this.#acceptObservations
   }
 
   /** 未配置任何世界 → 整条链路惰性，HTTP 路由也不会挂载。 */
@@ -251,7 +278,7 @@ export class WorldService {
    * 与用户文本、模型输出、数据库内容都无关。
    */
   manifest(): WorldActionCapability[] {
-    return manifestFor(this.#allowedVerbs, this.#allowedTargets)
+    return manifestFor(this.#allowedVerbs, this.#allowedTargets, WORLD_CATALOGS[this.#catalog])
   }
 
   nowSim(): number {
@@ -441,13 +468,45 @@ export class WorldService {
         continue
       }
 
-      // 3) 第一阶段只处理动作结果；观测事件留到第二阶段
+      // 3) 观察事件：默认不接受（第一阶段行为）；开启后只做校验、去重与暂存
       if (event.kind !== 'action_result') {
-        result.rejected.push({
+        if (!this.#acceptObservations) {
+          result.rejected.push({
+            eventId: event.eventId,
+            code: 'UNSUPPORTED_KIND',
+            message: '第一阶段只接受 kind=action_result',
+          })
+          continue
+        }
+        const obsInstance = this.#lookupInstance(event.instanceId)
+        if (!obsInstance) {
+          result.rejected.push({ eventId: event.eventId, code: 'UNKNOWN_INSTANCE', message: `实例 ${event.instanceId} 不存在` })
+          continue
+        }
+        if (obsInstance.worldId !== worldId) {
+          result.rejected.push({
+            eventId: event.eventId,
+            code: 'INSTANCE_WORLD_MISMATCH',
+            message: `实例 ${event.instanceId} 属于 ${obsInstance.worldId}，与事件世界 ${worldId} 不一致`,
+          })
+          continue
+        }
+        this.#eventKeys.set(key, { actionId: null, receivedAtSim: now })
+        this.#observations.push({
+          seq: ++this.#observationSeq,
           eventId: event.eventId,
-          code: 'UNSUPPORTED_KIND',
-          message: '第一阶段只接受 kind=action_result',
+          worldId,
+          instanceId: event.instanceId,
+          atWorldTimeMs: event.atWorldTimeMs,
+          receivedAtSim: now,
+          summary: event.summary,
+          facts: event.facts.map((f) => ({ ...f })),
         })
+        if (this.#observations.length > this.#maxObservations) {
+          this.#observations.splice(0, this.#observations.length - this.#maxObservations)
+        }
+        result.accepted.push(event.eventId)
+        result.applied.observationsRecorded = (result.applied.observationsRecorded ?? 0) + 1
         continue
       }
       if (event.actionId === null || event.result === null) {
@@ -576,6 +635,13 @@ export class WorldService {
   }
 
   /* ------------------------------------------------------------------ 读取 */
+
+  /** 某实例在游标 `afterSeq` 之后的观察（升序）。只读拷贝。 */
+  observations(instanceId: string, afterSeq = 0): WorldObservationRecord[] {
+    return this.#observations
+      .filter((o) => o.instanceId === instanceId && o.seq > afterSeq)
+      .map((o) => ({ ...o, facts: o.facts.map((f) => ({ ...f })) }))
+  }
 
   get(actionId: string): WorldActionView | null {
     const action = this.#actions.get(actionId)

@@ -158,6 +158,22 @@ export interface RelationshipState {
   boundaryViolations: number
 }
 
+/**
+ * 一条内驱力的**存储值**（V0.4 自主运行）。
+ *
+ * 只存「上次被确认的水平 + 时刻」，当前值是时间的确定性函数
+ * （见 `src/autonomy/drives.ts`）：衰减不需要每个 tick 写一次状态，
+ * 只有真正改变驱力的事件（例如世界确认「吃到了面包」）才产生提议与审计。
+ *
+ * 语义：`level` 是**压力**，0 = 完全满足，1 = 最迫切。
+ */
+export interface DriveLevel {
+  /** 0..1 */
+  level: number
+  /** 该水平被确认的模拟时刻 */
+  atSim: number
+}
+
 export interface CharacterDynamicState {
   mood: Mood
   activity: Activity
@@ -167,6 +183,14 @@ export interface CharacterDynamicState {
   /** 用户明确要求「暂时不要打扰」时的静默截止时间 */
   doNotDisturbUntilSim: number | null
   lastDecisionAtSim: number | null
+  /**
+   * 内驱力（V0.4，可选）。不启用自主运行的部署里不存在这个字段，
+   * 旧快照与旧事件日志因此无需迁移。
+   *
+   * 只有 `RUNTIME_ACTOR` / `OWNER_ACTOR`（`state:write:drives`）能写；
+   * 聊天模型即使拿到了 `state:write:dynamic` 也改不了自己的驱力。
+   */
+  drives?: Record<string, DriveLevel>
 }
 
 export type EventKind = 'plot' | 'life' | 'reminder' | 'consequence'
@@ -199,6 +223,8 @@ export type Capability =
   | 'policy:write'
   | 'timeline:write'
   | 'external:send'
+  /** V0.4：内驱力只能由确定性运行时写入，聊天层没有这个能力 */
+  | 'state:write:drives'
 
 export type ProposalTarget = 'dynamic' | 'relationship' | 'memory' | 'profile' | 'policy' | 'timeline'
 

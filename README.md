@@ -39,6 +39,7 @@
 | **API Gateway（V0.2）** | `src/api/` | 去重、限流、身份解析、每实例互斥、指令、本地 HTTP API |
 | **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
 | **World 世界交互（V0.3）** | `src/world/` + `src/api/world-routes.ts` | 模型产生动作意图（准入闸门 + 服务端清单）、HTTP 领取/回执、双去重、独立 world token、回执回灌下一轮认知；**动作队列未持久化** |
+| **Autonomy 自主运行（V0.4 · E0）** | `src/autonomy/` + `experiments/sandbox/` | 内驱力（只有运行时能写、只在世界确认成功时缓解）、确定性 Waker、世界→记忆受控桥、规则 Mind 与 LLM Mind（录制/回放）、无画面文字箱庭；见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md) |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
 
 **明确不做**：前端 UI、微服务、多 Agent、向量数据库、后台持续调用大模型、
@@ -153,6 +154,20 @@ V0.3 起模型只在**同一次调用**里多产出一个可选的 `worldActions
 世界事件仍然**不会**变成记忆、状态提议或聊天消息。
 完整契约、错误码与已知限制见 [`docs/WORLD_PROTOCOL.md`](docs/WORLD_PROTOCOL.md)。
 
+### 4.6 文字箱庭：角色自己过一天（V0.4 · E0）
+
+```bash
+npm run sandbox                                    # 零成本：RuleMind 跑 Day1 08:00–18:00
+npm run sandbox -- --intervene social@12:00=0.95   # H5 干预：把「想和人说说话」调到 0.95
+npm run sandbox:h5                                 # 批量对照：10 个种子 × A/B × 干预/不干预
+npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK_API_KEY），自动录制可回放
+```
+
+没有任何玩家输入：沈知微饿了会去面包房（可能已经卖完），想说话了会去找林姐或周老师，
+只能看见自己所在地点发生的事。每一次"醒来"的原因、驱力、想法、动作与世界结果都写进
+`experiments/sandbox/.data/<run>/log.jsonl`，这份日志也是 Godot 回放的数据源。
+设计、不变量与 E0 结果见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md)。
+
 ## 5. 原创测试角色：沈知微
 
 | 项 | 内容 |
@@ -199,7 +214,7 @@ V0.3 起模型只在**同一次调用**里多产出一个可选的 `worldActions
 ## 8. 测试
 
 ```bash
-npm test           # 181 项测试（内存中运行，见下方说明）
+npm test           # 324 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 

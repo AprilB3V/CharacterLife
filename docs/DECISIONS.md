@@ -261,3 +261,29 @@
 
 - `Set-Item Env:NAME`、`[Environment]::GetEnvironmentVariable(name,'Process')`、`::new()`、`Get-Content -Encoding UTF8` 在 5.1 都可用；
 - `Invoke-WebRequest -UseBasicParsing` 的 `RawContentStream` 能拿到原始字节（PS 7 没有该属性，要用 `RawContent`）——这也是第 4 条的修法要分版本的原因。
+
+## 16. V0.4 新增决策（自主运行 · 文字箱庭 E0）
+
+详见 [`AUTONOMY.md`](AUTONOMY.md)。
+
+| 决策 | 选择 | 理由 | 代价 |
+|---|---|---|---|
+| 模型调用时机 | **修订** §2「不做后台持续调用 LLM」：只在 Waker 给出可记录原因的离散时刻调用 | 没有内源的唤醒，角色永远只能被动响应；原决策担心的成本与复现另行解决 | 自主运行有调用成本，需要预算与录制 |
+| 成本控制 | Waker 每模拟小时唤醒上限 + 批量实验硬上限（`--max-calls`） | 成本可预先算出，超限即停 | 预算太紧时角色会"想不过来" |
+| 可复现 | `RecordingProvider` / `ReplayProvider`，请求指纹不一致时回放失败 | 真实运行录一次，之后零成本逐字节重放；输入一变就暴露 | 换模型或改提示词后旧录制作废 |
+| 世界 → 记忆 | **修订** 第一阶段「世界事件不得变成记忆」：经 `src/autonomy/bridge.ts` 受控写入 | 自主角色必须记得自己做过、看过什么；桥在 world 模块之外，依赖方向不变 | 桥的已处理集合目前只在内存（与动作队列同级的非持久化） |
+| 内驱力存储 | 只存「上次确认水平 + 时刻」，当前值是时间的纯函数 | 推进时间不写状态、不产生审计噪声；事件重放可精确复原衰减 | 驱力规格属于角色配置而不在状态里，改规格会改变历史读数 |
+| 内驱力权限 | 新能力 `state:write:drives`，只给 Runtime / Owner | 聊天模型能写 `dynamic`，若也能写驱力，"动机"就退化为模型的自述 | Policy 多一条规则 |
+| 驱力缓解条件 | 只有世界确认 `succeeded` 的满足动作 | 动机要有独立于语言的因果来源 | 世界回执丢失时驱力不会缓解（偏保守） |
+| 动作目录 | 命名目录 `default` / `sandbox`，均为代码常量 | 箱庭需要更多动作，但"动作只能来自代码"这条不能破 | 新目录要改代码 |
+| 观察事件 | `WorldService` 新增 `acceptObservations`（默认关闭） | 第一阶段部署行为逐字不变 | 默认关闭时 Godot 发观察仍会被拒 |
+| 基线 Mind | 确定性 `RuleMind`，只看 MindInput 不偷看世界真值 | 零成本验证管道，也作为 LLM 的对照 | 它在 H5 上"通过"是构造使然，不能当证据 |
+
+### 16.1 E0 仍未解决
+
+1. 不打断正在执行的动作；长动作期间驱力越阈只能等。
+2. 承诺账本未实现（Waker 的 `commitment` 唤醒源恒为空）。
+3. 静默期（DND）会挡住所有自主世界动作，口径偏粗。
+4. 桥接层与动作队列一样不持久化；正式持久化时要与记忆/驱力写入同事务。
+5. `npm test` 的 `--test-isolation=none` 在部分 Node 22.x 上不被识别；那些版本可用
+   `node --test --experimental-strip-types "tests/**/*.test.ts"` 运行。

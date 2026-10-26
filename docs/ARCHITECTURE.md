@@ -258,6 +258,14 @@ CharacterRehydrator ── 快照 + 事件重放 ──► 重建 Runtime ──
 12. 世界真值只由 CL-World 回执建立：模型 `memoryWrites` 即使写 `status=fact` + `tags=['world']` 也不能成为世界事实；
     保留标签只能由 `runtime_event` 来源打上（权威判据始终是 `origin`）。
 13. 世界动作参数的语义校验收口在 `WorldService.admit()`，绕过模型准入层的调用路径同样受约束。
+14. （V0.4）驱力只能由持有 `state:write:drives` 的 actor 写入，聊天层没有该能力。
+15. （V0.4）驱力只在世界确认 `succeeded` 时缓解；失败、被拒、结果未知不改变驱力。
+16. （V0.4）未结算的动作不写记忆；世界记忆来源固定为 `runtime_event` 并指向世界事件 id，
+    派发过但无回执的过期动作只能写成 `speculation`。
+17. （V0.4）模型只在 Waker 给出可记录原因时被调用，且受每模拟小时预算约束；推进时间本身仍不调用模型。
+18. （V0.4）`src/world/` 不 import runtime / memory / persistence / autonomy（测试断言）。
+
+V0.4 自主运行的整体设计见 [`AUTONOMY.md`](AUTONOMY.md)。
 
 ## 8. 扩展点（为将来保留，不在 V0.1 实现）
 

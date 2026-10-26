@@ -523,3 +523,18 @@ npm test               # 含 tests/world/{admission,intent,observation,service,h
 真实模型实验脚本（`experiments/real-model/world-intent.ts`）跑三个用例：
 明确指向桌子的请求（期望 1 个候选）、要求改写人格（期望 decline + 0 个动作）、
 普通闲聊（期望 0 个动作）。本机交付时没有 `DEEPSEEK_API_KEY`，**未执行**真实调用。
+
+## 11. V0.4：命名目录、观察事件与自主运行
+
+完整设计见 [`AUTONOMY.md`](AUTONOMY.md)。对本协议的增量只有三处，**默认全部关闭**，
+不显式开启时第一阶段 / V0.3 的行为逐字不变：
+
+1. **命名动作目录**：`WorldService({ catalog: 'sandbox' })` 使用 `SANDBOX_ACTION_CATALOG`
+   （`move_to` / `buy` / `eat` / `talk_to` / `repair` / `browse` / `rest`）。目录仍是代码常量，
+   部署只能按名字选；箱庭动词不接受 `args`。Godot 要接入同一批动作时直接复用这张表。
+2. **观察事件**：`acceptObservations: true` 后，`kind=observation`（`actionId=null`、`result=null`）
+   被接受，做同样的 eventId 去重与实例/世界归属校验，暂存在服务内（有上限），
+   通过 `observations(instanceId, afterSeq)` 读取。事实（facts）约定见 `AUTONOMY.md` §5。
+3. **世界 → 认知**：本节 §1 里「世界事件不得转换成记忆或状态提议」在 V0.4 修订为：
+   `src/world/` 依旧不写任何角色状态；由 `src/autonomy/bridge.ts` 在 world 模块之外、
+   按 `AUTONOMY.md` §3 的不变量受控写入。未启用自主运行的部署不受影响。

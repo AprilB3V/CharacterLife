@@ -7,8 +7,10 @@
  *   真值平面：WorldEvent —— 只能由 CL-World 产生，是唯一的事实来源
  *
  * 第一阶段的两条硬约束：
- * 1. 世界事件**不得**转换为聊天消息、`StateProposal` 或记忆条目。
+ * 1. 世界事件**不得**由本模块转换为聊天消息、`StateProposal` 或记忆条目。
  *    本模块没有任何 workspace / memory 的引用，这是结构性保证，不是靠调用方自觉。
+ *    （V0.4：自主运行需要「记得自己做过什么」，这一步由 `src/autonomy/bridge.ts`
+ *     在本模块之外受控完成，见 docs/AUTONOMY.md。本模块依旧不写任何角色状态。）
  * 2. 动作队列只在内存中。进程重启即丢失，且**没有任何持久化承诺**；
  *    正式持久化（崩溃一致性、租约、迟到回执）在第二阶段单独实现。
  *
@@ -153,7 +155,26 @@ export interface WorldIngestResult {
    * 第一阶段只会更新动作记录本身。
    * 刻意**没有** memories / proposals 字段：世界事件不产生世界事实，也不产生状态提议。
    */
-  applied: { actionsUpdated: number }
+  applied: { actionsUpdated: number; observationsRecorded?: number }
+}
+
+/**
+ * 一条被接受的世界观察（V0.4，需显式开启 `acceptObservations`）。
+ *
+ * 观察和动作回执一样是世界真值平面的数据：WorldService 只负责校验、去重和暂存，
+ * 是否以及如何进入角色认知，由 runtime 一侧的桥接层决定（`src/autonomy/bridge.ts`）。
+ */
+export interface WorldObservationRecord {
+  /** 服务内单调递增序号，供消费方做游标 */
+  seq: number
+  eventId: string
+  worldId: string
+  instanceId: string
+  atWorldTimeMs: number
+  receivedAtSim: number
+  /** 单行化后的世界自由文本：只能进数据区，永远不进 system 块 */
+  summary: string
+  facts: Array<{ key: string; value: string | number | boolean }>
 }
 
 export type WorldAdmitResult =
@@ -190,12 +211,43 @@ export const WORLD_ACTION_CATALOG: readonly WorldActionCapability[] = [
   },
 ]
 
+/**
+ * 文字箱庭目录（V0.4 · 自主运行实验）。
+ *
+ * 和默认目录一样是**代码常量**：部署只能在 `default` / `sandbox` 两个命名目录之间选，
+ * 不能从配置文件或数据库注入新动作。Godot 箱庭要接入同一批动作时，直接复用这张表。
+ *
+ * 目录只回答「这个动作在协议上合不合法」；在哪里能做、此刻能不能做，
+ * 由世界执行时判定（失败/被拒会以回执的形式回来）。
+ */
+export const SANDBOX_ACTION_CATALOG: readonly WorldActionCapability[] = [
+  { verb: 'move_to', target: 'workshop', label: '回工作室', description: '走回自己的修书工作室' },
+  { verb: 'move_to', target: 'bakery', label: '去面包房', description: '走到街角的面包房' },
+  { verb: 'move_to', target: 'plaza', label: '去广场', description: '走到有旧货摊的小广场' },
+  { verb: 'buy', target: 'bread', label: '买面包', description: '在面包房买一块面包（需要在面包房、且还有货）' },
+  { verb: 'eat', target: 'bread', label: '吃面包', description: '吃掉身上带着的一块面包' },
+  { verb: 'talk_to', target: 'npc_lin', label: '和林姐聊聊', description: '和面包房的林姐说说话（她得在场）' },
+  { verb: 'talk_to', target: 'npc_zhou', label: '和周老师聊聊', description: '和常在广场下棋的周老师说说话（他得在场）' },
+  { verb: 'repair', target: 'old_book', label: '修书', description: '在工作室修一会儿手上的旧书' },
+  { verb: 'browse', target: 'stall', label: '逛旧货摊', description: '在广场的旧货摊翻翻老照片和旧物（摊位开着才行）' },
+  { verb: 'rest', target: 'bed', label: '休息', description: '在工作室躺一会儿' },
+]
+
+/** 命名目录。新增目录 = 改这里；部署只能按名字选，不能传入任意数组。 */
+export const WORLD_CATALOGS = {
+  default: WORLD_ACTION_CATALOG,
+  sandbox: SANDBOX_ACTION_CATALOG,
+} as const satisfies Record<string, readonly WorldActionCapability[]>
+
+export type WorldCatalogName = keyof typeof WORLD_CATALOGS
+
 /** 按服务端白名单过滤目录，得到本轮可用的动作清单。 */
 export function manifestFor(
   allowedVerbs: ReadonlySet<string>,
   allowedTargets: ReadonlySet<string>,
+  catalog: readonly WorldActionCapability[] = WORLD_ACTION_CATALOG,
 ): WorldActionCapability[] {
-  return WORLD_ACTION_CATALOG.filter(
+  return catalog.filter(
     (c) => allowedVerbs.has(c.verb) && (c.target === null || allowedTargets.has(c.target)),
   ).map((c) => ({ ...c }))
 }
@@ -273,7 +325,18 @@ export type WorldArgsCheck = { ok: true } | { ok: false; reason: string }
  * 按动词校验参数语义。未登记规则的动词一律失败（默认拒绝，
  * 与「新增动作 = 改此处 + 服务端白名单」的既有约定一致）。
  */
+/** 箱庭动词都不带参数：动作的含义完全由 verb + target 决定。 */
+const ARGLESS_VERBS: ReadonlySet<string> = new Set(
+  SANDBOX_ACTION_CATALOG.map((c) => c.verb).filter((v) => v !== 'use'),
+)
+
 export function checkActionArgs(verb: string, args: Record<string, unknown>): WorldArgsCheck {
+  if (ARGLESS_VERBS.has(verb)) {
+    const fields = Object.keys(args)
+    return fields.length === 0
+      ? { ok: true }
+      : { ok: false, reason: `动词 ${verb} 不接受参数（收到：${fields.join(', ')}）` }
+  }
   if (verb !== 'use') {
     return { ok: false, reason: `动词 ${verb} 没有登记参数规则，拒绝` }
   }
