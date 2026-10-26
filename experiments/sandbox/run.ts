@@ -167,6 +167,17 @@ async function main(): Promise<void> {
   writeFileSync(join(outDir, 'truth.jsonl'), sb.town.truth.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8')
   writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ run: runName, args, ...summary }, null, 2), 'utf8')
   if (recorder) writeFileSync(join(outDir, 'calls.json'), JSON.stringify(recorder.calls, null, 2), 'utf8')
+  const integrity = sb.agent.integrity
+  if (integrity) {
+    // 完整性账本（宪法 K3）：一行一条记录，附内容本体；任何人可用 verifyChain 离线核对
+    const ledger = integrity.ledger.export()
+    const contents = new Map(ledger.contents)
+    writeFileSync(
+      join(outDir, 'ledger.jsonl'),
+      ledger.records.map((r) => JSON.stringify({ ...r, content: contents.get(r.seq) ?? null })).join('\n') + '\n',
+      'utf8',
+    )
+  }
 
   console.log('')
   console.log(`唤醒 ${summary.wakes} 次；登记动作 ${summary.admitted} 个（被闸门拒绝 ${summary.gateRejected}）`)
@@ -179,6 +190,18 @@ async function main(): Promise<void> {
   if (summary.intervention) {
     const iv = summary.intervention
     console.log(`干预后首次 talk_to 尝试：${iv.firstSocialAttemptMin === null ? '无' : `${iv.firstSocialAttemptMin} 分钟后`}；2 小时内社交类动作 ${iv.socialActionsWithin2h} 个`)
+  }
+  if (integrity) {
+    const report = integrity.verify()
+    const kinds = new Map<string, number>()
+    for (const r of integrity.ledger.records()) {
+      const k = r.kind.startsWith('audit.') ? 'audit.*' : r.kind
+      kinds.set(k, (kinds.get(k) ?? 0) + 1)
+    }
+    console.log(
+      `完整性账本：${integrity.ledger.size} 条（${[...kinds].map(([k, n]) => `${k}×${n}`).join('  ')}）；` +
+        `核对${report.ok ? '通过' : `未通过：${JSON.stringify(report)}`}`,
+    )
   }
   console.log(`产物：${outDir}`)
 }

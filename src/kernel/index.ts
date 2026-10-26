@@ -13,6 +13,9 @@ export { AgentCore } from './agent.ts'
 export type { AgentCoreOptions, KernelRuntimeState, ProposalOutcome, StateAppliedEvent } from './agent.ts'
 export * from './semantics/index.ts'
 
+// 完整性层（宪法 K1–K6）：账本、身份指纹、权威与事实、种子流、承诺–揭示、预先登记
+export * from './integrity/index.ts'
+
 // 多角色宿主
 export { AgentHost } from './host.ts'
 export type { AgentHostOptions, HostHooks, SteppableClock, WorldDriver } from './host.ts'

@@ -218,7 +218,7 @@ npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK
 ## 8. 测试
 
 ```bash
-npm test           # 340 项测试（内存中运行，见下方说明）
+npm test           # 376 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 
@@ -350,6 +350,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 
 **引擎**
 
+- [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md)：宪法 · 完整性微内核（K1–K6，V0.6 已实现）
 - [`docs/KERNEL.md`](docs/KERNEL.md)：六语义微内核（V0.5）：语义槽、归属规则、自主循环、多角色宿主、外部项目接入
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：四模块职责、接口、数据流与不变量
 - [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)：状态模型、记忆权限、上下文预算、压缩策略、恢复流程

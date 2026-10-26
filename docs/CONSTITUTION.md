@@ -1,6 +1,6 @@
 # CharacterLife 宪法 · 完整性微内核（草案 v0.1）
 
-> 状态：**只有条文，尚未实现**。
+> 状态：**V0.6 已实现**（`src/kernel/integrity/`），实现与测试的对照见 §8。
 > 本文定义一组跨世界通用、可以被测试断言的完整性不变量。CL 的 Runtime、CL-World，
 > 以及建立在 CL 上的任何节目或游戏（例如 Free Roam），都是这组条款的使用者。
 > 现有代码中已经成立的部分见 §5 对照表。
@@ -168,3 +168,22 @@
 2. 身份修订的发起入口：V0.1 没有对话路径能写 `profile`，修订是否只允许离线工具发起。
 3. 多个世界同时连接同一角色时，各自的权威是否需要隔离命名空间。
 4. 擦除内容本体后，依赖该内容的派生数据（摘要、统计）如何处理。
+
+---
+
+## 8. 实现对照（V0.6）
+
+代码在 `src/kernel/integrity/`，入口是 `Integrity` 类；所有「可断言」都写成了测试
+（`tests/kernel/integrity.test.ts`，SQLite 部分在 `tests/cross_session/ledger.test.ts`）。
+
+| 条款 | 实现 | 接入 |
+|---|---|---|
+| K1 身份恒定 | `identityFingerprint`（规范化 JSON 的 sha256）；`reviseIdentity` 要求 `profile:write`，修订记录携带新指纹；`checkIdentityContinuity` 检出无修订的指纹变化；恢复时人设与账本不符 → `IDENTITY_DRIFT` 拒绝记录 | `AgentCore.replaceProfile` 自动写身份修订；每条审计镜像都带指纹 |
+| K2 意图≠事实 | `registerAuthority` 要求 `policy:write`，返回不可伪造的凭据对象；`issueFact` 只认凭据、校验范围；一个意图最多一个事实 | 自主循环：准入时登记意图（引用世界动作 id），世界回执与观察由桥以世界权威签发为事实 |
+| K3 只增不改 | `Ledger`：记录头哈希链 + 内容哈希；`erase` 擦内容本体并追加墓碑；`verifyChain` 指出第一条断开处；内容缺失且无墓碑也算断开 | 审计事件全部镜像进账本（任何拒绝都是一条记录）；SQLite 新表 `ledger`（§7 问题 1 的决定：新建表，`events` 不动）；恢复流程第 4 步核对哈希链 |
+| K4 可复现 | 种子流必须在第一条事实之前登记；字符串种子算法与《罐中斗》第一期引擎逐位一致；`recordModelOutput` 完整记录模型原始输出 | 自主循环把 LLM Mind 的原始输出入账；文字箱庭的世界随机源改为登记过的种子流 |
+| K5 承诺–揭示 | `sha256(salt\|原文)`，salt 来自 `randomBytes`；账本只写校验码与期限；揭示不符拒绝并留痕；`overdue` 列出逾期 | 由世界层调用（Free Roam 的封存心声） |
+| K6 预先登记 | `registerRule` 版本化、规则哈希；`decide` 要求规则早于所有被引用的结果、结果必须是事实 | 由世界层调用（心声分级比例、挑局评分） |
+
+§7 其余未决问题（身份修订入口、多世界权威命名空间、擦除后的派生数据）仍然开放。
+

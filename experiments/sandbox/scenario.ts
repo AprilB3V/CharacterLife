@@ -18,6 +18,10 @@ import { SANDBOX_ACTION_CATALOG } from '../../src/kernel/world/contracts.ts'
 import { HOUR, ManualClock } from '../../src/kernel/util/clock.ts'
 import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
 import { SeededRng } from '../../src/kernel/util/rng.ts'
+import type { Rng } from '../../src/kernel/util/rng.ts'
+import { Integrity } from '../../src/kernel/integrity/index.ts'
+import type { AuthorityToken } from '../../src/kernel/integrity/index.ts'
+import { OWNER_ACTOR } from '../../src/kernel/policy/policy.ts'
 import { WorldBridge } from '../../src/kernel/cycle/bridge.ts'
 import type { DriveProfile } from '../../src/kernel/semantics/drives.ts'
 import type { Mind, RuleMindConfig } from '../../src/kernel/cycle/mind.ts'
@@ -98,6 +102,8 @@ export interface SandboxOptions {
   /** 审计日志文件；null = 只在内存 */
   auditFile?: string | null
   breadStock?: number
+  /** 是否启用完整性层（宪法 K1–K6），默认启用 */
+  integrity?: boolean
 }
 
 export interface Sandbox {
@@ -121,6 +127,20 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     sim: clock.nowSim(),
     wall: clock.nowWall().toISOString(),
   }))
+  // 完整性层：账本主体是这个角色；世界的随机性来自登记过的种子流（K4）
+  const integrity =
+    opts.integrity === false
+      ? null
+      : new Integrity({ clock, subject: { id: shenZhiweiProfile.id, persona: shenZhiweiProfile } })
+  let worldRng: Rng = new SeededRng(opts.seed * 7919 + 13)
+  let authority: AuthorityToken | null = null
+  if (integrity) {
+    const stream = integrity.registerSeedStream('sandbox', 'world', `sandbox-${opts.seed}`)
+    if (stream.ok) worldRng = stream.rng
+    const reg = integrity.registerAuthority(OWNER_ACTOR, `cl-world:${SANDBOX_WORLD_ID}`, ['world.action', 'world.observation'])
+    if (reg.ok) authority = reg.token
+  }
+
   const agent = new AgentCore({
     profile: shenZhiweiProfile,
     clock,
@@ -129,6 +149,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     snapshot,
     audit,
     drives: SHEN_DRIVES,
+    integrity,
   })
 
   const verbs = [...new Set(SANDBOX_ACTION_CATALOG.map((c) => c.verb))]
@@ -154,7 +175,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     instanceId: SANDBOX_INSTANCE_ID,
     clock,
     // 世界的随机源与角色的随机源分开：换 Mind 不会改变世界的安排
-    rng: new SeededRng(opts.seed * 7919 + 13),
+    rng: worldRng,
     breadStock: opts.breadStock,
   })
 
@@ -164,6 +185,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     world,
     instanceId: SANDBOX_INSTANCE_ID,
     ids,
+    authority,
     labelFor: (verb, target) => labels.get(`${verb}(${target ?? '*'})`) ?? `${verb}(${target ?? '*'})`,
   })
 

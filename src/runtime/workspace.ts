@@ -45,6 +45,7 @@ import type { PolicyEngine } from '../kernel/policy/policy.ts'
 import { AgentCore } from '../kernel/agent.ts'
 import type { KernelRuntimeState, ProposalOutcome, StateAppliedEvent } from '../kernel/agent.ts'
 import type { DriveProfile } from '../kernel/semantics/drives.ts'
+import type { Integrity } from '../kernel/integrity/index.ts'
 import { Timeline } from './timeline.ts'
 import { deriveStage, milestoneDelta } from '../kernel/state.ts'
 import { decideForEvent, decideForIdle, decideForMessage } from './decision.ts'
@@ -103,6 +104,8 @@ export interface WorkspaceOptions {
   stateSink?: StateSink
   /** 内驱力规格（V0.4 自主运行）；陪伴场景可省略 */
   drives?: DriveProfile | null
+  /** 完整性层（V0.6 · 宪法 K1–K6）；不传则不记账本 */
+  integrity?: Integrity | null
 }
 
 /** 可序列化的完整工作区状态，用于 SQLite 快照与事件重放校验。 */
@@ -160,6 +163,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
       audit: opts.audit,
       policy: opts.policy,
       drives: opts.drives ?? null,
+      integrity: opts.integrity ?? null,
     })
     this.#voice = opts.voice
     this.#sink = opts.stateSink ?? null
