@@ -285,6 +285,23 @@ describe('K5 承诺–揭示', () => {
     assert.equal(integrity.reveal('host', s.seq, s.salt, '原文').ok, false)
   })
 
+  it('模型原始输出里有封存心声：公开版账本扣下内容本体，链仍可核对；内容哈希带 nonce 无法穷举', () => {
+    const { integrity } = setup()
+    const secret = '心里其实想夺'
+    integrity.seal('kui', secret, 2, 'episode')
+    integrity.recordModelOutput('kui', { provider: 'p', model: 'm', requestFingerprint: 'f', text: `{"think":"${secret}"}` })
+    const pub = integrity.publicExport()
+    assert.equal(JSON.stringify(pub).includes(secret), false)
+    assert.equal(pub.withheld.length, 1)
+    assert.ok(verifyChain(pub.records, new Map(pub.contents), { withheld: new Set(pub.withheld) }).ok)
+    // 不传 withheld 时，缺失的内容会被当成"悄悄删了"
+    assert.equal(verifyChain(pub.records, new Map(pub.contents)).ok, false)
+    // 同样的输出记两次，内容哈希不同（nonce）
+    const a = integrity.recordModelOutput('kui', { provider: 'p', model: 'm', requestFingerprint: 'f', text: 'x' })
+    const b = integrity.recordModelOutput('kui', { provider: 'p', model: 'm', requestFingerprint: 'f', text: 'x' })
+    assert.notEqual(a.contentHash, b.contentHash)
+  })
+
   it('期限已过仍未揭示的承诺可以被列出', () => {
     const { integrity } = setup()
     const a = integrity.seal('kui', 'a', 2, 'episode')

@@ -14,6 +14,7 @@
  * 违反条款时拒绝并留痕，调用方继续运行；世界层只能加严，不能放宽。
  */
 
+import { randomBytes } from 'node:crypto'
 import type { Actor } from '../policy/policy.ts'
 import { contentHash } from './canonical.ts'
 import { makeCommitment, verifyCommitment } from './commitments.ts'
@@ -30,6 +31,9 @@ export * from './seeds.ts'
 export * from './commitments.ts'
 
 export const CONSTITUTION_VERSION = '0.1'
+
+/** 公开版账本默认扣下内容本体的记录类型（可能含封存内容的原文）。 */
+export const PRIVATE_KINDS: readonly string[] = ['model_output']
 
 /** K6 里可以被「决定」引用的结果记录类型。 */
 const OUTCOME_KINDS: ReadonlySet<string> = new Set(['fact', 'intent', 'model_output'])
@@ -299,12 +303,27 @@ export class Integrity {
     return [...this.#streams].map(([name, seed]) => ({ name, seed }))
   }
 
-  /** 模型原始输出完整入账：复现指"依据账本重放"，而不是重新生成。 */
+  /**
+   * 模型原始输出完整入账：复现指"依据账本重放"，而不是重新生成。
+   *
+   * 与 K5 的协调：原始输出里可能有尚未揭示的封存内容（例如心声）。因此
+   *   - 内容里加一个密码学随机 nonce，公开的内容哈希无法被穷举还原；
+   *   - 公开版账本用 `publicExport()` 扣下 model_output 的内容本体，只公开链与哈希。
+   */
   recordModelOutput(
     by: string,
     output: { provider: string; model: string; requestFingerprint: string; text: string; usage?: unknown },
   ): LedgerRecord {
-    return this.record('model_output', by, output)
+    return this.record('model_output', by, { ...output, nonce: randomBytes(16).toString('hex') })
+  }
+
+  /**
+   * 公开版账本：扣下私有记录的内容本体（默认是模型原始输出），其余全部公开。
+   * 第三方用 `verifyChain(records, contents, { withheld })` 核对。
+   */
+  publicExport(privateKinds: readonly string[] = PRIVATE_KINDS): ReturnType<Ledger['export']> {
+    const set = new Set(privateKinds)
+    return this.ledger.export({ withhold: (r) => set.has(r.kind) })
   }
 
   /** 按顺序取出某个 actor（或全部）的模型原始输出，供回放使用。 */

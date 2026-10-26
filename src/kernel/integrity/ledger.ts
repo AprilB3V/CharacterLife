@@ -56,11 +56,18 @@ export function recordHash(r: Omit<LedgerRecord, 'hash'>): string {
   )
 }
 
-/** 校验一串记录（可选附带内容本体）。纯函数，供导入、恢复与第三方核对使用。 */
+/**
+ * 校验一串记录（可选附带内容本体）。纯函数，供导入、恢复与第三方核对使用。
+ *
+ * `withheld`：公开版账本里**有意不公开**内容本体的记录（例如模型原始输出，里面有封存心声）。
+ * 这些记录只核对链与记录头；内容哈希等到私有版或揭示时再核对。
+ */
 export function verifyChain(
   records: readonly LedgerRecord[],
   contents?: ReadonlyMap<number, unknown>,
+  opts: { withheld?: ReadonlySet<number> } = {},
 ): LedgerVerification {
+  const withheld = opts.withheld ?? new Set<number>()
   let prev = ZERO_HASH
   let erased = 0
   for (let i = 0; i < records.length; i++) {
@@ -73,7 +80,7 @@ export function verifyChain(
         if (contentHash(contents.get(r.seq)) !== r.contentHash) {
           return { ok: false, brokenAt: r.seq, reason: '内容本体与内容哈希不符（内容被改动）' }
         }
-      } else {
+      } else if (!withheld.has(r.seq)) {
         erased += 1
       }
     }
@@ -88,7 +95,7 @@ export function verifyChain(
       if (c && typeof c.target === 'number') tombstoned.add(c.target)
     }
     for (const r of records) {
-      if (!contents.has(r.seq) && !tombstoned.has(r.seq)) {
+      if (!contents.has(r.seq) && !tombstoned.has(r.seq) && !withheld.has(r.seq)) {
         return { ok: false, brokenAt: r.seq, reason: '内容本体缺失且没有墓碑记录' }
       }
     }
@@ -191,11 +198,21 @@ export class Ledger {
     return verifyChain(this.#records, this.#contents)
   }
 
-  /** 导出（记录头 + 仍存在的内容本体），供第三方离线核对。 */
-  export(): { records: LedgerRecord[]; contents: Array<[number, unknown]> } {
+  /**
+   * 导出（记录头 + 仍存在的内容本体），供第三方离线核对。
+   * `withhold` 选出不公开内容本体的记录（公开版账本用）；被选中的 seq 列在 `withheld` 里，
+   * 核对时传给 `verifyChain(..., { withheld })`。
+   */
+  export(opts: { withhold?: (record: LedgerRecord) => boolean } = {}): {
+    records: LedgerRecord[]
+    contents: Array<[number, unknown]>
+    withheld: number[]
+  } {
+    const withheld = new Set(opts.withhold ? this.#records.filter((r) => opts.withhold!(r)).map((r) => r.seq) : [])
     return {
       records: this.#records.map((r) => ({ ...r })),
-      contents: [...this.#contents].map(([k, v]) => [k, structuredClone(v)]),
+      contents: [...this.#contents].filter(([k]) => !withheld.has(k)).map(([k, v]) => [k, structuredClone(v)]),
+      withheld: [...withheld],
     }
   }
 }
