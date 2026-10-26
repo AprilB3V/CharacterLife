@@ -10,21 +10,21 @@
 export type * from './types.ts'
 
 /* 工具层 */
-export { ManualClock, SystemClock, formatSim, DAY, HOUR } from './util/clock.ts'
-export type { Clock } from './util/clock.ts'
-export { SeededRng } from './util/rng.ts'
-export type { Rng } from './util/rng.ts'
-export { SequentialIdFactory, EntropyIdFactory, createId } from './util/ids.ts'
-export type { IdFactory } from './util/ids.ts'
-export { detectInjectionMarkers, sanitizeForMemory, tokenize, lexicalOverlap } from './util/text.ts'
+export { ManualClock, SystemClock, formatSim, DAY, HOUR } from './kernel/util/clock.ts'
+export type { Clock } from './kernel/util/clock.ts'
+export { SeededRng } from './kernel/util/rng.ts'
+export type { Rng } from './kernel/util/rng.ts'
+export { SequentialIdFactory, EntropyIdFactory, createId } from './kernel/util/ids.ts'
+export type { IdFactory } from './kernel/util/ids.ts'
+export { detectInjectionMarkers, sanitizeForMemory, tokenize, lexicalOverlap } from './kernel/util/text.ts'
 
 /* 存储 */
-export { SnapshotStore } from './storage/snapshot.ts'
-export type { SnapshotSection, SnapshotMeta } from './storage/snapshot.ts'
+export { SnapshotStore } from './kernel/storage/snapshot.ts'
+export type { SnapshotSection, SnapshotMeta } from './kernel/storage/snapshot.ts'
 
 /* Memory */
-export { MemoryStore, MEMORY_SCHEMA_VERSION } from './memory/store.ts'
-export type { MemoryWriteInput, RetrievedMemory, MemoryExport } from './memory/store.ts'
+export { MemoryStore, MEMORY_SCHEMA_VERSION } from './kernel/memory/store.ts'
+export type { MemoryWriteInput, RetrievedMemory, MemoryExport } from './kernel/memory/store.ts'
 
 /* Policy */
 export {
@@ -34,10 +34,10 @@ export {
   OWNER_ACTOR,
   OBSERVER_ACTOR,
   hasCapability,
-} from './policy/policy.ts'
-export type { Actor, PolicyContext, MemoryWriteVerdict } from './policy/policy.ts'
-export { AuditLog } from './policy/audit.ts'
-export type { AuditEvent, AuditEventType } from './policy/audit.ts'
+} from './kernel/policy/policy.ts'
+export type { Actor, PolicyContext, MemoryWriteVerdict } from './kernel/policy/policy.ts'
+export { AuditLog } from './kernel/policy/audit.ts'
+export type { AuditEvent, AuditEventType } from './kernel/policy/audit.ts'
 
 /* Runtime */
 export { CharacterWorkspace, parseDueOffsetDays } from './runtime/workspace.ts'
@@ -59,9 +59,9 @@ export {
   applyProposal,
   canonicalizeProposal,
   milestoneDelta,
-} from './runtime/state.ts'
+} from './kernel/state.ts'
 export type { DecisionContext } from './runtime/decision.ts'
-export type { StateSlice } from './runtime/state.ts'
+export type { StateSlice } from './kernel/state.ts'
 
 /* Conversation */
 export { ConversationService, DEFAULT_CONVERSATION_CONFIG } from './conversation/service.ts'
@@ -163,16 +163,16 @@ export type {
 export { estimateTokens, truncateToTokens } from './context/tokens.ts'
 
 /* 记忆排序与冲突 */
-export { rankMemories } from './memory/ranking.ts'
-export type { RankedMemory, RankParts } from './memory/ranking.ts'
-export { detectConflicts, extractPreference, precedence } from './memory/conflicts.ts'
+export { rankMemories } from './kernel/memory/ranking.ts'
+export type { RankedMemory, RankParts } from './kernel/memory/ranking.ts'
+export { detectConflicts, extractPreference, precedence } from './kernel/memory/conflicts.ts'
 export type {
   StoredConflict,
   ConflictKind,
   ConflictResolution,
   ConflictCandidate,
-} from './memory/conflicts.ts'
-export type { MemorySink, MemoryWriteInput as MemoryWriteInputV2 } from './memory/store.ts'
+} from './kernel/memory/conflicts.ts'
+export type { MemorySink, MemoryWriteInput as MemoryWriteInputV2 } from './kernel/memory/store.ts'
 
 /* 工作区扩展类型 */
 export type { StateSink, WorkspaceStateDump } from './runtime/workspace.ts'
@@ -271,19 +271,19 @@ export type { InstanceRuntime, InstanceRuntimeDeps, SendOptions } from './runtim
  * 世界交互（第一阶段：HTTP 闭环 · 内存队列）
  * ========================================================================== */
 
-export { WorldService, validateWorldEvent } from './world/service.ts'
-export type { WorldServiceOptions } from './world/service.ts'
-export { narrationFor, isTerminalStatus, allowsCompletionClaim } from './world/state.ts'
-export { buildWorldEventContext, worldContextLines } from './world/observation.ts'
-export { admitWorldIntents } from './world/admission.ts'
+export { WorldService, validateWorldEvent } from './kernel/world/service.ts'
+export type { WorldServiceOptions } from './kernel/world/service.ts'
+export { narrationFor, isTerminalStatus, allowsCompletionClaim } from './kernel/world/state.ts'
+export { buildWorldEventContext, worldContextLines } from './kernel/world/observation.ts'
+export { admitWorldIntents } from './kernel/world/admission.ts'
 export type {
   WorldIntentAdmission,
   WorldIntentAdmissionInput,
   WorldIntentRejection,
   WorldIntentRejectCode,
-} from './world/admission.ts'
-export { WORLD_RESULTS, WORLD_EVENT_KINDS, WORLD_LIMITS, WORLD_ACTION_CATALOG, manifestFor, findCapability } from './world/contracts.ts'
-export type { WorldActionCapability } from './world/contracts.ts'
+} from './kernel/world/admission.ts'
+export { WORLD_RESULTS, WORLD_EVENT_KINDS, WORLD_LIMITS, WORLD_ACTION_CATALOG, manifestFor, findCapability } from './kernel/world/contracts.ts'
+export type { WorldActionCapability } from './kernel/world/contracts.ts'
 export type {
   WorldActionResult,
   WorldActionStatus,
@@ -298,7 +298,7 @@ export type {
   WorldAdmitResult,
   WorldAdmitErrorCode,
   WorldIngestErrorCode,
-} from './world/contracts.ts'
+} from './kernel/world/contracts.ts'
 export { createWorldRouter, WORLD_DEV_ACTION } from './api/world-routes.ts'
 export type { WorldRouter, WorldRouterOptions } from './api/world-routes.ts'
 export type { WorldRuntimeConfig } from './api/runtime-factory.ts'

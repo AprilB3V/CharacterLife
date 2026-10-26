@@ -9,9 +9,9 @@
 
 | 文件 | 作用 |
 |---|---|
-| `src/world/contracts.ts` | 协议类型、上限常量 |
-| `src/world/state.ts` | 状态机派生（`narrationFor`） |
-| `src/world/service.ts` | 内存队列、准入、领取、回执、去重、惰性过期 |
+| `src/kernel/world/contracts.ts` | 协议类型、上限常量 |
+| `src/kernel/world/state.ts` | 状态机派生（`narrationFor`） |
+| `src/kernel/world/service.ts` | 内存队列、准入、领取、回执、去重、惰性过期 |
 | `src/api/world-routes.ts` | 两条 HTTP 路由 + dev seed 入口 |
 | `examples/world/dev-server.ts` | 联调入口（`npm run world:dev`） |
 | `examples/world/world-demo.ts` | 离线闭环演示（`npm run world:demo`） |
@@ -437,7 +437,7 @@ CL-World 只有在 `GET /v1/world/actions` 领到它并回执之后，状态才�
 规则（写进系统块）：每轮最多一个；只能从清单里挑；提议不等于执行；
 未确认前不得说已完成。解析层只做结构规范化，最多保留 4 个候选，合法性交给闸门。
 
-### 10.3 准入闸门（`src/world/admission.ts`）
+### 10.3 准入闸门（`src/kernel/world/admission.ts`）
 
 纯函数，判据全部来自运行时状态与服务端清单，**不读用户文本**：
 
@@ -458,7 +458,7 @@ CL-World 只有在 `GET /v1/world/actions` 领到它并回执之后，状态才�
 ### 10.4 能力清单（唯一动作来源）
 
 ```ts
-// src/world/contracts.ts
+// src/kernel/world/contracts.ts
 WORLD_ACTION_CATALOG = [{ verb: 'use', target: 'desk_01', label: '使用书桌', description: '…' }]
 ```
 
@@ -466,7 +466,7 @@ WORLD_ACTION_CATALOG = [{ verb: 'use', target: 'desk_01', label: '使用书桌',
 模型说"我有个新工具"，都不会让它变长 —— 闸门和清单根本不吃这些输入。
 新增动作 = 改目录 + 改白名单，两处都要动。
 
-### 10.5 回执回灌下一轮认知（`src/world/observation.ts`）
+### 10.5 回执回灌下一轮认知（`src/kernel/world/observation.ts`）
 
 每轮 system 块里有两段（只在有内容时出现）：
 
@@ -536,5 +536,5 @@ npm test               # 含 tests/world/{admission,intent,observation,service,h
    被接受，做同样的 eventId 去重与实例/世界归属校验，暂存在服务内（有上限），
    通过 `observations(instanceId, afterSeq)` 读取。事实（facts）约定见 `AUTONOMY.md` §5。
 3. **世界 → 认知**：本节 §1 里「世界事件不得转换成记忆或状态提议」在 V0.4 修订为：
-   `src/world/` 依旧不写任何角色状态；由 `src/autonomy/bridge.ts` 在 world 模块之外、
+   `src/kernel/world/` 依旧不写任何角色状态；由 `src/kernel/cycle/bridge.ts` 在 world 模块之外、
    按 `AUTONOMY.md` §3 的不变量受控写入。未启用自主运行的部署不受影响。

@@ -18,6 +18,9 @@
  * 5. 世界错误码 `code` 不进记忆正文（与 observation.ts 同一口径）；
  *    世界自由文本 `summary` 可以进记忆，但记忆永远只在数据区出现。
  *
+ * V0.5 起，桥只做「世界 → 内核语义槽」的翻译：结算写 Memory、缓解写 Motivation，
+ * 观察写 Observation 并更新 Situation，自己不再保存任何角色状态。
+ *
  * 观察事件（`kind=observation`）分两类处理：
  *   - 全部用于更新 **Situation**（角色视角的信念，不是世界真值的镜像：
  *     它只在收到下一条观察时才更新，中间可能过时）；
@@ -25,29 +28,14 @@
  *     写成情景记忆并作为唤醒原因。例行快照不进长期记忆，避免记忆被流水账淹没。
  */
 
-import type { CharacterWorkspace } from '../runtime/workspace.ts'
+import type { AgentCore } from '../agent.ts'
 import { RUNTIME_ACTOR } from '../policy/policy.ts'
 import type { WorldService } from '../world/service.ts'
-import type { WorldActionView, WorldObservationRecord } from '../world/contracts.ts'
+import type { WorldActionView } from '../world/contracts.ts'
 import { narrationFor } from '../world/state.ts'
 import type { IdFactory } from '../util/ids.ts'
-import type { DriveProfile } from './drives.ts'
-import { satisfactionProposals } from './drives.ts'
-
-/** 角色视角的处境（信念）。 */
-export interface Situation {
-  /** 这份信念来自哪个时刻的观察；从未观察过为 null */
-  asOfSim: number | null
-  location: string | null
-  present: string[]
-  /** 世界最近一次告诉角色"这里能做"的动作，形如 `buy(bread)` */
-  affords: string[]
-  inventory: Record<string, number>
-}
-
-export function emptySituation(): Situation {
-  return { asOfSim: null, location: null, present: [], affords: [], inventory: {} }
-}
+import { satisfactionProposals } from '../semantics/drives.ts'
+import type { Situation } from '../semantics/situation.ts'
 
 export interface SettledOutcome {
   actionId: string
@@ -77,10 +65,10 @@ export interface BridgeSync {
 }
 
 export interface WorldBridgeOptions {
-  workspace: CharacterWorkspace
+  /** 角色内核：结算写进它的 Memory / Motivation，观察写进它的 Observation / Situation */
+  agent: AgentCore
   world: WorldService
   instanceId: string
-  drives: DriveProfile
   ids: IdFactory
   /** 动作的中文标签（来自服务端目录），只用于记忆标题的可读性 */
   labelFor?: (verb: string, target: string | null) => string
@@ -96,53 +84,26 @@ function factValues(record: { facts: Array<{ key: string; value: string | number
   return record.facts.filter((f) => f.key === key).map((f) => f.value)
 }
 
-/** 从一条观察里提取「快照」字段，更新角色视角的处境。没出现的字段保持原信念。 */
-export function applyObservationToSituation(prev: Situation, obs: WorldObservationRecord): Situation {
-  const next: Situation = {
-    asOfSim: obs.receivedAtSim,
-    location: prev.location,
-    present: [...prev.present],
-    affords: [...prev.affords],
-    inventory: { ...prev.inventory },
-  }
-  const location = factValues(obs, 'location')
-  if (location.length > 0) next.location = String(location[location.length - 1])
-  // `present` / `affords` 是集合型快照：只要这条观察声明了快照（snapshot=true），就整体替换
-  const isSnapshot = factValues(obs, 'snapshot').some((v) => v === true)
-  if (isSnapshot) {
-    next.present = factValues(obs, 'present').map(String)
-    next.affords = factValues(obs, 'affords').map(String)
-  }
-  for (const f of obs.facts) {
-    if (f.key.startsWith('inventory.') && typeof f.value === 'number') {
-      next.inventory[f.key.slice('inventory.'.length)] = f.value
-    }
-  }
-  return next
-}
-
 export class WorldBridge {
-  #ws: CharacterWorkspace
+  #ws: AgentCore
   #world: WorldService
   #instanceId: string
-  #drives: DriveProfile
   #ids: IdFactory
   #labelFor: (verb: string, target: string | null) => string
   #seen = new Set<string>()
   #cursor = 0
-  #situation: Situation = emptySituation()
 
   constructor(opts: WorldBridgeOptions) {
-    this.#ws = opts.workspace
+    this.#ws = opts.agent
     this.#world = opts.world
     this.#instanceId = opts.instanceId
-    this.#drives = opts.drives
     this.#ids = opts.ids
     this.#labelFor = opts.labelFor ?? ((verb, target) => `${verb}(${target ?? '*'})`)
   }
 
+  /** 角色的处境信念（就是内核 Situation 槽的当前值）。 */
   get situation(): Situation {
-    return structuredClone(this.#situation)
+    return this.#ws.situation.current()
   }
 
   /** 自己是否还有未结算的动作（pending / dispatched）。 */
@@ -168,8 +129,18 @@ export class WorldBridge {
     const observations = this.#world.observations(this.#instanceId, this.#cursor)
     for (const obs of observations) {
       this.#cursor = Math.max(this.#cursor, obs.seq)
-      this.#situation = applyObservationToSituation(this.#situation, obs)
       const events = factValues(obs, 'event').map(String)
+      // Observation 槽记下感知；Situation 槽据此更新信念
+      const percept = this.#ws.observation.append({
+        atSim: obs.receivedAtSim,
+        source: 'world',
+        from: null,
+        text: obs.summary,
+        facts: obs.facts,
+        events,
+        ref: obs.eventId,
+      })
+      this.#ws.situation.apply(percept)
       if (events.length === 0) continue
       const written = this.#ws.writeMemory(
         {
@@ -236,9 +207,10 @@ export class WorldBridge {
     )
 
     let driveChanges: SettledOutcome['driveChanges'] = []
-    if (action.status === 'succeeded') {
+    const drives = this.#ws.motivation.driveProfile
+    if (action.status === 'succeeded' && drives) {
       const proposals = satisfactionProposals({
-        profile: this.#drives,
+        profile: drives,
         dynamic: this.#ws.dynamicState,
         verb: action.verb,
         target: action.target,

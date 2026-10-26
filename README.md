@@ -27,19 +27,23 @@
 
 ## 2. 已实现的范围
 
+**V0.5 起，底层是一个零依赖的六语义微内核**（`src/kernel/`：Self / Situation / Observation /
+Memory / Motivation / Affordance + 提议—裁决 + 自主循环 + 多角色宿主）。下表里的陪伴功能都是建在内核上的扩展。
+设计见 [`docs/KERNEL.md`](docs/KERNEL.md)。
+
 | 模块 | 文件 | 现状 |
 |---|---|---|
 | Conversation 聊天区 | `src/conversation/` | 上下文组装、记忆注入、结构化输出解析、边界短路、失败降级 |
 | Runtime 工作区 | `src/runtime/` | 动态状态、关系、事件时间线、行为决策、里程碑、状态补丁事件 |
-| Memory 记忆区 | `src/memory/` + `src/persistence/` | 四类记忆、来源与时间、检索打分、冲突检测、软删除、导出、SQLite 持久化 |
-| Policy 规则权限层 | `src/policy/` | 能力模型、规则表、路径白名单、限速、注入降级、审计日志 |
+| Memory 记忆区 | `src/kernel/memory/` + `src/persistence/` | 四类记忆、来源与时间、检索打分、冲突检测、软删除、导出、SQLite 持久化 |
+| Policy 规则权限层 | `src/kernel/policy/` | 能力模型、规则表、路径白名单、限速、注入降级、审计日志 |
 | Character Persistence | `src/character/` | Template / Instance / Session 分离，版本化人格，8 步恢复 |
 | Context Manager | `src/context/` | 每轮预算化组装、四阶梯压缩降级、实际用量记录 |
 | **Platform Adapter（V0.2）** | `src/adapters/` | 统一 `PlatformAdapter` 协议；QQ 官方机器人 / OneBot 11 / SillyTavern 三个实现 |
 | **API Gateway（V0.2）** | `src/api/` | 去重、限流、身份解析、每实例互斥、指令、本地 HTTP API |
 | **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
-| **World 世界交互（V0.3）** | `src/world/` + `src/api/world-routes.ts` | 模型产生动作意图（准入闸门 + 服务端清单）、HTTP 领取/回执、双去重、独立 world token、回执回灌下一轮认知；**动作队列未持久化** |
-| **Autonomy 自主运行（V0.4 · E0）** | `src/autonomy/` + `experiments/sandbox/` | 内驱力（只有运行时能写、只在世界确认成功时缓解）、确定性 Waker、世界→记忆受控桥、规则 Mind 与 LLM Mind（录制/回放）、无画面文字箱庭；见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md) |
+| **World 世界交互（V0.3）** | `src/kernel/world/` + `src/api/world-routes.ts` | 模型产生动作意图（准入闸门 + 服务端清单）、HTTP 领取/回执、双去重、独立 world token、回执回灌下一轮认知；**动作队列未持久化** |
+| **Autonomy 自主运行（V0.4 · E0）** | `src/kernel/cycle/` + `experiments/sandbox/` | 内驱力（只有运行时能写、只在世界确认成功时缓解）、确定性 Waker、世界→记忆受控桥、规则 Mind 与 LLM Mind（录制/回放）、无画面文字箱庭；见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md) |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
 
 **明确不做**：前端 UI、微服务、多 Agent、向量数据库、后台持续调用大模型、
@@ -214,7 +218,7 @@ npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK
 ## 8. 测试
 
 ```bash
-npm test           # 324 项测试（内存中运行，见下方说明）
+npm test           # 340 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 
@@ -298,15 +302,17 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 ```
 .
 ├── src/
-│   ├── types.ts                 # 共享领域类型（四模块的唯一数据契约）
-│   ├── util/                    # 可注入时钟、随机源、id、文本安全工具
-│   ├── storage/snapshot.ts      # 早期 JSON 快照（单进程演示仍在用）
+│   ├── kernel/                  # V0.5 六语义微内核（零依赖，见 docs/KERNEL.md）
+│   │   ├── agent.ts             #   AgentCore：六个语义槽 + 提议—裁决通道
+│   │   ├── semantics/           #   Self / Situation / Observation / Motivation / Affordance / 驱力
+│   │   ├── cycle/               #   自主循环：Waker、Mind（规则/LLM/回放）、世界桥、Runner
+│   │   ├── host.ts              #   多角色宿主（共享时钟、确定性顺序）
+│   │   ├── world/ memory/ policy/ storage/ util/ state.ts types.ts
+│   ├── types.ts                 # 陪伴扩展类型（并 re-export 内核类型）
 │   ├── persistence/             # SQLite：schema、连接、仓储、平台表、sink 旁路
 │   ├── character/               # Template / Instance / Rehydration / PersistentSession
 │   ├── context/                 # token 估算、Context Manager（预算+压缩阶梯）
-│   ├── memory/                  # 记忆存储、检索打分、冲突检测
-│   ├── policy/                  # 能力模型、规则表、审计日志
-│   ├── runtime/                 # 状态、时间线、决策、工作区、实例运行时（锁）
+│   ├── runtime/                 # 陪伴工作区（extends AgentCore）、时间线、对话决策、实例运行时（锁）
 │   ├── conversation/            # 上下文组装、服务、Mock/DeepSeek Provider
 │   ├── adapters/                # V0.2：protocol + qq + onebot + sillytavern
 │   ├── identity/               # V0.2：身份解析与一次性绑定码
@@ -344,6 +350,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 
 **引擎**
 
+- [`docs/KERNEL.md`](docs/KERNEL.md)：六语义微内核（V0.5）：语义槽、归属规则、自主循环、多角色宿主、外部项目接入
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：四模块职责、接口、数据流与不变量
 - [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)：状态模型、记忆权限、上下文预算、压缩策略、恢复流程
 - [`docs/DECISIONS.md`](docs/DECISIONS.md)：技术取舍、被放弃的方案、未解决的问题

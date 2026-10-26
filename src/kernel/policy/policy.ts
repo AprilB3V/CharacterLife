@@ -130,6 +130,12 @@ const RELATIONSHIP_PATHS = new Set([
   'boundaryViolations',
 ])
 
+/** 可写路径白名单（只读视图）：语义归属测试逐条核对每条路径都属于某个语义。 */
+export const WRITABLE_PATHS: Readonly<{ dynamic: readonly string[]; relationship: readonly string[] }> = Object.freeze({
+  dynamic: [...DYNAMIC_PATHS],
+  relationship: [...RELATIONSHIP_PATHS],
+})
+
 const NUMERIC_BOUNDS: Record<string, { min: number; max: number }> = {
   'mood.valence': { min: -1, max: 1 },
   'mood.arousal': { min: 0, max: 1 },

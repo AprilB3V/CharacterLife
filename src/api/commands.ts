@@ -12,7 +12,7 @@ import type { PlatformIdentity } from '../adapters/protocol.ts'
 import type { PlatformStore } from '../persistence/platform-store.ts'
 import type { IdentityService } from '../identity/identity-service.ts'
 import type { InstanceRuntimeManager, InstanceRuntime } from '../runtime/instance-runtime.ts'
-import { OWNER_ACTOR } from '../policy/policy.ts'
+import { OWNER_ACTOR } from '../kernel/policy/policy.ts'
 
 export interface CommandContext {
   runtime: InstanceRuntime

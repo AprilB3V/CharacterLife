@@ -24,7 +24,7 @@ import type {
 import type { PlatformStore } from '../persistence/platform-store.ts'
 import type { IdentityService } from '../identity/identity-service.ts'
 import type { InstanceRuntimeManager } from '../runtime/instance-runtime.ts'
-import type { Clock } from '../util/clock.ts'
+import type { Clock } from '../kernel/util/clock.ts'
 import { handleCommand } from './commands.ts'
 
 export type InboundStatus =

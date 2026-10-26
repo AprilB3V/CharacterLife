@@ -7,7 +7,7 @@
  * 同一种子的「干预 vs 不干预」只差一个驱力值，所以差异可以归因于那一个驱力。
  */
 
-import type { AutonomyLogRecord } from '../../src/autonomy/runner.ts'
+import type { AutonomyLogRecord } from '../../src/kernel/cycle/runner.ts'
 import type { TruthRecord } from './world.ts'
 
 export interface SandboxSummary {

@@ -35,7 +35,7 @@ import {
   buildSSEChunks,
   SillyTavernRequestError,
 } from '../adapters/sillytavern/openai.ts'
-import { OWNER_ACTOR } from '../policy/policy.ts'
+import { OWNER_ACTOR } from '../kernel/policy/policy.ts'
 import { createWorldRouter } from './world-routes.ts'
 import type { WorldRouter } from './world-routes.ts'
 

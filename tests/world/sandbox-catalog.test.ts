@@ -10,11 +10,11 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ManualClock } from '../../src/util/clock.ts'
-import { SequentialIdFactory } from '../../src/util/ids.ts'
-import { WorldService } from '../../src/world/service.ts'
-import type { WorldServiceOptions } from '../../src/world/service.ts'
-import { SANDBOX_ACTION_CATALOG, WORLD_ACTION_CATALOG, checkActionArgs } from '../../src/world/contracts.ts'
+import { ManualClock } from '../../src/kernel/util/clock.ts'
+import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
+import { WorldService } from '../../src/kernel/world/service.ts'
+import type { WorldServiceOptions } from '../../src/kernel/world/service.ts'
+import { SANDBOX_ACTION_CATALOG, WORLD_ACTION_CATALOG, checkActionArgs } from '../../src/kernel/world/contracts.ts'
 
 const WORLD = 'w'
 const INST = 'i1'

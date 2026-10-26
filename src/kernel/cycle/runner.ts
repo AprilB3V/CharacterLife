@@ -17,16 +17,16 @@
 
 import type { BehaviorDecision, CharacterProfile } from '../types.ts'
 import { RUNTIME_ACTOR } from '../policy/policy.ts'
-import type { CharacterWorkspace } from '../runtime/workspace.ts'
+import type { AgentCore } from '../agent.ts'
 import type { WorldService } from '../world/service.ts'
 import { admitWorldIntents } from '../world/admission.ts'
 import { buildWorldEventContext } from '../world/observation.ts'
-import type { Clock } from '../util/clock.ts'
 import { formatSim } from '../util/clock.ts'
 import type { IdFactory } from '../util/ids.ts'
-import type { BridgeSync, Situation, WorldBridge } from './bridge.ts'
-import type { DriveProfile, DriveReading } from './drives.ts'
-import { initDriveProposals, interventionProposal, readDrives } from './drives.ts'
+import type { BridgeSync, WorldBridge } from './bridge.ts'
+import type { Situation } from '../semantics/situation.ts'
+import type { DriveReading } from '../semantics/drives.ts'
+import { initDriveProposals, interventionProposal } from '../semantics/drives.ts'
 import type { Mind, MindDecision, MindInput, MindMemory, MindRecentOutcome } from './mind.ts'
 import { actionKey } from './mind.ts'
 import type { WakeDecision, WakerConfig } from './waker.ts'
@@ -75,20 +75,19 @@ export type AutonomyLogRecord =
   | { type: 'intervention'; t: number; clock: string; drive: string; value: number }
 
 export interface AutonomyRunnerOptions {
-  workspace: CharacterWorkspace
+  /** 角色内核：六个语义槽都从这里读，驱力规格在 agent.motivation 上 */
+  agent: AgentCore
   world: WorldService
   worldId: string
   instanceId: string
   bridge: WorldBridge
   mind: Mind
-  drives: DriveProfile
   waker: WakerConfig
   /**
    * 是否把驱力读数交给 Mind（H5 对照：A 组 false）。
    * 与 `waker.useDrives` 分开，便于做"只唤醒不告知"之类的消融。
    */
   driveInputToMind: boolean
-  clock: Clock
   ids: IdFactory
   logger?: (record: AutonomyLogRecord) => void
   /** 每次唤醒检索几条记忆 */
@@ -120,6 +119,18 @@ export class AutonomyRunner {
 
   constructor(opts: AutonomyRunnerOptions) {
     this.#o = opts
+    // Affordance：世界渠道 = 服务端动作清单，按角色的处境信念标出「此地可做」
+    opts.agent.affordance.register('world', () => {
+      const here = new Set(opts.agent.situation.current().affords)
+      return opts.world.manifest().map((c) => ({
+        channel: 'world',
+        verb: c.verb,
+        target: c.target,
+        label: c.label,
+        description: c.description,
+        believedAvailable: here.has(actionKey(c.verb, c.target)),
+      }))
+    })
   }
 
   get wakes(): number {
@@ -127,7 +138,7 @@ export class AutonomyRunner {
   }
 
   #clock(): string {
-    return formatSim(this.#o.clock.nowSim())
+    return formatSim(this.#o.agent.nowSim())
   }
 
   #log(record: AutonomyLogRecord): void {
@@ -138,11 +149,14 @@ export class AutonomyRunner {
   start(): void {
     if (this.#started) return
     this.#started = true
-    const proposals = initDriveProposals(this.#o.drives, () => this.#o.ids.next('pr'))
-    this.#o.workspace.submitProposals(proposals, RUNTIME_ACTOR, { source: 'autonomy_init' })
+    const profile = this.#o.agent.motivation.driveProfile
+    if (profile) {
+      const proposals = initDriveProposals(profile, () => this.#o.ids.next('pr'))
+      this.#o.agent.submitProposals(proposals, RUNTIME_ACTOR, { source: 'autonomy_init' })
+    }
     this.#log({
       type: 'start',
-      t: this.#o.clock.nowSim(),
+      t: this.#o.agent.nowSim(),
       clock: this.#clock(),
       mind: this.#o.mind.name,
       condition: { useDrives: this.#o.waker.useDrives, driveInputToMind: this.#o.driveInputToMind },
@@ -151,21 +165,21 @@ export class AutonomyRunner {
   }
 
   readDrives(): DriveReading[] {
-    return readDrives(this.#o.drives, this.#o.workspace.dynamicState, this.#o.clock.nowSim())
+    return this.#o.agent.motivation.drives()
   }
 
   /** 实验干预（H5）：直接设定某条驱力。走 Runtime 提议通道，审计可见。 */
   intervene(driveName: string, value: number): boolean {
-    const spec = this.#o.drives.specs.find((s) => s.name === driveName)
+    const spec = this.#o.agent.motivation.driveProfile?.specs.find((s) => s.name === driveName)
     if (!spec) return false
-    const outcome = this.#o.workspace.submitProposals(
+    const outcome = this.#o.agent.submitProposals(
       [interventionProposal(spec, value, () => this.#o.ids.next('pr'))],
       RUNTIME_ACTOR,
       { source: 'experiment' },
     )
     const ok = outcome.applied.length === 1
     if (ok) {
-      this.#log({ type: 'intervention', t: this.#o.clock.nowSim(), clock: this.#clock(), drive: driveName, value })
+      this.#log({ type: 'intervention', t: this.#o.agent.nowSim(), clock: this.#clock(), drive: driveName, value })
     }
     return ok
   }
@@ -174,7 +188,7 @@ export class AutonomyRunner {
   async step(): Promise<{ woke: boolean; sync: BridgeSync; wake: WakeDecision }> {
     if (!this.#started) this.start()
     const o = this.#o
-    const now = o.clock.nowSim()
+    const now = o.agent.nowSim()
 
     const sync = o.bridge.sync()
     for (const outcome of sync.outcomes) {
@@ -263,7 +277,7 @@ export class AutonomyRunner {
         { verb: action.verb, target: action.target, reason: action.reason, expectation: action.expectation, evidence: [`wake:${this.#seq}`] },
       ],
       decision: AUTONOMY_DECISION,
-      dynamic: o.workspace.dynamicState,
+      dynamic: o.agent.dynamicState,
       manifest: o.world.manifest(),
       worldEnabled: o.world.enabled,
       nowSim: now,
@@ -276,7 +290,7 @@ export class AutonomyRunner {
     }
     const result = o.world.admit({ worldId: o.worldId, instanceId: o.instanceId, spec })
     if (!result.ok) return { ok: false, code: result.code, reasons: result.reasons }
-    o.workspace.audit.append('world_action', 'autonomy', `自主轮次登记世界动作 ${actionKey(spec.verb, spec.target)}`, {
+    o.agent.audit.append('world_action', 'autonomy', `自主轮次登记世界动作 ${actionKey(spec.verb, spec.target)}`, {
       actionId: result.action.actionId,
       turnId,
       reason: spec.reason,
@@ -286,10 +300,9 @@ export class AutonomyRunner {
 
   #buildInput(now: number, drives: DriveReading[], wake: WakeDecision): MindInput {
     const o = this.#o
-    const profile: Readonly<CharacterProfile> = o.workspace.profile
-    const situation = o.bridge.situation
-    const manifest = o.world.manifest()
-    const here = new Set(situation.affords)
+    // 六类语义各从自己的槽里取：Self / Situation / Observation(唤醒原因) / Memory / Motivation / Affordance
+    const profile: Readonly<CharacterProfile> = o.agent.self.persona
+    const situation = o.agent.situation.current()
 
     // 结构性的最近结果描述：不含世界自由文本与错误码（与 observation.ts 同一纪律）。
     // 不带世界时间戳：世界时钟的量纲由各个世界自己定义，模型只需要先后顺序。
@@ -308,7 +321,7 @@ export class AutonomyRunner {
       ...urgent,
       ...wake.reasons.map((r) => r.detail),
     ].join(' ')
-    const memories: MindMemory[] = o.workspace.memory
+    const memories: MindMemory[] = o.agent.memory
       .search(query, { nowSim: now, limit: o.memoryLimit ?? 6 })
       .map((r) => ({
         id: r.entry.id,
@@ -335,12 +348,12 @@ export class AutonomyRunner {
       drives: o.driveInputToMind ? drives : null,
       memories,
       recentOutcomes: settled,
-      options: manifest.map((c) => ({
-        verb: c.verb,
-        target: c.target,
-        label: c.label,
-        description: c.description,
-        believedAvailableHere: here.has(actionKey(c.verb, c.target)),
+      options: o.agent.affordance.list('world').map((a) => ({
+        verb: a.verb,
+        target: a.target,
+        label: a.label,
+        description: a.description,
+        believedAvailableHere: a.believedAvailable,
       })),
       ...(o.names ? { names: o.names } : {}),
     }

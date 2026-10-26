@@ -18,11 +18,11 @@
  * 供事后核对角色的信念与归因。角色看不到这份日志。
  */
 
-import type { WorldService } from '../../src/world/service.ts'
-import type { WorldActionView } from '../../src/world/contracts.ts'
-import type { Clock } from '../../src/util/clock.ts'
-import { HOUR } from '../../src/util/clock.ts'
-import type { Rng } from '../../src/util/rng.ts'
+import type { WorldService } from '../../src/kernel/world/service.ts'
+import type { WorldActionView } from '../../src/kernel/world/contracts.ts'
+import type { Clock } from '../../src/kernel/util/clock.ts'
+import { HOUR } from '../../src/kernel/util/clock.ts'
+import type { Rng } from '../../src/kernel/util/rng.ts'
 
 export const PLACES = ['workshop', 'bakery', 'plaza'] as const
 export type Place = (typeof PLACES)[number]

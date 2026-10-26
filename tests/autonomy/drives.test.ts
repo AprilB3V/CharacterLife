@@ -10,11 +10,11 @@
 
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { HOUR } from '../../src/util/clock.ts'
-import { CONVERSATION_ACTOR, RUNTIME_ACTOR } from '../../src/policy/policy.ts'
-import type { DriveProfile } from '../../src/autonomy/drives.ts'
-import { driveValue, initDriveProposals, readDrives, satisfactionProposals } from '../../src/autonomy/drives.ts'
-import { applyProposal } from '../../src/runtime/state.ts'
+import { HOUR } from '../../src/kernel/util/clock.ts'
+import { CONVERSATION_ACTOR, RUNTIME_ACTOR } from '../../src/kernel/policy/policy.ts'
+import type { DriveProfile } from '../../src/kernel/semantics/drives.ts'
+import { driveValue, initDriveProposals, readDrives, satisfactionProposals } from '../../src/kernel/semantics/drives.ts'
+import { applyProposal } from '../../src/kernel/state.ts'
 import { cleanupRigs, createRig } from '../helpers.ts'
 
 const PROFILE: DriveProfile = {

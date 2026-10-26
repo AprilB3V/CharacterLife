@@ -17,7 +17,7 @@ import type {
   RelationshipStage,
   RelationshipState,
   StateProposal,
-} from '../types.ts'
+} from './types.ts'
 
 /** 与 policy.isDrivePath 同一口径；这里捕获驱力名。 */
 const DRIVE_PATH = /^drives\.([a-z][a-z0-9_]{0,31})$/

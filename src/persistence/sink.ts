@@ -7,11 +7,11 @@
  */
 
 import type { MemoryEntry } from '../types.ts'
-import type { MemorySink } from '../memory/store.ts'
+import type { MemorySink } from '../kernel/memory/store.ts'
 import type { StateSink } from '../runtime/workspace.ts'
 import type { PersistedEventType } from './store.ts'
 import { CharacterPersistence, MemoryWriteRejected } from './store.ts'
-import type { Clock } from '../util/clock.ts'
+import type { Clock } from '../kernel/util/clock.ts'
 
 export interface SinkOptions {
   persistence: CharacterPersistence

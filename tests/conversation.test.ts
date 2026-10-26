@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../src/types.ts'
 import { cleanupRigs, createRig, SpyProvider } from './helpers.ts'
 import { MockProvider } from '../src/conversation/providers/mock.ts'
-import { RUNTIME_ACTOR } from '../src/policy/policy.ts'
+import { RUNTIME_ACTOR } from '../src/kernel/policy/policy.ts'
 
 after(() => cleanupRigs())
 

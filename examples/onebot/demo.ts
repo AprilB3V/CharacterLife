@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { mkdirSync, rmSync } from 'node:fs'
 import { assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { MockProvider } from '../../src/conversation/providers/mock.ts'
-import { ManualClock, DAY, formatSim } from '../../src/util/clock.ts'
+import { ManualClock, DAY, formatSim } from '../../src/kernel/util/clock.ts'
 import { MockTransport } from '../../src/adapters/onebot/api-client.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))

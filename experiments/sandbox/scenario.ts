@@ -1,29 +1,31 @@
 /**
  * 文字箱庭场景装配：沈知微在小镇里的一天。
  *
- * 把角色引擎（workspace + policy + memory）、WorldService（sandbox 目录 + 观察）、
- * TextWorld（无画面 CL-World）、桥接层、Waker 与 Mind 组装在一起。
+ * 箱庭角色直接跑在**六语义内核**（AgentCore）上，不经过任何陪伴/聊天代码：
+ * AgentCore + WorldService（sandbox 目录 + 观察）+ TextWorld（无画面 CL-World）
+ * + 桥接层 + Waker + Mind。Free Roam 的斗场角色用的是同一套组合。
  * run.ts、h5.ts 和测试都从这里取同一套装配，保证"实验跑的"就是"测试测的"。
  */
 
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { CharacterWorkspace } from '../../src/runtime/workspace.ts'
-import { SnapshotStore } from '../../src/storage/snapshot.ts'
-import { AuditLog } from '../../src/policy/audit.ts'
-import { WorldService } from '../../src/world/service.ts'
-import { SANDBOX_ACTION_CATALOG } from '../../src/world/contracts.ts'
-import { HOUR, ManualClock } from '../../src/util/clock.ts'
-import { SequentialIdFactory } from '../../src/util/ids.ts'
-import { SeededRng } from '../../src/util/rng.ts'
-import { WorldBridge } from '../../src/autonomy/bridge.ts'
-import type { DriveProfile } from '../../src/autonomy/drives.ts'
-import type { Mind, RuleMindConfig } from '../../src/autonomy/mind.ts'
-import { RuleMind } from '../../src/autonomy/mind.ts'
-import type { AutonomyLogRecord } from '../../src/autonomy/runner.ts'
-import { AutonomyRunner } from '../../src/autonomy/runner.ts'
-import type { WakerConfig } from '../../src/autonomy/waker.ts'
-import { shenZhiweiProfile, shenZhiweiVoice } from '../../examples/characters/shen-zhiwei.ts'
+import { AgentCore } from '../../src/kernel/agent.ts'
+import { AgentHost } from '../../src/kernel/host.ts'
+import { SnapshotStore } from '../../src/kernel/storage/snapshot.ts'
+import { AuditLog } from '../../src/kernel/policy/audit.ts'
+import { WorldService } from '../../src/kernel/world/service.ts'
+import { SANDBOX_ACTION_CATALOG } from '../../src/kernel/world/contracts.ts'
+import { HOUR, ManualClock } from '../../src/kernel/util/clock.ts'
+import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
+import { SeededRng } from '../../src/kernel/util/rng.ts'
+import { WorldBridge } from '../../src/kernel/cycle/bridge.ts'
+import type { DriveProfile } from '../../src/kernel/semantics/drives.ts'
+import type { Mind, RuleMindConfig } from '../../src/kernel/cycle/mind.ts'
+import { RuleMind } from '../../src/kernel/cycle/mind.ts'
+import type { AutonomyLogRecord } from '../../src/kernel/cycle/runner.ts'
+import { AutonomyRunner } from '../../src/kernel/cycle/runner.ts'
+import type { WakerConfig } from '../../src/kernel/cycle/waker.ts'
+import { shenZhiweiProfile } from '../../examples/characters/shen-zhiwei.ts'
 import { TextWorld } from './world.ts'
 
 export const SANDBOX_WORLD_ID = 'cl-sandbox-town'
@@ -100,7 +102,8 @@ export interface SandboxOptions {
 
 export interface Sandbox {
   clock: ManualClock
-  workspace: CharacterWorkspace
+  /** 角色内核（六个语义槽都在上面） */
+  agent: AgentCore
   world: WorldService
   town: TextWorld
   bridge: WorldBridge
@@ -118,14 +121,14 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     sim: clock.nowSim(),
     wall: clock.nowWall().toISOString(),
   }))
-  const workspace = new CharacterWorkspace({
+  const agent = new AgentCore({
     profile: shenZhiweiProfile,
-    voice: shenZhiweiVoice,
     clock,
     ids,
     rng: new SeededRng(opts.seed),
     snapshot,
     audit,
+    drives: SHEN_DRIVES,
   })
 
   const verbs = [...new Set(SANDBOX_ACTION_CATALOG.map((c) => c.verb))]
@@ -157,32 +160,29 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   const labels = new Map(SANDBOX_ACTION_CATALOG.map((c) => [`${c.verb}(${c.target ?? '*'})`, c.label]))
   const bridge = new WorldBridge({
-    workspace,
+    agent,
     world,
     instanceId: SANDBOX_INSTANCE_ID,
-    drives: SHEN_DRIVES,
     ids,
     labelFor: (verb, target) => labels.get(`${verb}(${target ?? '*'})`) ?? `${verb}(${target ?? '*'})`,
   })
 
   const mind = opts.mind ?? new RuleMind(SHEN_RULE_MIND)
   const runner = new AutonomyRunner({
-    workspace,
+    agent,
     world,
     worldId: SANDBOX_WORLD_ID,
     instanceId: SANDBOX_INSTANCE_ID,
     bridge,
     mind,
-    drives: SHEN_DRIVES,
     waker: wakerFor(opts.condition),
     driveInputToMind: opts.condition === 'B',
     names: SANDBOX_NAMES,
-    clock,
     ids,
     logger: opts.logger,
   })
 
-  return { clock, workspace, world, town, bridge, runner, mind }
+  return { clock, agent, world, town, bridge, runner, mind }
 }
 
 export interface RunOptions {
@@ -195,21 +195,20 @@ export interface RunOptions {
 }
 
 /**
- * 跑一段时间。顺序固定：世界先推进（结算、变化、领取），再让角色同步与决策。
+ * 跑一段时间：交给内核的 AgentHost 调度（世界先推进，再让角色同步与决策）。
  * 同一种子 + 同一 Mind 输出 → 同一份日志。
  */
 export async function runSandbox(sb: Sandbox, opts: RunOptions): Promise<void> {
-  const tick = opts.tickMs ?? 5 * 60_000
-  const end = sb.clock.nowSim() + opts.hours * HOUR
-  sb.runner.start()
+  const host = new AgentHost({ clock: sb.clock, tickMs: opts.tickMs ?? 5 * 60_000 })
+    .addWorld(sb.town)
+    .addAgent(SANDBOX_INSTANCE_ID, sb.runner)
   let intervened = false
-  while (sb.clock.nowSim() < end) {
-    sb.town.step()
-    if (opts.intervention && !intervened && sb.clock.nowSim() >= opts.intervention.atSim) {
-      sb.runner.intervene(opts.intervention.drive, opts.intervention.value)
-      intervened = true
-    }
-    await sb.runner.step()
-    sb.clock.advance(tick)
-  }
+  await host.run(opts.hours * HOUR, {
+    beforeAgents: (now) => {
+      if (opts.intervention && !intervened && now >= opts.intervention.atSim) {
+        sb.runner.intervene(opts.intervention.drive, opts.intervention.value)
+        intervened = true
+      }
+    },
+  })
 }

@@ -13,9 +13,9 @@ import type { CharacterInstance } from '../character/instance.ts'
 import type { CharacterPersistence } from '../persistence/store.ts'
 import type { PlatformStore, RedeemFailure } from '../persistence/platform-store.ts'
 import type { PlatformBinding } from '../adapters/protocol.ts'
-import type { IdFactory } from '../util/ids.ts'
+import type { IdFactory } from '../kernel/util/ids.ts'
 import type { TimelineEvent } from '../types.ts'
-import { createInitialDynamicState, createInitialRelationship } from '../runtime/state.ts'
+import { createInitialDynamicState, createInitialRelationship } from '../kernel/state.ts'
 
 export interface IdentityServiceOptions {
   persistence: CharacterPersistence

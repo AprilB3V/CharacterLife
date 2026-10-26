@@ -4,8 +4,8 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { WakerConfig, WakerInput } from '../../src/autonomy/waker.ts'
-import { decideWake } from '../../src/autonomy/waker.ts'
+import type { WakerConfig, WakerInput } from '../../src/kernel/cycle/waker.ts'
+import { decideWake } from '../../src/kernel/cycle/waker.ts'
 
 const MIN = 60_000
 const CONFIG: WakerConfig = { useDrives: true, heartbeatMs: 90 * MIN, minGapMs: 15 * MIN, driveRepeatMs: 60 * MIN, maxWakesPerHour: 6 }

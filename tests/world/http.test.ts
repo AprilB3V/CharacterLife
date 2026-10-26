@@ -18,7 +18,7 @@ import { assembleRuntime } from '../../src/api/runtime-factory.ts'
 import type { RuntimeBundle } from '../../src/api/runtime-factory.ts'
 import { createApiServer } from '../../src/api/server.ts'
 import { WORLD_DEV_ACTION } from '../../src/api/world-routes.ts'
-import { ManualClock } from '../../src/util/clock.ts'
+import { ManualClock } from '../../src/kernel/util/clock.ts'
 
 const WORLD = 'cl-world-test'
 const CHAT_TOKEN = 'chat-token-0123456789'

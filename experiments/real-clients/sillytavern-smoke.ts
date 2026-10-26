@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { createApiServer } from '../../src/api/server.ts'
 import { MockProvider } from '../../src/conversation/providers/mock.ts'
-import { ManualClock } from '../../src/util/clock.ts'
+import { ManualClock } from '../../src/kernel/util/clock.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')

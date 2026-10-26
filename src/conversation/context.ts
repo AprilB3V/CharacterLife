@@ -20,7 +20,7 @@ import type {
   ProposalTarget,
   WorldActionCandidate,
 } from '../types.ts'
-import type { WorldActionCapability } from '../world/contracts.ts'
+import type { WorldActionCapability } from '../kernel/world/contracts.ts'
 
 /**
  * 世界交互的提示词上下文。

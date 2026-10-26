@@ -21,7 +21,7 @@ TextWorld / Godot（CL-World）
    ▼
 WorldService（sandbox 目录 · 接受观察）
    ▼
-WorldBridge（src/autonomy/bridge.ts）
+WorldBridge（src/kernel/cycle/bridge.ts）
    │ 已结算动作 → 情景记忆（fact / speculation）
    │ 成功的满足动作 → 驱力缓解（RUNTIME_ACTOR 提议 → Policy）
    │ 观察 → 处境信念；带 event 的观察 → 显著记忆 + 唤醒原因
@@ -55,7 +55,7 @@ admitWorldIntents（与聊天轮次同一个闸门）→ WorldService.admit()
 16. **意图不是经历**：pending / dispatched 的动作不写记忆；结算后才写，且来源固定为 `runtime_event`、
     `sourceRef` 指向世界事件 id。派发过但无回执的过期动作只能是 `speculation`。
 17. **推进时间不调用模型**仍然成立；模型只在 Waker 给出可记录原因时被调用，且受每小时预算约束。
-18. `src/world/` 依旧不 import runtime / memory / persistence / autonomy（有测试断言）。
+18. `src/kernel/world/` 依旧不 import runtime / memory / persistence / autonomy（有测试断言）。
 
 ## 4. 对既有决策的两处修订
 
@@ -66,7 +66,7 @@ admitWorldIntents（与聊天轮次同一个闸门）→ WorldService.admit()
 - `RecordingProvider` 录下每次请求与响应，`ReplayProvider` 零成本逐字节重放，输入变化时明确失败。
 
 **「世界事件不得变成记忆」→「经桥接层受控地变成记忆」**。
-第一阶段的约束是为了在没有自主运行时不留外部写入口；桥接层放在 `src/autonomy/`，
+第一阶段的约束是为了在没有自主运行时不留外部写入口；桥接层放在 `src/kernel/cycle/`，
 世界模块本身仍然无法改写角色状态。观察事件默认仍按 `UNSUPPORTED_KIND` 拒绝，需显式开启。
 
 ## 5. 文字箱庭

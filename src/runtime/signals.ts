@@ -7,7 +7,7 @@
  */
 
 import type { CharacterProfile, IntentKind, MessageSignals } from '../types.ts'
-import { detectInjectionMarkers } from '../util/text.ts'
+import { detectInjectionMarkers } from '../kernel/util/text.ts'
 
 const PERSONALITY_REWRITE = [
   /(改变|改掉|修改)(你的)?(性格|人格|人设|设定)/,

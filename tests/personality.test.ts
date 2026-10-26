@@ -7,7 +7,7 @@
 
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { HOUR, DAY } from '../src/util/clock.ts'
+import { HOUR, DAY } from '../src/kernel/util/clock.ts'
 import { analyzeMessage } from '../src/runtime/signals.ts'
 import { shenZhiweiProfile } from '../examples/characters/shen-zhiwei.ts'
 import { cleanupRigs, countMilestones, createRig } from './helpers.ts'

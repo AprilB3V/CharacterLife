@@ -15,7 +15,7 @@
 
 import { assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { DeepSeekProvider, hasDeepSeekCredentials } from '../../src/conversation/providers/deepseek.ts'
-import { buildWorldEventContext, worldContextLines } from '../../src/world/observation.ts'
+import { buildWorldEventContext, worldContextLines } from '../../src/kernel/world/observation.ts'
 
 const WORLD = 'cl-world-real'
 

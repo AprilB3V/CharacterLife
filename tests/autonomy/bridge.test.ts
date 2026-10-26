@@ -15,14 +15,14 @@ import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HOUR } from '../../src/util/clock.ts'
-import { RUNTIME_ACTOR } from '../../src/policy/policy.ts'
-import { WorldService } from '../../src/world/service.ts'
-import { SANDBOX_ACTION_CATALOG } from '../../src/world/contracts.ts'
-import { WorldBridge } from '../../src/autonomy/bridge.ts'
-import type { DriveProfile } from '../../src/autonomy/drives.ts'
-import { initDriveProposals } from '../../src/autonomy/drives.ts'
-import { SequentialIdFactory } from '../../src/util/ids.ts'
+import { HOUR } from '../../src/kernel/util/clock.ts'
+import { RUNTIME_ACTOR } from '../../src/kernel/policy/policy.ts'
+import { WorldService } from '../../src/kernel/world/service.ts'
+import { SANDBOX_ACTION_CATALOG } from '../../src/kernel/world/contracts.ts'
+import { WorldBridge } from '../../src/kernel/cycle/bridge.ts'
+import type { DriveProfile } from '../../src/kernel/semantics/drives.ts'
+import { initDriveProposals } from '../../src/kernel/semantics/drives.ts'
+import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
 import { cleanupRigs, createRig } from '../helpers.ts'
 
 const WORLD = 'w_test'
@@ -50,8 +50,9 @@ function setup() {
     leaseTtlSim: HOUR,
     maxAttempts: 1,
   })
+  rig.workspace.motivation.setDriveProfile(DRIVES)
   rig.workspace.submitProposals(initDriveProposals(DRIVES, () => ids.next('pr')), RUNTIME_ACTOR)
-  const bridge = new WorldBridge({ workspace: rig.workspace, world, instanceId: INST, drives: DRIVES, ids })
+  const bridge = new WorldBridge({ agent: rig.workspace, world, instanceId: INST, ids })
   const admit = (verb: string, target: string) => {
     const r = world.admit({
       worldId: WORLD,
@@ -186,13 +187,13 @@ describe('世界桥 · 观察', () => {
 })
 
 describe('世界桥 · 结构约束', () => {
-  it('src/world 依旧不 import runtime / memory / persistence / autonomy', () => {
-    const dir = join(process.cwd(), 'src', 'world')
+  it('世界协议模块不 import 角色状态（memory / agent / cycle / runtime / persistence）', () => {
+    const dir = join(process.cwd(), 'src', 'kernel', 'world')
     for (const file of readdirSync(dir)) {
       const text = readFileSync(join(dir, file), 'utf8')
       const imports = [...text.matchAll(/from '([^']+)'/g)].map((m) => m[1]!)
       for (const spec of imports) {
-        assert.doesNotMatch(spec, /runtime|memory|persistence|autonomy|workspace/, `${file} 不应 import ${spec}`)
+        assert.doesNotMatch(spec, /memory|agent|cycle|runtime|persistence|workspace|semantics/, `${file} 不应 import ${spec}`)
       }
     }
   })

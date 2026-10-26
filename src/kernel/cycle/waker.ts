@@ -18,7 +18,7 @@
  *   - 本模拟小时的调用预算已用完
  */
 
-import type { DriveReading } from './drives.ts'
+import type { DriveReading } from '../semantics/drives.ts'
 
 export type WakeReasonKind = 'drive' | 'outcome' | 'salient' | 'commitment' | 'heartbeat'
 

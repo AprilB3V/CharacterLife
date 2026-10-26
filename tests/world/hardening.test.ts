@@ -8,15 +8,15 @@
 
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ManualClock } from '../../src/util/clock.ts'
-import { SequentialIdFactory } from '../../src/util/ids.ts'
+import { ManualClock } from '../../src/kernel/util/clock.ts'
+import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
 import type { BehaviorDecision, LLMProvider, LLMRequest, LLMResponse } from '../../src/types.ts'
 import { ConversationService } from '../../src/conversation/service.ts'
 import { buildSystemPrompt, CAPABILITY_NOTE } from '../../src/conversation/context.ts'
-import { WorldService } from '../../src/world/service.ts'
-import type { WorldServiceOptions } from '../../src/world/service.ts'
-import { WORLD_ARGS_MAX_SECONDS } from '../../src/world/contracts.ts'
-import { buildWorldEventContext, worldContextLines } from '../../src/world/observation.ts'
+import { WorldService } from '../../src/kernel/world/service.ts'
+import type { WorldServiceOptions } from '../../src/kernel/world/service.ts'
+import { WORLD_ARGS_MAX_SECONDS } from '../../src/kernel/world/contracts.ts'
+import { buildWorldEventContext, worldContextLines } from '../../src/kernel/world/observation.ts'
 import { cleanupRigs, createRig } from '../helpers.ts'
 
 after(() => cleanupRigs())

@@ -1,4 +1,8 @@
-# 架构说明 · CharacterLife V0.1
+# 架构说明 · CharacterLife
+
+> **V0.5 起**：本文档 §1–§10 描述的四模块里，Memory / Policy / 状态应用 / 世界协议已下沉到
+> 零依赖的六语义微内核 `src/kernel/`，`CharacterWorkspace` 改为 `extends AgentCore`。
+> 内核的结构见 [`KERNEL.md`](KERNEL.md)；下文其余描述（数据流、规则、不变量）依旧成立。
 
 四个核心模块 + 一个 Provider 抽象。所有模块只通过 `src/types.ts` 的领域类型通信，
 因此任何一个模块都可以被替换（例如接 SillyTavern 前端或游戏引擎），而引擎本身
@@ -109,7 +113,7 @@ recordMilestone(kind, title, evidence)
   └─ 写一条 episodic 记忆（tags: milestone）
 ```
 
-里程碑增量（`src/runtime/state.ts`）：
+里程碑增量（`src/kernel/state.ts`）：
 
 | kind | familiarity | trust |
 |---|---|---|
@@ -212,13 +216,13 @@ recordMilestone(kind, title, evidence)
 
 **第 4 项（世界交互）是唯一由外部系统间接影响的 system 内容，因此被三重收敛**（V0.3）：
 
-1. **动词/目标**只能来自服务端代码常量 `WORLD_ACTION_CATALOG`（[`src/world/contracts.ts`](../src/world/contracts.ts)），
+1. **动词/目标**只能来自服务端代码常量 `WORLD_ACTION_CATALOG`（[`src/kernel/world/contracts.ts`](../src/kernel/world/contracts.ts)），
    不是用户输入、不是数据库配置、不是提示词自由文本；
 2. **结果摘要**只渲染结构性字段（动词、目标、`succeeded`/`failed`/`rejected`/`expired`、世界时间），
    世界回执的自由文本 `summary` 与错误码 `code` **都不进入** system 块
-   （[`src/world/observation.ts`](../src/world/observation.ts)）：模型只需要理解「失败」，不需要读世界的错误码；
+   （[`src/kernel/world/observation.ts`](../src/kernel/world/observation.ts)）：模型只需要理解「失败」，不需要读世界的错误码；
 3. `code` 本身在入站处即被约束为形如 `ERR_TIMEOUT` 的大写标识符（`^[A-Z][A-Z0-9_]{0,63}$`），
-   中文、换行、引号一律 `MALFORMED` 拒绝（[`src/world/service.ts`](../src/world/service.ts)）。
+   中文、换行、引号一律 `MALFORMED` 拒绝（[`src/kernel/world/service.ts`](../src/kernel/world/service.ts)）。
 
 因此 system 块里**不存在任何外部可控的自由文本**；错误码只保留在结构化记录
 （`WorldActionOutcome.code`）与审计事件（`world_action`）中，供复盘与排障。
@@ -226,7 +230,7 @@ recordMilestone(kind, title, evidence)
 
 ## 6. 持久化（V0.1.1 起为 SQLite）
 
-V0.1 的第一版用单文件 JSON 快照（`src/storage/snapshot.ts`，多 section + 原子 rename），
+V0.1 的第一版用单文件 JSON 快照（`src/kernel/storage/snapshot.ts`，多 section + 原子 rename），
 仍保留给单进程演示使用。V0.1.1 引入 **SQLite**（Node 内置 `node:sqlite`，实测 3.53.4）
 作为权威存储：模板、实例、会话、结构化记忆行、append-only 事件日志、快照、冲突、上下文用量。
 
@@ -263,7 +267,7 @@ CharacterRehydrator ── 快照 + 事件重放 ──► 重建 Runtime ──
 16. （V0.4）未结算的动作不写记忆；世界记忆来源固定为 `runtime_event` 并指向世界事件 id，
     派发过但无回执的过期动作只能写成 `speculation`。
 17. （V0.4）模型只在 Waker 给出可记录原因时被调用，且受每模拟小时预算约束；推进时间本身仍不调用模型。
-18. （V0.4）`src/world/` 不 import runtime / memory / persistence / autonomy（测试断言）。
+18. （V0.4）`src/kernel/world/` 不 import runtime / memory / persistence / autonomy（测试断言）。
 
 V0.4 自主运行的整体设计见 [`AUTONOMY.md`](AUTONOMY.md)。
 
@@ -319,11 +323,11 @@ CL-World（Godot 箱庭，外部进程）
    ▼
 src/api/world-routes.ts          独立 world token（与聊天 token 互不通用，null 时拒绝启动）
    ▼
-src/world/service.ts             WorldService：内存动作队列 / 租约 / 去重 / 准入收口
+src/kernel/world/service.ts             WorldService：内存动作队列 / 租约 / 去重 / 准入收口
    ▲                    │
    │ ③ manifest + 回执   │ ④ 结构化结果 → 系统提示词
    │                    ▼
-src/world/admission.ts           模型意图闸门（纯函数：决策否决 / 静默期 / 每轮 1 个 / 清单校验 / args 语义）
+src/kernel/world/admission.ts           模型意图闸门（纯函数：决策否决 / 静默期 / 每轮 1 个 / 清单校验 / args 语义）
    ▼
 src/conversation/service.ts      一轮对话：解析 worldActions → 准入 → 登记 → 渲染结果上下文
 ```
@@ -338,8 +342,8 @@ src/conversation/service.ts      一轮对话：解析 worldActions → 准入 �
 
 关键约束：
 
-- **`src/world/` 不 import** `persistence` / `workspace` / `memory` / `runtime`——世界事件无法改写角色状态，
-  这是依赖图级别的结构保证，不是调用方自觉（`src/world/service.ts` 的 import 列表可验证）；
+- **`src/kernel/world/` 不 import** `persistence` / `workspace` / `memory` / `runtime`——世界事件无法改写角色状态，
+  这是依赖图级别的结构保证，不是调用方自觉（`src/kernel/world/service.ts` 的 import 列表可验证）；
 - 模型只能「提议」：`admitWorldIntents` 是纯函数，判据来自服务端清单与运行时状态，与用户文本无关；
   `decline` / `wait` 决策与静默期直接封锁，且每轮最多一个；
 - 动作登记的唯一收口是 `WorldService.admit()`，参数语义校验（`seconds` 上限）也在那里，

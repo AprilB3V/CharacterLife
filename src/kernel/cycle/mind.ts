@@ -14,8 +14,8 @@
  */
 
 import type { CharacterProfile, Usage } from '../types.ts'
-import type { DriveReading } from './drives.ts'
-import type { Situation } from './bridge.ts'
+import type { DriveReading } from '../semantics/drives.ts'
+import type { Situation } from '../semantics/situation.ts'
 import type { WakeReason } from './waker.ts'
 
 export interface MindOption {

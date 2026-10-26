@@ -11,9 +11,9 @@ import { DeepSeekProvider, deepSeekConfigFromEnv } from '../../src/conversation/
 import { CharacterDatabase } from '../../src/persistence/database.ts'
 import { CharacterPersistence } from '../../src/persistence/store.ts'
 import { PersistentSession } from '../../src/character/persistent-session.ts'
-import { ManualClock } from '../../src/util/clock.ts'
-import { SeededRng } from '../../src/util/rng.ts'
-import { SequentialIdFactory } from '../../src/util/ids.ts'
+import { ManualClock } from '../../src/kernel/util/clock.ts'
+import { SeededRng } from '../../src/kernel/util/rng.ts'
+import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 

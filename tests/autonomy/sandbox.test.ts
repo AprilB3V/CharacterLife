@@ -12,11 +12,11 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { HOUR } from '../../src/util/clock.ts'
+import { HOUR } from '../../src/kernel/util/clock.ts'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../src/types.ts'
-import type { AutonomyLogRecord } from '../../src/autonomy/runner.ts'
-import { LlmMind, parseMindOutput } from '../../src/autonomy/llm-mind.ts'
-import { RecordingProvider, ReplayMismatchError, ReplayProvider } from '../../src/autonomy/replay.ts'
+import type { AutonomyLogRecord } from '../../src/kernel/cycle/runner.ts'
+import { LlmMind, parseMindOutput } from '../../src/kernel/cycle/llm-mind.ts'
+import { RecordingProvider, ReplayMismatchError, ReplayProvider } from '../../src/kernel/cycle/replay.ts'
 import { createSandbox, runSandbox } from '../../experiments/sandbox/scenario.ts'
 import type { Condition } from '../../experiments/sandbox/scenario.ts'
 import { socialWindow } from '../../experiments/sandbox/summary.ts'
@@ -103,7 +103,7 @@ describe('箱庭 · 规则 Mind', () => {
 
   it('世界记忆都来自 runtime_event，且都能追溯到世界事件', async () => {
     const { sb } = await run({ hours: 6 })
-    const mem = sb.workspace.memory.list({ tags: ['world'] })
+    const mem = sb.agent.memory.list({ tags: ['world'] })
     assert.ok(mem.length > 0)
     for (const m of mem) {
       assert.equal(m.origin, 'runtime_event')
