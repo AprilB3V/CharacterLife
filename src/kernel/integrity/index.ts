@@ -31,6 +31,9 @@ export * from './commitments.ts'
 
 export const CONSTITUTION_VERSION = '0.1'
 
+/** K6 里可以被「决定」引用的结果记录类型。 */
+const OUTCOME_KINDS: ReadonlySet<string> = new Set(['fact', 'intent', 'model_output'])
+
 /** 权威凭据：只有登记时拿到的这个对象才能签发事实。内容、模型输出、世界自由文本都伪造不出它。 */
 export interface AuthorityToken {
   readonly id: string
@@ -366,15 +369,16 @@ export class Integrity {
 
   /**
    * 依据规则作出的决定（显示级别、选哪一局……）。
-   * 规则必须已登记，且登记在它所涉及的每一个结果**之前**；结果必须是账本里的事实。
+   * 规则必须已登记，且登记在它所涉及的每一个结果**之前**。
+   * 「结果」是账本里已经产生的东西：事实、意图（角色的输出，例如一条心声）或模型原始输出。
    */
   decide(actor: string, input: { ruleHash: string; outcomes: readonly number[]; content: unknown }): Outcome<{ seq: number }> {
     const rule = this.#rules.get(input.ruleHash)
     if (!rule) return this.#reject(actor, 'RULE_UNKNOWN', '决定引用的规则没有登记', { ruleHash: input.ruleHash })
     for (const seq of input.outcomes) {
       const r = this.ledger.get(seq)
-      if (!r || r.kind !== 'fact') {
-        return this.#reject(actor, 'OUTCOME_UNKNOWN', `#${seq} 不是事实记录`, { seq })
+      if (!r || !OUTCOME_KINDS.has(r.kind)) {
+        return this.#reject(actor, 'OUTCOME_UNKNOWN', `#${seq} 不是结果记录（事实 / 意图 / 模型输出）`, { seq })
       }
       if (rule.seq > seq) {
         return this.#reject(actor, 'RULE_AFTER_OUTCOME', `规则 ${rule.name} v${rule.version} 登记于结果 #${seq} 之后，不能用于它`, {

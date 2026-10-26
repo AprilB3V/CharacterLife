@@ -325,6 +325,17 @@ describe('K6 预先登记', () => {
     if (!r.ok) assert.equal(r.code, 'RULE_AFTER_OUTCOME')
   })
 
+  it('可见性决定可以引用意图（例如一条心声）；规则不能引用规则或拒绝记录', () => {
+    const { integrity } = setup()
+    const rule = integrity.registerRule('engine', 'thought-grading', { sealed: 0.15 })
+    const intent = integrity.intent('kui', 'r1:move:kui', { level: 'sealed', commitment: 'abc' })
+    assert.ok(intent.ok)
+    if (!intent.ok) return
+    assert.ok(integrity.decide('engine', { ruleHash: rule.ruleHash, outcomes: [intent.seq], content: { level: 'sealed' } }).ok)
+    const bad = integrity.decide('engine', { ruleHash: rule.ruleHash, outcomes: [rule.seq], content: {} })
+    assert.equal(bad.ok, false)
+  })
+
   it('换规则只能登记新版本；未被选中的结果仍留在账本里', () => {
     const { integrity, token } = setup()
     const v1 = integrity.registerRule('editor', 'pick-best', { by: 'drama' })
