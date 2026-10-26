@@ -44,6 +44,8 @@ import { ObservationLog } from './semantics/observation.ts'
 import { MotivationSlot } from './semantics/motivation.ts'
 import { AffordanceRegistry } from './semantics/affordance.ts'
 import type { DriveProfile } from './semantics/drives.ts'
+import type { Integrity } from './integrity/index.ts'
+import { canonicalJson } from './integrity/canonical.ts'
 
 export interface AgentCoreOptions {
   profile: CharacterProfile
@@ -57,6 +59,11 @@ export interface AgentCoreOptions {
   drives?: DriveProfile | null
   /** 感知缓冲上限 */
   observationMax?: number
+  /**
+   * 完整性层（宪法 K1–K6）。提供时：每条审计事件都镜像进哈希链账本（带身份指纹），
+   * 人设替换会成为一条身份修订记录。
+   */
+  integrity?: Integrity | null
 }
 
 export interface ProposalOutcome {
@@ -87,6 +94,8 @@ export class AgentCore {
   readonly observation: ObservationLog
   readonly motivation: MotivationSlot
   readonly affordance: AffordanceRegistry
+  /** 完整性层；未启用为 null */
+  readonly integrity: Integrity | null
 
   protected readonly clock: Clock
   protected readonly ids: IdFactory
@@ -122,6 +131,14 @@ export class AgentCore {
       drives: opts.drives ?? null,
     })
     this.affordance = new AffordanceRegistry()
+    this.integrity = opts.integrity ?? null
+    if (this.integrity) {
+      const integrity = this.integrity
+      // K3：任何落地、拒绝、注入降级……都是一条账本记录。内容先规范化，保证可哈希、可复制。
+      this.audit.onAppend((event) => {
+        integrity.record(`audit.${event.type}`, event.actor, JSON.parse(canonicalJson({ summary: event.summary, data: event.data })))
+      })
+    }
 
     // 快照 section 的注册顺序就是恢复顺序：内核先注册记忆，扩展再注册自己的。
     this.snapshot.register(this.memory)
@@ -308,6 +325,8 @@ export class AgentCore {
       return false
     }
     this.memory.replaceProfileForAdmin(next)
+    // K1：人设替换 = 身份修订，修订记录携带新指纹
+    this.integrity?.reviseIdentity(actor, next, `管理操作替换核心人格（v${next.version}）`)
     this.audit.append('proposal_applied', actor.id, '核心人格被显式管理操作替换', {
       semantic: 'self',
       targetProfileId: next.id,

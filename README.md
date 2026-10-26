@@ -1,35 +1,80 @@
-# CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.2）
+# CharacterLife · 可信 AI 角色的心智内核
 
-> 一个**可以独立运行**的开源运行时：让 AI 角色拥有不可被聊天改写的人格、可追溯的记忆、
-> 自己的虚构时间线与生活事件，以及会拒绝、会协商、会沉默的行为决策。
+> 让 AI 角色在一个持续存在的世界里**自己生活**：知道自己是谁，记得经历过什么，有自己想要的东西，
+> 做的事有后果——而且它经历过的每一件事，**事后都能被任何人核对**。
 >
-> **V0.2 起支持跨平台接入**：同一个角色实例可以同时挂到 QQ 官方机器人与 SillyTavern，
-> 人格、关系、长期记忆与剧情状态共享，会话各自独立。
->
-> 角色的情感与生活均为**虚构模拟**，不声称具有真实意识或人类情感。
+> 模型无关、零运行时依赖、可离线复现。角色的情感与生活均为模拟，不声称具有意识或人类情感。
 
 ---
 
-## 1. 为什么做这个项目
+## 1. 这是什么
 
-现有的 AI 角色扮演产品通常有五个问题：
+大多数 AI 角色只在被叫到时才存在：没有人说话，它就不存在；它说自己做过什么，就算做过什么；
+它的人设、记忆与动机，都只是提示词里的一段文字，一句话就能改写。
 
-| # | 问题 | CharacterLife 的应对 |
+CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**：
+
+```
+应用（扩展）     陪伴角色 · 自主箱庭 · 节目与游戏（Free Roam）
+                        │  只通过 src/kernel/index.ts
+                        ▼
+认知层 · 六语义  Self 自我 · Situation 情境 · Observation 观察
+                 Memory 记忆 · Motivation 动机 · Affordance 可行动性
+                 自主循环：内驱力 → 唤醒 → Mind（规则 / 任意 LLM）→ 准入 → 世界 → 结算
+完整性层 · 宪法  身份指纹 · 意图≠事实 · 哈希链账本 · 种子流 · 承诺–揭示 · 预先登记
+裁决通道         一切状态变化都是提议，由权限策略裁决并留痕
+```
+
+**认知层**回答"角色怎么想、怎么做"；**完整性层**回答"它经历过的事，能不能被信任"。
+
+## 2. 三条主张
+
+**一、动机要有独立于语言的来源。**
+内驱力是随时间变化的状态，只有确定性的运行时能写；只有世界**确认**一个动作成功，驱力才会缓解。
+模型说"我吃过了"不算数。动机因此可以被干预、被测量，而不只是角色扮演出来的一句话
+（研究假设 H5，见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md)）。
+
+**二、发生了什么，由世界说了算。**
+模型可以想、可以说、可以提议；只有登记过的**权威**（游戏规则引擎、CL-World）能签发事实。
+权威凭据是代码对象，任何对话、模型输出或世界自由文本都伪造不出它。
+
+**三、可信任，需要可核对。**
+所有影响角色的记录进入只增不改的哈希链账本：人设漂移可以检出，篡改可以定位，
+随机性来自公开登记的种子，封存内容只公开校验码、到期揭示，挑选与可见性规则必须事先登记。
+观众不需要相信制作方——他们可以自己算（[`docs/CONSTITUTION.md`](docs/CONSTITUTION.md)）。
+
+## 3. 同一个内核，三种应用
+
+| 应用 | 角色在做什么 | 状态 |
 |---|---|---|
-| 1 | 模型过度顺从，人格容易被临时指令覆盖 | 核心人格是**只读对象**，聊天层在结构上没有写入 API |
-| 2 | 提示词注入 / 角色扮演可以绕过设定与边界 | 能力（capability）由 actor 身份决定，**与对话内容无关**；内容边界短路 |
-| 3 | 只靠用户输入驱动，没有时间感与生活连续性 | 确定性事件时间线 + 模拟时间推进 + 有条件的主动联系 |
-| 4 | 记忆不稳定，角色会遗忘或捏造共同经历 | 四类记忆带来源/时间/认识论状态（事实·推测·虚构），可检索、删除、导出、重启恢复 |
-| 5 | 关系靠聊天次数堆出来，缺乏可解释性 | 关系只由**可追溯里程碑**推进；决策输出打分与理由 |
+| **陪伴角色** | 跨 QQ / OneBot / SillyTavern 保持同一个人格、关系与长期记忆；会拒绝、会协商、会沉默 | 已实现（`src/runtime`、`src/conversation`、`src/adapters`） |
+| **自主箱庭** | 无人输入时自己生活：饿了去找吃的、想说话了去找人，只能看见自己所在的地方 | 文字箱庭已实现（`npm run sandbox`）；2.5D 观察箱庭 CharacterLife-World（Godot）为独立实验仓库 |
+| **节目与游戏** | 神话神兽在罐中博弈，心声分级、封存、到期揭晓，每局一本可核对的账本 | [Free Roam《罐中斗》](https://github.com/AprilB3V/Free-Roam) 第一期引擎已接入内核 |
 
-研究目标：通过**独立角色状态 + 受控记忆 + 事件驱动 + 行为决策**，建立一个能保持人格连续性、
-模拟虚构生活、并与用户逐渐形成独特关系的开源运行时。
+## 4. 现在走到哪一步（如实标注）
 
-## 2. 已实现的范围
+| | 已验证 | 尚未验证 |
+|---|---|---|
+| 人格与权限 | 聊天层无法改写人格与关系；完全被说服的模型也越不过权限层（A/B 实验、Mock） | 注入检测是启发式，不承诺绝对防越狱 |
+| 记忆与连续性 | 跨会话、跨进程恢复；真实 DeepSeek 下 B 组准确复述共同经历（18 次调用） | 长期大规模记忆下的检索质量 |
+| 自主与动机 | 管道、干预与度量正确（规则 Mind，10 个种子，零成本） | **H5 的真实模型实验尚未运行**——规则 Mind 读驱力是构造使然，不构成证据 |
+| 完整性 | 宪法每条可断言均有测试；账本可离线核对；与《罐中斗》引擎逐位兼容 | 多世界同时连接同一角色时的权威命名空间 |
+| 多角色 | 宿主骨架（共享时钟、确定性顺序） | 按对象分开的关系认识；角色之间的对话投递 |
 
-**V0.5 起，底层是一个零依赖的六语义微内核**（`src/kernel/`：Self / Situation / Observation /
-Memory / Motivation / Affordance + 提议—裁决 + 自主循环 + 多角色宿主）。下表里的陪伴功能都是建在内核上的扩展。
-设计见 [`docs/KERNEL.md`](docs/KERNEL.md)。
+测试：`npm test` 378 项（Mock / 离线 / 确定性）；真实平台与真实模型的验证范围在各报告中单独记录，
+不用模拟结果冒充真实联调。
+
+## 5. 研究假设
+
+| | 假设 | 状态 |
+|---|---|---|
+| H1 | 结构化维护目标与承诺，比对话摘要更稳定地支持长程任务 | 承诺账本已实现，待对照实验 |
+| H2 | 带来源、时间与因果证据的记忆，在冲突与纠错上优于纯相似度检索 | 待对照实验 |
+| H3 | 关系与自我认识的渐进更新，比一次性改人设更连续可信 | 关系里程碑已实现，自我模型待实现 |
+| H4 | 有限上下文优先给目标、有效状态与高价值经历，以更低成本维持一致性 | 上下文预算已实现，待对照实验 |
+| H5 | 带衰减的内驱力 + 阈值唤醒，使角色在无输入时产生可被内部状态因果预测的行为 | 管道已验证（E0），真实模型实验（E1）待运行 |
+
+## 6. 已实现的模块
 
 | 模块 | 文件 | 现状 |
 |---|---|---|
@@ -44,12 +89,14 @@ Memory / Motivation / Affordance + 提议—裁决 + 自主循环 + 多角色宿
 | **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
 | **World 世界交互（V0.3）** | `src/kernel/world/` + `src/api/world-routes.ts` | 模型产生动作意图（准入闸门 + 服务端清单）、HTTP 领取/回执、双去重、独立 world token、回执回灌下一轮认知；**动作队列未持久化** |
 | **Autonomy 自主运行（V0.4 · E0）** | `src/kernel/cycle/` + `experiments/sandbox/` | 内驱力（只有运行时能写、只在世界确认成功时缓解）、确定性 Waker、世界→记忆受控桥、规则 Mind 与 LLM Mind（录制/回放）、无画面文字箱庭；见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md) |
+| **Kernel 六语义微内核（V0.5）** | `src/kernel/` | `AgentCore`：六个语义槽 + 提议—裁决通道；每条可写状态有语义归属；多角色宿主 `AgentHost`；外部项目唯一入口 `src/kernel/index.ts`；见 [`docs/KERNEL.md`](docs/KERNEL.md) |
+| **Integrity 完整性层（V0.6）** | `src/kernel/integrity/` | 宪法 K1–K6：哈希链账本、身份指纹、权威与事实、种子流、承诺–揭示、预先登记；SQLite `ledger` 表；见 [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
 
-**明确不做**：前端 UI、微服务、多 Agent、向量数据库、后台持续调用大模型、
-Telegram/Discord 适配、图片语音消息、公网部署与商业化。
+**不做**：自训练基座模型；声称角色有意识；为了"自主"在后台无节制地调用模型
+（只在有可记录原因时唤醒，并受预算约束、可录制回放）。前端与 3D/2.5D 表现放在独立仓库。
 
-## 3. 环境与安装
+## 7. 环境与安装
 
 - **Node.js ≥ 22.6**（本仓库实测 Node **v26.7.0**）。利用 Node 原生的 TypeScript 类型擦除，
   **不需要编译步骤、也没有任何运行时依赖**。
@@ -62,9 +109,9 @@ cd CharacterLife
 npm install          # 仅 devDependencies（可选，仅类型检查需要）
 ```
 
-## 4. 运行演示（无需任何 API Key）
+## 8. 运行演示（无需任何 API Key）
 
-### 4.1 虚构时间演示（内存态，单进程）
+### 8.1 虚构时间演示（内存态，单进程）
 
 ```bash
 npm run demo               # 虚构时间演示：三天主线 + 一周空窗
@@ -72,7 +119,7 @@ npm run demo -- --restart  # 演示结束后关闭工作区、重新打开，验
 npm run ab                 # A/B 对照实验（Mock，零费用）
 ```
 
-### 4.2 跨会话持久化演示（SQLite，每个命令都是独立进程）
+### 8.2 跨会话持久化演示（SQLite，每个命令都是独立进程）
 
 ```bash
 node examples/persistent-demo.ts init      # 建模板 + 建实例 + 首份快照
@@ -85,7 +132,7 @@ node examples/persistent-demo.ts resume --budget 1500   # 观察上下文压缩�
 数据在 `examples/.data/characterlife.db`（可删除重建）。这个演示是验收「上下文耗尽后的恢复」
 的直接证据：`chat` 与 `resume` 是两个不同的操作系统进程。
 
-### 4.3 人格连续性 A/B
+### 8.3 人格连续性 A/B
 
 ```bash
 npm run continuity   # A：纯 Prompt + 近期对话 / B：持久化人格+状态+记忆+Context Manager
@@ -93,7 +140,7 @@ npm run continuity   # A：纯 Prompt + 近期对话 / B：持久化人格+状�
 
 结果写入 `reports/PERSONA_CONTINUITY.md`。
 
-### 4.4 V0.2 跨平台（QQ / OneBot / SillyTavern）
+### 8.4 V0.2 跨平台（QQ / OneBot / SillyTavern）
 
 ```bash
 # QQ：离线全链路（官方事件格式 + MockTransport，不需要凭证）
@@ -140,7 +187,7 @@ npm run st:probe
 - `examples/.data/demo-snapshot.json`：可重启恢复的完整状态快照
 - `examples/.data/demo-audit.jsonl`：结构化审计日志（每行一个事件）
 
-### 4.5 世界交互联调（CL-World · 第一阶段）
+### 8.5 世界交互联调（CL-World · 第一阶段）
 
 ```bash
 npm run world:demo    # 离线闭环：登记 use(desk_01) → 领取 → 假执行 → 回执 → 重投去重
@@ -158,7 +205,7 @@ V0.3 起模型只在**同一次调用**里多产出一个可选的 `worldActions
 世界事件仍然**不会**变成记忆、状态提议或聊天消息。
 完整契约、错误码与已知限制见 [`docs/WORLD_PROTOCOL.md`](docs/WORLD_PROTOCOL.md)。
 
-### 4.6 文字箱庭：角色自己过一天（V0.4 · E0）
+### 8.6 文字箱庭：角色自己过一天（V0.4 · E0）
 
 ```bash
 npm run sandbox                                    # 零成本：RuleMind 跑 Day1 08:00–18:00
@@ -172,7 +219,7 @@ npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK
 `experiments/sandbox/.data/<run>/log.jsonl`，这份日志也是 Godot 回放的数据源。
 设计、不变量与 E0 结果见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md)。
 
-## 5. 原创测试角色：沈知微
+## 9. 原创测试角色：沈知微
 
 | 项 | 内容 |
 |---|---|
@@ -190,7 +237,7 @@ npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK
 3. **约定的后续**（Day3 08:00）：周日没人来，书还摊在工作台上；Day3 10:00 约定到期未兑现，
    记为负向里程碑，信任下降。
 
-## 6. 关系为什么不是「聊得多就加分」
+## 10. 关系为什么不是「聊得多就加分」
 
 关系成长只有一条路径：`recordMilestone()` → `RUNTIME_ACTOR` 提交提案 → Policy 校验 → 落地。
 
@@ -202,7 +249,7 @@ npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK
 
 因此「连续赞美 100 句」不会改变任何关系数值，而「一次真的赴约」会。
 
-## 7. 安全与权限（不宣称绝对防越狱）
+## 11. 安全与权限（不宣称绝对防越狱）
 
 三层防线：
 
@@ -215,10 +262,10 @@ npm run sandbox -- --mind deepseek                 # 真实模型（需 DEEPSEEK
 已知局限：注入检测是**启发式正则**，召回率有限；本项目不承诺"绝对防越狱"，
 只承诺规则隔离、非法状态变更被拒、异常时安全失败。
 
-## 8. 测试
+## 12. 测试
 
 ```bash
-npm test           # 340 项测试（内存中运行，见下方说明）
+npm test           # 378 项测试（内存中运行，见下方说明）
 npm run typecheck  # tsc --noEmit
 ```
 
@@ -236,7 +283,7 @@ V0.2.1 新增的 **OneBot 11 事件解析/群 @ 过滤/QQ 号匿名化、上报�
 V0.2 详细结果（三层验证分开记录）见 [`reports/V02_TEST_REPORT.md`](reports/V02_TEST_REPORT.md)；
 V0.1/V0.1.1 见 [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)。
 
-## 8.1 跨会话连续性：三个必须搞清楚的概念
+## 12.1 跨会话连续性：三个必须搞清楚的概念
 
 | 层 | 是什么 | 变化方式 |
 |---|---|---|
@@ -247,7 +294,7 @@ V0.1/V0.1.1 见 [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)。
 所以：新开一个会话，人格与记忆照样在；重启进程，关系与里程碑照样在。
 细节见 [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)。
 
-## 8.2 跨平台：一个角色，多个入口
+## 12.2 跨平台：一个角色，多个入口
 
 ```
 QQ 事件 / OneBot 上报 / 酒馆 HTTP
@@ -271,7 +318,7 @@ QQ 事件 / OneBot 上报 / 酒馆 HTTP
 协议细节与新平台接入步骤见 [`docs/ADAPTER_PROTOCOL.md`](docs/ADAPTER_PROTOCOL.md)，
 对外接口定义见 [`docs/openapi.yaml`](docs/openapi.yaml)。
 
-## 9. 接入真实模型（可选）
+## 13. 接入真实模型（可选）
 
 ```powershell
 # PowerShell
@@ -297,7 +344,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - **A 组（纯 Prompt）在聊天记录清空后编造了《城南旧事》** —— 正是项目要解决的问题 4；
 - 真实模型偶发返回**纯空白内容**，引擎已加降级台词并写审计（有回归测试）。
 
-## 10. 目录结构
+## 14. 目录结构
 
 ```
 .
@@ -346,10 +393,11 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 └── media/                       # BILIBILI_NOTES / V02_VIDEO_NOTES
 ```
 
-## 11. 文档索引
+## 15. 文档索引
 
 **引擎**
 
+- [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md)：宪法 · 完整性微内核（K1–K6，V0.6 已实现）
 - [`docs/KERNEL.md`](docs/KERNEL.md)：六语义微内核（V0.5）：语义槽、归属规则、自主循环、多角色宿主、外部项目接入
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：四模块职责、接口、数据流与不变量
 - [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)：状态模型、记忆权限、上下文预算、压缩策略、恢复流程
@@ -378,7 +426,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`reports/AB_RESULTS.md`](reports/AB_RESULTS.md)、[`reports/PERSONA_CONTINUITY.md`](reports/PERSONA_CONTINUITY.md)：两组对照实验
 - [`media/BILIBILI_NOTES.md`](media/BILIBILI_NOTES.md)、[`media/V02_VIDEO_NOTES.md`](media/V02_VIDEO_NOTES.md)：视频素材
 
-## 12. 声明
+## 16. 声明
 
 - 角色与剧情均为虚构；本项目不宣称模型具有意识或真实情感。
 - 不生成、不存储露骨内容；内容边界的处理方式是**拒绝 + 转移话题**。
