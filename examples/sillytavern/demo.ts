@@ -17,7 +17,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { MockProvider } from '../../src/conversation/providers/mock.ts'
 import { createApiServer } from '../../src/api/server.ts'
-import { ManualClock } from '../../src/util/clock.ts'
+import { ManualClock } from '../../src/kernel/util/clock.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const dataDir = join(here, '.data')

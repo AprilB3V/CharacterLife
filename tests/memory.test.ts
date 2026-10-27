@@ -4,15 +4,15 @@
 
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { MemoryStore } from '../src/memory/store.ts'
-import { ManualClock } from '../src/util/clock.ts'
-import { SequentialIdFactory } from '../src/util/ids.ts'
-import { createInitialDynamicState, createInitialRelationship } from '../src/runtime/state.ts'
+import { MemoryStore } from '../src/kernel/memory/store.ts'
+import { ManualClock } from '../src/kernel/util/clock.ts'
+import { SequentialIdFactory } from '../src/kernel/util/ids.ts'
+import { createInitialDynamicState, createInitialRelationship } from '../src/kernel/state.ts'
 import { shenZhiweiProfile } from '../examples/characters/shen-zhiwei.ts'
 import {
   CONVERSATION_ACTOR,
   OWNER_ACTOR,
-} from '../src/policy/policy.ts'
+} from '../src/kernel/policy/policy.ts'
 import { cleanupRigs, createRig } from './helpers.ts'
 
 after(() => cleanupRigs())

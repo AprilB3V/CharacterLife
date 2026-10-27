@@ -58,6 +58,7 @@ export const RUNTIME_ACTOR: Actor = {
     'memory:write',
     'memory:delete',
     'timeline:write',
+    'state:write:drives',
   ),
 }
 
@@ -76,6 +77,7 @@ export const OWNER_ACTOR: Actor = {
     'policy:write',
     'timeline:write',
     'external:send',
+    'state:write:drives',
   ),
 }
 
@@ -108,6 +110,16 @@ const DYNAMIC_PATHS = new Set([
   'lastDecisionAtSim',
 ])
 
+/**
+ * 内驱力路径：`drives.<name>`（V0.4）。
+ * 名称只允许小写标识符，避免模型或配置借路径名夹带别的东西。
+ */
+const DRIVE_PATH = /^drives\.[a-z][a-z0-9_]{0,31}$/
+
+export function isDrivePath(path: string): boolean {
+  return DRIVE_PATH.test(path)
+}
+
 const RELATIONSHIP_PATHS = new Set([
   'familiarity',
   'trust',
@@ -117,6 +129,12 @@ const RELATIONSHIP_PATHS = new Set([
   'lastInteractionSim',
   'boundaryViolations',
 ])
+
+/** 可写路径白名单（只读视图）：语义归属测试逐条核对每条路径都属于某个语义。 */
+export const WRITABLE_PATHS: Readonly<{ dynamic: readonly string[]; relationship: readonly string[] }> = Object.freeze({
+  dynamic: [...DYNAMIC_PATHS],
+  relationship: [...RELATIONSHIP_PATHS],
+})
 
 const NUMERIC_BOUNDS: Record<string, { min: number; max: number }> = {
   'mood.valence': { min: -1, max: 1 },
@@ -208,6 +226,20 @@ export class PolicyEngine {
       }
     }
 
+    // 2b) 内驱力是确定性运行时的专属状态：聊天层虽然能写 dynamic，
+    //     但不能借此改写自己的「饿不饿 / 想不想见人」，否则动机就失去了独立于语言的来源。
+    if (proposal.target === 'dynamic' && isDrivePath(proposal.path) && !ctx.actor.capabilities.has('state:write:drives')) {
+      return {
+        allowed: false,
+        code: 'CAPABILITY_MISSING',
+        severity: 'deny',
+        reasons: [
+          `${ctx.actor.id} 缺少能力 state:write:drives，拒绝 dynamic.${proposal.path}`,
+          '内驱力只能由运行时依据已确认的世界结果或时间推进来改变',
+        ],
+      }
+    }
+
     // 3) 路径白名单。
     const pathOk = this.#isPathAllowed(proposal.target, proposal.path)
     if (!pathOk) {
@@ -294,7 +326,7 @@ export class PolicyEngine {
   #isPathAllowed(target: ProposalTarget, path: string): boolean {
     switch (target) {
       case 'dynamic':
-        return DYNAMIC_PATHS.has(path)
+        return DYNAMIC_PATHS.has(path) || isDrivePath(path)
       case 'relationship':
         return RELATIONSHIP_PATHS.has(path)
       case 'memory':
@@ -309,7 +341,7 @@ export class PolicyEngine {
 
   /** 数值边界：把越界值夹回合法区间，而不是直接丢弃（例如 energy=3 -> 1）。 */
   #numericBounds(proposal: StateProposal): RuleOutcome {
-    const bounds = NUMERIC_BOUNDS[proposal.path]
+    const bounds = NUMERIC_BOUNDS[proposal.path] ?? (isDrivePath(proposal.path) ? { min: 0, max: 1 } : undefined)
     if (!bounds || typeof proposal.value !== 'number' || proposal.op !== 'set') {
       return { code: 'VALID_VALUE', verdict: 'allow', reason: '' }
     }

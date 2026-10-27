@@ -1,8 +1,8 @@
 {
   "name": "characterlife",
-  "version": "0.2.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "CharacterLife · AI 虚拟角色生命与关系演化引擎（V0.2：跨平台适配与统一角色接口）",
+  "description": "CharacterLife · 可信 AI 角色的心智内核：六语义认知层 + 宪法完整性层（V0.6）",
   "type": "module",
   "engines": {
     "node": ">=22.6"
@@ -25,6 +25,8 @@
     "real:smoke": "node experiments/real-model/smoke.ts",
     "real:continuity": "node experiments/real-model/continuity.ts",
     "world:real": "node experiments/real-model/world-intent.ts",
+    "sandbox": "node experiments/sandbox/run.ts",
+    "sandbox:h5": "node experiments/sandbox/h5.ts",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
     "typecheck": "tsc -p tsconfig.json",

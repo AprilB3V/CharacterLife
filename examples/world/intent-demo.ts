@@ -13,7 +13,7 @@
 import { assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { MockProvider } from '../../src/conversation/providers/mock.ts'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../src/types.ts'
-import { buildWorldEventContext, worldContextLines } from '../../src/world/observation.ts'
+import { buildWorldEventContext, worldContextLines } from '../../src/kernel/world/observation.ts'
 
 const WORLD = 'cl-world-demo'
 

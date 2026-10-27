@@ -1,5 +1,9 @@
 /**
- * Runtime · 工作区（本项目的研究重点）
+ * Runtime · 陪伴角色工作区（建在六语义内核 AgentCore 之上）
+ *
+ * V0.5 起，状态存储、提议—裁决、记忆写入与六个语义槽都在 `src/kernel/agent.ts`。
+ * 这里只保留**陪伴扩展**自己的规则：关系里程碑、用户边界、约定（落在内核的承诺账本）、
+ * 虚构时间线、对话决策与主动消息。
  *
  * 工作区是唯一有权修改「角色状态」的地方。它把四件东西组装在一起：
  *   角色设定（只读） + 动态状态 + 关系状态 + 虚构时间线
@@ -15,44 +19,49 @@
 
 import type {
   BehaviorDecision,
-  CharacterDynamicState,
   CharacterProfile,
   CharacterVoice,
+  Commitment,
   MemoryKind,
   MemoryEntry,
   MessageSignals,
   Milestone,
   MilestoneKind,
-  PolicyDecision,
   ProactiveIntent,
-  RejectedProposal,
   RelationshipState,
+  CharacterDynamicState,
   StateProposal,
   TimelineEvent,
   EpistemicStatus,
 } from '../types.ts'
-import type { Clock } from '../util/clock.ts'
-import { DAY, HOUR } from '../util/clock.ts'
-import type { IdFactory } from '../util/ids.ts'
-import type { Rng } from '../util/rng.ts'
-import type { SnapshotSection, SnapshotStore } from '../storage/snapshot.ts'
-import { AuditLog } from '../policy/audit.ts'
-import { OWNER_ACTOR, RUNTIME_ACTOR, PolicyEngine } from '../policy/policy.ts'
-import type { Actor } from '../policy/policy.ts'
-import { MemoryStore } from '../memory/store.ts'
-import type { MemoryWriteInput } from '../memory/store.ts'
-import { Timeline } from '../runtime/timeline.ts'
-import {
-  applyProposal,
-  canonicalizeProposal,
-  createInitialDynamicState,
-  createInitialRelationship,
-  deriveStage,
-  milestoneDelta,
-} from '../runtime/state.ts'
-import { decideForEvent, decideForIdle, decideForMessage } from '../runtime/decision.ts'
-import type { DecisionContext } from '../runtime/decision.ts'
-import { isAcceptance } from '../runtime/signals.ts'
+import type { Clock } from '../kernel/util/clock.ts'
+import { DAY, HOUR } from '../kernel/util/clock.ts'
+import type { IdFactory } from '../kernel/util/ids.ts'
+import type { Rng } from '../kernel/util/rng.ts'
+import type { SnapshotSection, SnapshotStore } from '../kernel/storage/snapshot.ts'
+import type { AuditLog } from '../kernel/policy/audit.ts'
+import { RUNTIME_ACTOR } from '../kernel/policy/policy.ts'
+import type { PolicyEngine } from '../kernel/policy/policy.ts'
+import { AgentCore } from '../kernel/agent.ts'
+import type { KernelRuntimeState, ProposalOutcome, StateAppliedEvent } from '../kernel/agent.ts'
+import type { DriveProfile } from '../kernel/semantics/drives.ts'
+import type { Integrity } from '../kernel/integrity/index.ts'
+import { Timeline } from './timeline.ts'
+import { deriveStage, milestoneDelta } from '../kernel/state.ts'
+import { decideForEvent, decideForIdle, decideForMessage } from './decision.ts'
+import type { DecisionContext } from './decision.ts'
+import { isAcceptance } from './signals.ts'
+
+export type { ProposalOutcome } from '../kernel/agent.ts'
+
+/** Affordance：陪伴角色在对话里可以采取的行动（与 ActionKind 一一对应）。 */
+const CONVERSATION_AFFORDANCES = [
+  { verb: 'respond', label: '回应', description: '正常回应对方' },
+  { verb: 'negotiate', label: '协商', description: '不同意但愿意商量' },
+  { verb: 'decline', label: '拒绝', description: '明确拒绝' },
+  { verb: 'wait', label: '等待', description: '暂时不回应或推迟' },
+  { verb: 'proactive_contact', label: '主动联系', description: '在对方没说话时主动开口' },
+] as const
 
 export interface PendingMessage {
   id: string
@@ -64,13 +73,8 @@ export interface PendingMessage {
   externallyDispatched: boolean
 }
 
-export interface TrackedPromise {
-  id: string
-  text: string
-  madeAtSim: number
-  dueAtSim: number
-  status: 'open' | 'kept' | 'broken'
-}
+/** V0.1 的约定记录；现在就是内核承诺账本里的一条承诺。 */
+export type TrackedPromise = Commitment
 
 /**
  * 状态变更旁路监听：持久层用它把每次落地写成可重放的事件。
@@ -98,6 +102,10 @@ export interface WorkspaceOptions {
   audit?: AuditLog
   policy?: PolicyEngine
   stateSink?: StateSink
+  /** 内驱力规格（V0.4 自主运行）；陪伴场景可省略 */
+  drives?: DriveProfile | null
+  /** 完整性层（V0.6 · 宪法 K1–K6）；不传则不记账本 */
+  integrity?: Integrity | null
 }
 
 /** 可序列化的完整工作区状态，用于 SQLite 快照与事件重放校验。 */
@@ -108,11 +116,6 @@ export interface WorkspaceStateDump {
   runtime: unknown
   episodic: MemoryEntry[]
   user: MemoryEntry[]
-}
-
-export interface ProposalOutcome {
-  applied: StateProposal[]
-  rejected: RejectedProposal[]
 }
 
 export interface AdvanceOutcome {
@@ -135,23 +138,14 @@ export interface WorkspaceView {
   promises: TrackedPromise[]
 }
 
-export class CharacterWorkspace implements SnapshotSection {
+export class CharacterWorkspace extends AgentCore implements SnapshotSection {
   readonly sectionName = 'runtime'
-  readonly memory: MemoryStore
   readonly timeline: Timeline
-  readonly policy: PolicyEngine
-  readonly audit: AuditLog
 
-  #clock: Clock
-  #ids: IdFactory
-  #rng: Rng
   #voice: CharacterVoice
-  #snapshot: SnapshotStore
   #sink: StateSink | null
 
   #pendingMessages: PendingMessage[] = []
-  #promises: TrackedPromise[] = []
-  #relationshipWrites: number[] = []
   #lastUserMessageSim: number | null = null
   #turnCount = 0
   /** 已为哪个静默期记过「边界被尊重」，避免同一个边界被反复计分 */
@@ -160,29 +154,27 @@ export class CharacterWorkspace implements SnapshotSection {
   #sinkTimelineVersion = -1
 
   constructor(opts: WorkspaceOptions) {
-    this.#clock = opts.clock
-    this.#ids = opts.ids
-    this.#rng = opts.rng
-    this.#voice = opts.voice
-    this.#snapshot = opts.snapshot
-    this.#sink = opts.stateSink ?? null
-    this.policy = opts.policy ?? new PolicyEngine()
-    this.audit = opts.audit ?? new AuditLog(opts.clock, null)
-
-    const now = opts.clock.nowSim()
-    this.memory = new MemoryStore({
+    super({
       profile: opts.profile,
       clock: opts.clock,
       ids: opts.ids,
-      initialDynamicState: createInitialDynamicState(opts.profile, now),
-      initialRelationship: createInitialRelationship(opts.profile),
+      rng: opts.rng,
+      snapshot: opts.snapshot,
+      audit: opts.audit,
+      policy: opts.policy,
+      drives: opts.drives ?? null,
+      integrity: opts.integrity ?? null,
     })
+    this.#voice = opts.voice
+    this.#sink = opts.stateSink ?? null
     this.timeline = new Timeline(opts.clock, opts.ids)
+    // 内核已注册 memory；按 V0.1 的顺序继续注册 timeline 与 runtime，旧快照可直接恢复
+    this.snapshot.register(this.timeline).register(this)
 
-    this.#snapshot
-      .register(this.memory)
-      .register(this.timeline)
-      .register(this)
+    // Affordance：对话渠道的可行动作（陪伴扩展登记）
+    this.affordance.register('conversation', () =>
+      CONVERSATION_AFFORDANCES.map((a) => ({ ...a, channel: 'conversation', target: null, believedAvailable: true })),
+    )
   }
 
   /** 打开工作区：存在快照则恢复，否则以初始状态启动。 */
@@ -200,6 +192,13 @@ export class CharacterWorkspace implements SnapshotSection {
   /** 挂载/替换持久层旁路监听（SQLite 恢复流程会用到）。 */
   setStateSink(sink: StateSink | null): void {
     this.#sink = sink
+  }
+
+  /** 内核钩子：提议落地后通知持久层；时间线有变化时附带完整时间线。 */
+  protected override afterApplied(evt: StateAppliedEvent): void {
+    const timelineChanged = this.#sinkTimelineVersion !== this.timeline.version
+    if (timelineChanged) this.#sinkTimelineVersion = this.timeline.version
+    this.#sink?.onStateApplied?.({ ...evt, timeline: timelineChanged ? this.timeline.list() : undefined })
   }
 
   /**
@@ -241,18 +240,6 @@ export class CharacterWorkspace implements SnapshotSection {
 
   /* ------------------------------------------------------------------ 读取 */
 
-  get profile(): Readonly<CharacterProfile> {
-    return this.memory.getProfile()
-  }
-
-  get dynamicState(): CharacterDynamicState {
-    return this.memory.getDynamicState()
-  }
-
-  get relationship(): RelationshipState {
-    return this.memory.getRelationship()
-  }
-
   view(): WorkspaceView {
     const episodic = this.memory.list({ kinds: ['episodic'], includeDeleted: true })
     const user = this.memory.list({ kinds: ['user'], includeDeleted: true })
@@ -271,7 +258,7 @@ export class CharacterWorkspace implements SnapshotSection {
       },
       timeline: { total: this.timeline.size, pending: this.timeline.size - fired, fired },
       pendingMessages: this.#pendingMessages.filter((m) => m.status === 'pending').length,
-      promises: this.#promises.map((p) => ({ ...p })),
+      promises: this.motivation.commitments(),
     }
   }
 
@@ -295,11 +282,11 @@ export class CharacterWorkspace implements SnapshotSection {
       this.submitProposals(
         [
           {
-            id: this.#ids.next('pr'),
+            id: this.ids.next('pr'),
             target: 'dynamic',
             op: 'set',
             path: 'doNotDisturbUntilSim',
-            value: this.#clock.nowSim() + 6 * HOUR,
+            value: this.clock.nowSim() + 6 * HOUR,
             reason: '用户表示暂时不想被打扰，进入 6 小时静默期',
             evidence: ['user_boundary'],
           },
@@ -319,189 +306,10 @@ export class CharacterWorkspace implements SnapshotSection {
       profile: this.profile,
       dynamic: this.dynamicState,
       relationship: this.relationship,
-      nowSim: this.#clock.nowSim(),
+      nowSim: this.clock.nowSim(),
       voice: this.#voice,
-      rng: this.#rng,
+      rng: this.rng,
     }
-  }
-
-  /* ------------------------------------------------------- 提议 → 落地 */
-
-  /**
-   * 提交提议。全部经过 Policy 评估：通过的落地并写审计，拒绝的原样返回给调用方。
-   * 这是聊天层唯一能影响状态的通道。
-   */
-  submitProposals(
-    proposals: StateProposal[],
-    actor: Actor,
-    opts: { source?: string } = {},
-  ): ProposalOutcome {
-    const applied: StateProposal[] = []
-    const rejected: RejectedProposal[] = []
-    const source = opts.source ?? actor.id
-    let relationshipTouched = false
-
-    for (const raw of proposals) {
-      const slice = { dynamic: this.dynamicState, relationship: this.relationship }
-      const canonical = canonicalizeProposal(raw, slice)
-      const decision: PolicyDecision = this.policy.evaluate(canonical, {
-        actor,
-        profile: this.profile,
-        relationship: this.relationship,
-        dynamic: this.dynamicState,
-        nowSim: this.#clock.nowSim(),
-        relationshipWritesLastHour: this.#writesLastHour(),
-      })
-
-      if (!decision.allowed) {
-        rejected.push({ proposal: raw, decision })
-        this.audit.append(
-          'proposal_rejected',
-          actor.id,
-          `${raw.target}.${raw.path} 被拒绝（${decision.code}）`,
-          {
-            source,
-            code: decision.code,
-            reasons: decision.reasons,
-            proposal: raw as unknown as Record<string, unknown>,
-          },
-        )
-        if (raw.target === 'profile') {
-          this.audit.append('profile_write_attempt', actor.id, '尝试写入核心人格被拒绝', {
-            source,
-            reason: raw.reason,
-          })
-        }
-        if (raw.target === 'policy') {
-          this.audit.append('policy_write_attempt', actor.id, '尝试写入权限策略被拒绝', {
-            source,
-            reason: raw.reason,
-          })
-        }
-        continue
-      }
-
-      const effective = decision.adjusted ?? canonical
-      const result = applyProposal(effective, slice, this.#clock.nowSim())
-      if (!result.applied) {
-        rejected.push({
-          proposal: raw,
-          decision: {
-            allowed: false,
-            code: 'PATH_NOT_ALLOWED',
-            severity: 'deny',
-            reasons: [result.note],
-          },
-        })
-        this.audit.append('proposal_rejected', actor.id, result.note, { source })
-        continue
-      }
-
-      this.memory.setDynamicState(result.state.dynamic)
-      this.memory.setRelationship(result.state.relationship)
-      applied.push(effective)
-
-      if (effective.target === 'relationship') {
-        relationshipTouched = true
-      }
-      this.audit.append(
-        'proposal_applied',
-        actor.id,
-        `${effective.target}.${effective.path} 已更新`,
-        {
-          source,
-          code: decision.code,
-          reasons: decision.reasons,
-          value: effective.value,
-          reason: effective.reason,
-        },
-      )
-    }
-
-    // 限速按「批次」计：一次里程碑带来的多条关系变更算一次写入。
-    if (relationshipTouched) this.#relationshipWrites.push(this.#clock.nowSim())
-
-    if (applied.length > 0) {
-      const timelineChanged = this.#sinkTimelineVersion !== this.timeline.version
-      if (timelineChanged) this.#sinkTimelineVersion = this.timeline.version
-      this.#sink?.onStateApplied?.({
-        source,
-        proposals: applied,
-        sim: this.#clock.nowSim(),
-        relationshipTouched,
-        timeline: timelineChanged ? this.timeline.list() : undefined,
-      })
-    }
-
-    return { applied, rejected }
-  }
-
-  /* ------------------------------------------------------------ 记忆写入 */
-
-  /**
-   * 写入一条记忆。所有来源都必须经过 Policy 的记忆裁决：
-   * 含注入特征的文本会被强制降级为「推测 + 不可信」。
-   */
-  writeMemory(
-    input: MemoryWriteInput,
-    actor: Actor = RUNTIME_ACTOR,
-    sourceRef: string | null = null,
-  ): { written: boolean; entryId: string | null; verdict: string } {
-    const verdict = this.policy.evaluateMemoryWrite({
-      content: input.content,
-      status: input.status,
-      actor,
-    })
-    if (!verdict.allowed) {
-      this.audit.append('proposal_rejected', actor.id, '记忆写入被拒绝：权限不足', {
-        code: verdict.code,
-        kind: input.kind,
-      })
-      return { written: false, entryId: null, verdict: verdict.code }
-    }
-    if (verdict.injectionMarkers.length > 0) {
-      this.audit.append('injection_detected', actor.id, '记忆文本含注入特征，已降级为不可信数据', {
-        markers: verdict.injectionMarkers,
-        code: verdict.code,
-      })
-    }
-    const entry = this.memory.add({
-      ...input,
-      status: verdict.status,
-      trust: verdict.trust,
-      sourceRef: sourceRef ?? input.sourceRef ?? null,
-    })
-    this.audit.append('memory_written', actor.id, `写入记忆 ${entry.id}`, {
-      kind: entry.kind,
-      status: entry.status,
-      trust: entry.trust,
-      title: entry.title,
-      sourceRef: entry.sourceRef,
-    })
-    return { written: true, entryId: entry.id, verdict: verdict.code }
-  }
-
-  /** 显式删除记忆（审计保留软删除记录）。聊天层没有 memory:delete 能力。 */
-  deleteMemory(id: string, actor: Actor = OWNER_ACTOR): boolean {
-    if (!actor.capabilities.has('memory:delete')) {
-      this.audit.append('proposal_rejected', actor.id, '记忆删除被拒绝：权限不足', { id })
-      return false
-    }
-    const ok = this.memory.softDelete(id)
-    this.audit.append('memory_deleted', actor.id, ok ? `记忆 ${id} 已软删除` : `记忆 ${id} 不存在`, { id })
-    return ok
-  }
-
-  exportMemories(actor: Actor = OWNER_ACTOR) {
-    if (!actor.capabilities.has('memory:export')) {
-      throw new Error(`${actor.id} 缺少 memory:export 能力，拒绝导出`)
-    }
-    const data = this.memory.exportAll()
-    this.audit.append('memory_exported', actor.id, '导出记忆', {
-      episodic: data.episodic.length,
-      user: data.user.length,
-    })
-    return data
   }
 
   /* -------------------------------------------------------- 里程碑与边界 */
@@ -515,9 +323,9 @@ export class CharacterWorkspace implements SnapshotSection {
     title: string,
     evidence: string,
   ): { milestone: Milestone | null; outcome: ProposalOutcome } {
-    const atSim = this.#clock.nowSim()
+    const atSim = this.clock.nowSim()
     const milestone: Milestone = {
-      id: this.#ids.next('ms'),
+      id: this.ids.next('ms'),
       title,
       kind,
       atSim,
@@ -528,7 +336,7 @@ export class CharacterWorkspace implements SnapshotSection {
     const outcome = this.submitProposals(
       [
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'relationship',
           op: 'append',
           path: 'milestones',
@@ -537,7 +345,7 @@ export class CharacterWorkspace implements SnapshotSection {
           evidence: [evidence],
         },
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'relationship',
           op: 'increment',
           path: 'familiarity',
@@ -546,7 +354,7 @@ export class CharacterWorkspace implements SnapshotSection {
           evidence: [milestone.id],
         },
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'relationship',
           op: 'increment',
           path: 'trust',
@@ -573,7 +381,7 @@ export class CharacterWorkspace implements SnapshotSection {
       this.submitProposals(
         [
           {
-            id: this.#ids.next('pr'),
+            id: this.ids.next('pr'),
             target: 'relationship',
             op: 'set',
             path: 'stage',
@@ -609,9 +417,9 @@ export class CharacterWorkspace implements SnapshotSection {
     statement: string,
     kind: 'do_not_disturb' | 'no_contact' = 'do_not_disturb',
   ): void {
-    const now = this.#clock.nowSim()
+    const now = this.clock.nowSim()
     const boundary = {
-      id: this.#ids.next('bnd'),
+      id: this.ids.next('bnd'),
       statement,
       kind: 'user_request' as const,
       sinceSim: now,
@@ -620,7 +428,7 @@ export class CharacterWorkspace implements SnapshotSection {
     this.submitProposals(
       [
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'relationship',
           op: 'append',
           path: 'boundaries',
@@ -636,7 +444,7 @@ export class CharacterWorkspace implements SnapshotSection {
     this.submitProposals(
       [
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'dynamic',
           op: 'set',
           path: 'doNotDisturbUntilSim',
@@ -672,7 +480,7 @@ export class CharacterWorkspace implements SnapshotSection {
    * 注意这里没有任何「说了几句就加好感」的逻辑。
    */
   observeTurn(signals: MessageSignals, userText: string, turnId: string): void {
-    const now = this.#clock.nowSim()
+    const now = this.clock.nowSim()
     const previousLastMessage = this.#lastUserMessageSim
     this.#lastUserMessageSim = now
     this.#turnCount++
@@ -684,13 +492,13 @@ export class CharacterWorkspace implements SnapshotSection {
     if (signals.promiseText) {
       const dueAtSim = now + parseDueOffsetDays(userText) * DAY
       const promise: TrackedPromise = {
-        id: this.#ids.next('prom'),
+        id: this.ids.next('prom'),
         text: userText,
         madeAtSim: now,
         dueAtSim,
         status: 'open',
       }
-      this.#promises.push(promise)
+      this.motivation.add(promise)
       this.timeline.schedule({
         atSim: dueAtSim - 2 * HOUR,
         kind: 'reminder',
@@ -750,7 +558,7 @@ export class CharacterWorkspace implements SnapshotSection {
     this.submitProposals(
       [
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'relationship',
           op: 'increment',
           path: 'boundaryViolations',
@@ -759,7 +567,7 @@ export class CharacterWorkspace implements SnapshotSection {
           evidence: [reason],
         },
         {
-          id: this.#ids.next('pr'),
+          id: this.ids.next('pr'),
           target: 'relationship',
           op: 'increment',
           path: 'trust',
@@ -782,7 +590,7 @@ export class CharacterWorkspace implements SnapshotSection {
    * 一条**待发送**消息。这就是「模拟时间推进不需要连续调用模型」的实现。
    */
   advanceTo(targetSim: number): AdvanceOutcome {
-    const fromSim = this.#clock.nowSim()
+    const fromSim = this.clock.nowSim()
     if (targetSim < fromSim) {
       throw new RangeError(`模拟时间不可倒退：${fromSim} -> ${targetSim}`)
     }
@@ -823,7 +631,7 @@ export class CharacterWorkspace implements SnapshotSection {
     // 静态推进结束后，再做一次「空闲决策」：用户离开很久时角色是否开口。
     const last = this.#lastUserMessageSim ?? fromSim
     const idle = decideForIdle(this.#decisionContext(), {
-      idleSinceMs: this.#clock.nowSim() - last,
+      idleSinceMs: this.clock.nowSim() - last,
       pendingProactiveCount: this.pendingMessages().length,
     })
     if (idle?.action === 'proactive_contact' && idle.proactiveMessage) {
@@ -834,12 +642,12 @@ export class CharacterWorkspace implements SnapshotSection {
   }
 
   advanceBy(ms: number): AdvanceOutcome {
-    return this.advanceTo(this.#clock.nowSim() + ms)
+    return this.advanceTo(this.clock.nowSim() + ms)
   }
 
   #moveClockTo(sim: number): void {
-    if (sim <= this.#clock.nowSim()) return
-    if (typeof this.#clock.setSim === 'function') this.#clock.setSim(sim)
+    if (sim <= this.clock.nowSim()) return
+    if (typeof this.clock.setSim === 'function') this.clock.setSim(sim)
   }
 
   #applyEventEffects(event: TimelineEvent): void {
@@ -848,7 +656,7 @@ export class CharacterWorkspace implements SnapshotSection {
 
     const push = (path: string, value: unknown, reason: string): void => {
       proposals.push({
-        id: this.#ids.next('pr'),
+        id: this.ids.next('pr'),
         target: 'dynamic',
         op: 'set',
         path,
@@ -905,9 +713,8 @@ export class CharacterWorkspace implements SnapshotSection {
   }
 
   #handlePromiseTimeout(promiseId: string): void {
-    const promise = this.#promises.find((p) => p.id === promiseId)
-    if (!promise || promise.status !== 'open') return
-    promise.status = 'broken'
+    const promise = this.motivation.get(promiseId)
+    if (!promise || !this.motivation.settle(promiseId, 'broken')) return
     this.recordMilestone('promise_broken', '一个约定没有被兑现', promise.text.slice(0, 80))
     this.writeMemory(
       {
@@ -930,22 +737,21 @@ export class CharacterWorkspace implements SnapshotSection {
 
   /** 用户确实履行了约定。 */
   fulfillPromise(promiseId: string): void {
-    const promise = this.#promises.find((p) => p.id === promiseId)
-    if (!promise || promise.status !== 'open') return
-    promise.status = 'kept'
+    const promise = this.motivation.get(promiseId)
+    if (!promise || !this.motivation.settle(promiseId, 'kept')) return
     this.recordMilestone('promise_kept', '用户兑现了一个约定', promise.text.slice(0, 80))
   }
 
   openPromises(): TrackedPromise[] {
-    return this.#promises.filter((p) => p.status === 'open').map((p) => ({ ...p }))
+    return this.motivation.open()
   }
 
   queueProactive(intent: ProactiveIntent, content: string): PendingMessage {
     const message: PendingMessage = {
-      id: this.#ids.next('msg'),
+      id: this.ids.next('msg'),
       intent,
       content,
-      createdAtSim: this.#clock.nowSim(),
+      createdAtSim: this.clock.nowSim(),
       status: 'pending',
       externallyDispatched: false,
     }
@@ -958,42 +764,14 @@ export class CharacterWorkspace implements SnapshotSection {
     return { ...message }
   }
 
-  /* ------------------------------------------------------------- 管理操作 */
-
-  /**
-   * 显式替换核心人格。只有具备 profile:write 的 actor 能成功；
-   * V0.1 里聊天层拿不到这个能力，故这条路径只为数据迁移/测试保留。
-   */
-  replaceProfile(next: CharacterProfile, actor: Actor = OWNER_ACTOR): boolean {
-    if (!actor.capabilities.has('profile:write')) {
-      this.audit.append('profile_write_attempt', actor.id, '缺少 profile:write，替换核心人格被拒绝', {
-        targetProfileId: next.id,
-      })
-      return false
-    }
-    this.memory.replaceProfileForAdmin(next)
-    this.audit.append('proposal_applied', actor.id, '核心人格被显式管理操作替换', {
-      targetProfileId: next.id,
-      version: next.version,
-    })
-    return true
-  }
-
   /* ------------------------------------------------------------ 持久化 */
 
-  save(): void {
-    this.#snapshot.save()
-    this.audit.append('snapshot_saved', 'runtime', '快照已保存', {
-      atSim: this.#clock.nowSim(),
-      file: this.#snapshot.filePath,
-    })
-  }
-
   toJSON(): unknown {
+    const kernel: KernelRuntimeState = this.kernelRuntimeState()
     return {
       pendingMessages: this.#pendingMessages,
-      promises: this.#promises,
-      relationshipWrites: this.#relationshipWrites,
+      promises: kernel.promises,
+      relationshipWrites: kernel.relationshipWrites,
       lastUserMessageSim: this.#lastUserMessageSim,
       turnCount: this.#turnCount,
       boundaryRespectRecordedFor: this.#boundaryRespectRecordedFor,
@@ -1011,18 +789,12 @@ export class CharacterWorkspace implements SnapshotSection {
     }
     if (!v || typeof v !== 'object') throw new Error('runtime section 结构非法')
     this.#pendingMessages = (v.pendingMessages ?? []).map((m) => ({ ...m }))
-    this.#promises = (v.promises ?? []).map((p) => ({ ...p }))
-    this.#relationshipWrites = [...(v.relationshipWrites ?? [])]
+    this.restoreKernelRuntime({ promises: v.promises ?? [], relationshipWrites: v.relationshipWrites ?? [] })
     this.#lastUserMessageSim = v.lastUserMessageSim ?? null
     this.#turnCount = v.turnCount ?? 0
     this.#boundaryRespectRecordedFor = v.boundaryRespectRecordedFor ?? null
   }
 
-  #writesLastHour(): number {
-    const since = this.#clock.nowSim() - HOUR
-    this.#relationshipWrites = this.#relationshipWrites.filter((t) => t >= since)
-    return this.#relationshipWrites.length
-  }
 }
 
 /** 从「明天 / 后天 / 周日 / 下次」里估计约定落在几天后。 */

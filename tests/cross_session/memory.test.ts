@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { MemoryWriteRejected } from '../../src/persistence/store.ts'
 import type { MemoryEntry } from '../../src/types.ts'
 import { cleanupDirs, createRig } from './helpers.ts'
-import { DAY } from '../../src/util/clock.ts'
+import { DAY } from '../../src/kernel/util/clock.ts'
 
 after(() => cleanupDirs())
 

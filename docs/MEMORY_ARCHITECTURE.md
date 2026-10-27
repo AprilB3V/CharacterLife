@@ -96,7 +96,7 @@ Session（一次聊天上下文，可关闭、可重建）
 
 ## 4. 记忆冲突与过时处理
 
-### 4.1 检测规则（`src/memory/conflicts.ts`，确定性）
+### 4.1 检测规则（`src/kernel/memory/conflicts.ts`，确定性）
 
 | 类型 | 触发条件 |
 |---|---|

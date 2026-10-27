@@ -25,15 +25,15 @@ import type {
 import { ContextManager } from '../context/manager.ts'
 import type { ContextPlan } from '../context/manager.ts'
 import { estimateTokens } from '../context/tokens.ts'
-import type { Clock } from '../util/clock.ts'
-import type { IdFactory } from '../util/ids.ts'
+import type { Clock } from '../kernel/util/clock.ts'
+import type { IdFactory } from '../kernel/util/ids.ts'
 import type { CharacterWorkspace } from '../runtime/workspace.ts'
 import { analyzeMessage } from '../runtime/signals.ts'
-import { CONVERSATION_ACTOR } from '../policy/policy.ts'
-import { admitWorldIntents } from '../world/admission.ts'
-import type { WorldService } from '../world/service.ts'
-import type { WorldActionCapability } from '../world/contracts.ts'
-import { buildWorldEventContext } from '../world/observation.ts'
+import { CONVERSATION_ACTOR } from '../kernel/policy/policy.ts'
+import { admitWorldIntents } from '../kernel/world/admission.ts'
+import type { WorldService } from '../kernel/world/service.ts'
+import type { WorldActionCapability } from '../kernel/world/contracts.ts'
+import { buildWorldEventContext } from '../kernel/world/observation.ts'
 import {
   CAPABILITY_NOTE,
   buildMessages,
@@ -166,6 +166,16 @@ export class ConversationService {
     const profile = this.#workspace.profile
 
     const signals = analyzeMessage(userText, profile)
+    // Observation 槽：用户这条消息是一次感知（不可信文本，只进数据区）
+    this.#workspace.observation.append({
+      atSim: nowSim,
+      source: 'user',
+      from: 'user',
+      text: userText.slice(0, 500),
+      facts: [],
+      events: signals.intents.map((i) => `intent:${i}`),
+      ref: turnId,
+    })
     const decision = this.#workspace.decide(signals)
 
     // 世界交互：清单来自服务端（代码常量 ∩ 白名单），与用户文本无关。

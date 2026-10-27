@@ -19,8 +19,8 @@ import type {
   RelationshipState,
   TimelineEvent,
 } from '../types.ts'
-import type { Rng } from '../util/rng.ts'
-import { deriveStage } from './state.ts'
+import type { Rng } from '../kernel/util/rng.ts'
+import { deriveStage } from '../kernel/state.ts'
 
 export interface DecisionContext {
   profile: CharacterProfile

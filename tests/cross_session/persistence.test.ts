@@ -4,7 +4,7 @@
 
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { CONVERSATION_ACTOR, OWNER_ACTOR } from '../../src/policy/policy.ts'
+import { CONVERSATION_ACTOR, OWNER_ACTOR } from '../../src/kernel/policy/policy.ts'
 import { stableStringify } from '../../src/character/template.ts'
 import { cleanupDirs, createRig, openSession, seedTimeline } from './helpers.ts'
 

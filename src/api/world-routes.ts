@@ -17,9 +17,9 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { WorldService } from '../world/service.ts'
-import type { WorldActionStatus } from '../world/contracts.ts'
-import { WORLD_LIMITS } from '../world/contracts.ts'
+import type { WorldService } from '../kernel/world/service.ts'
+import type { WorldActionStatus } from '../kernel/world/contracts.ts'
+import { WORLD_LIMITS } from '../kernel/world/contracts.ts'
 
 export interface WorldRouterOptions {
   service: WorldService

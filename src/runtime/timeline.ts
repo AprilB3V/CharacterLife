@@ -9,9 +9,9 @@
  */
 
 import type { EventKind, TimelineEvent } from '../types.ts'
-import type { Clock } from '../util/clock.ts'
-import type { IdFactory } from '../util/ids.ts'
-import type { SnapshotSection } from '../storage/snapshot.ts'
+import type { Clock } from '../kernel/util/clock.ts'
+import type { IdFactory } from '../kernel/util/ids.ts'
+import type { SnapshotSection } from '../kernel/storage/snapshot.ts'
 
 export interface ScheduleInput {
   atSim: number

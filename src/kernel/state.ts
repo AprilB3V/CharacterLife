@@ -17,7 +17,10 @@ import type {
   RelationshipStage,
   RelationshipState,
   StateProposal,
-} from '../types.ts'
+} from './types.ts'
+
+/** 与 policy.isDrivePath 同一口径；这里捕获驱力名。 */
+const DRIVE_PATH = /^drives\.([a-z][a-z0-9_]{0,31})$/
 
 export function createInitialMood(): Mood {
   return { label: '安静', valence: 0.15, arousal: 0.25 }
@@ -121,6 +124,9 @@ export interface ApplyResult {
 /** 读取数值型路径的当前值，用于增量提案的规范化。 */
 export function readNumericPath(state: StateSlice, target: string, path: string): number | null {
   if (target === 'dynamic') {
+    // 驱力不参与 increment 规范化：存储水平不含时间衰减，"在存储值上加减"会得到错误结果。
+    // 返回 null 让 increment 原样落到 applyProposal，在那里被拒绝（驱力只接受 set）。
+    if (path.startsWith('drives.')) return null
     if (path === 'energy') return state.dynamic.energy
     if (path === 'mood.valence') return state.dynamic.mood.valence
     if (path === 'mood.arousal') return state.dynamic.mood.arousal
@@ -213,8 +219,21 @@ export function applyProposal(proposal: StateProposal, state: StateSlice, nowSim
       case 'lastDecisionAtSim':
         next.dynamic.lastDecisionAtSim = Number(proposal.value)
         break
-      default:
-        return { state, applied: false, note: `未知 dynamic 路径: ${proposal.path}` }
+      default: {
+        const drive = DRIVE_PATH.exec(proposal.path)
+        if (!drive) return { state, applied: false, note: `未知 dynamic 路径: ${proposal.path}` }
+        const value = Number(proposal.value)
+        if (proposal.op !== 'set' || !Number.isFinite(value)) {
+          return { state, applied: false, note: `驱力 ${proposal.path} 只接受有限数值的 set` }
+        }
+        // 写入的是「此刻被确认的水平」：时刻取应用时的模拟时间，
+        // 事件重放时同样取事件时刻，因此衰减曲线可以被精确复原。
+        next.dynamic.drives = {
+          ...(next.dynamic.drives ?? {}),
+          [drive[1]!]: { level: clamp(value, 0, 1), atSim: nowSim },
+        }
+        break
+      }
     }
     return { state: next, applied: true, note: `dynamic.${proposal.path} 已更新` }
   }

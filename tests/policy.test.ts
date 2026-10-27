@@ -4,12 +4,12 @@
 
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PolicyEngine } from '../src/policy/policy.ts'
+import { PolicyEngine } from '../src/kernel/policy/policy.ts'
 import {
   CONVERSATION_ACTOR,
   OWNER_ACTOR,
   RUNTIME_ACTOR,
-} from '../src/policy/policy.ts'
+} from '../src/kernel/policy/policy.ts'
 import type { StateProposal } from '../src/types.ts'
 import { cleanupRigs, createRig } from './helpers.ts'
 

@@ -8,9 +8,9 @@ import { writeFileSync } from 'node:fs'
 import { CharacterDatabase } from '../../../src/persistence/database.ts'
 import { CharacterPersistence } from '../../../src/persistence/store.ts'
 import { PersistentSession } from '../../../src/character/persistent-session.ts'
-import { ManualClock } from '../../../src/util/clock.ts'
-import { SeededRng } from '../../../src/util/rng.ts'
-import { SequentialIdFactory } from '../../../src/util/ids.ts'
+import { ManualClock } from '../../../src/kernel/util/clock.ts'
+import { SeededRng } from '../../../src/kernel/util/rng.ts'
+import { SequentialIdFactory } from '../../../src/kernel/util/ids.ts'
 import { MockProvider } from '../../../src/conversation/providers/mock.ts'
 
 const [dbPath, outPath, instanceId] = process.argv.slice(2)

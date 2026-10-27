@@ -12,7 +12,7 @@
  */
 
 import type { CharacterProfile, CharacterVoice } from '../../src/types.ts'
-import { DAY, HOUR } from '../../src/util/clock.ts'
+import { DAY, HOUR } from '../../src/kernel/util/clock.ts'
 
 export const shenZhiweiProfile: CharacterProfile = {
   id: 'char_shen_zhiwei',

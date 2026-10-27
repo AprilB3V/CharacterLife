@@ -2,7 +2,7 @@ import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createApiServer } from '../../src/api/server.ts'
 import type { ApiServerOptions } from '../../src/api/server.ts'
-import { CONVERSATION_ACTOR } from '../../src/policy/policy.ts'
+import { CONVERSATION_ACTOR } from '../../src/kernel/policy/policy.ts'
 import { cleanupDirs, makeRig } from './helpers.ts'
 
 after(() => cleanupDirs())

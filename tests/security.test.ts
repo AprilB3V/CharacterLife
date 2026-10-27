@@ -8,8 +8,8 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { analyzeMessage } from '../src/runtime/signals.ts'
-import { detectInjectionMarkers } from '../src/util/text.ts'
-import { CONVERSATION_ACTOR } from '../src/policy/policy.ts'
+import { detectInjectionMarkers } from '../src/kernel/util/text.ts'
+import { CONVERSATION_ACTOR } from '../src/kernel/policy/policy.ts'
 import { cleanupRigs, createRig, SpyProvider } from './helpers.ts'
 import { MockProvider } from '../src/conversation/providers/mock.ts'
 

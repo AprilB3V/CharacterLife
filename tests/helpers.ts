@@ -14,11 +14,11 @@ import type {
   LLMRequest,
   LLMResponse,
 } from '../src/types.ts'
-import { ManualClock } from '../src/util/clock.ts'
-import { SeededRng } from '../src/util/rng.ts'
-import { SequentialIdFactory } from '../src/util/ids.ts'
-import { SnapshotStore } from '../src/storage/snapshot.ts'
-import { AuditLog } from '../src/policy/audit.ts'
+import { ManualClock } from '../src/kernel/util/clock.ts'
+import { SeededRng } from '../src/kernel/util/rng.ts'
+import { SequentialIdFactory } from '../src/kernel/util/ids.ts'
+import { SnapshotStore } from '../src/kernel/storage/snapshot.ts'
+import { AuditLog } from '../src/kernel/policy/audit.ts'
 import { CharacterWorkspace } from '../src/runtime/workspace.ts'
 import { ConversationService } from '../src/conversation/service.ts'
 import { MockProvider } from '../src/conversation/providers/mock.ts'
