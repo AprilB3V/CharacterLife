@@ -11,6 +11,10 @@ import { seasonOneScript } from './season/script.ts'
 import { SeasonDirector } from './season/director.ts'
 import type { ReviewDecision, ReviewList } from './season/director.ts'
 import { drainInbox, writePendingReview } from './season/review-files.ts'
+import { WorldEffectReview, isRoutineEvent } from './world-review.ts'
+import { jingjingConsolePlugin } from './console-plugin.ts'
+import type { ConsolePlugin } from '../../src/console/plugin.ts'
+import type { PendingWorldEffect, WorldEffect, WorldReviewMode } from './world-review.ts'
 
 const MAX_AGE_MS = 15000
 const ALL = Number.MAX_SAFE_INTEGER
@@ -23,10 +27,13 @@ export interface JingjingGameAdapterOptions extends InstanceExtensionContext {
     /** Directory for closing review files; absent means review only through methods. */
     seasonDir?: string
     seasonConfig?: SeasonConfig
+    /** 'review' holds the effects of key world events for owner approval; default 'auto'. */
+    worldReview?: WorldReviewMode
 }
 
 export class JingjingGameAdapter implements InstanceExtension {
     readonly season: SeasonDirector
+    readonly worldReview: WorldEffectReview
     private instance: InstanceRuntime
     private world: InstanceExtensionContext['world']
     private clock: InstanceExtensionContext['clock']
@@ -39,6 +46,7 @@ export class JingjingGameAdapter implements InstanceExtension {
     private currentRun = ''
     private latestWorldRef: string | null = null
     private journalAck = new Map<string, number>()
+    #plugin: ConsolePlugin | undefined
 
     constructor(options: JingjingGameAdapterOptions) {
         this.instance = options.instance
@@ -51,6 +59,7 @@ export class JingjingGameAdapter implements InstanceExtension {
         const workspace = this.instance.workspace
         this.season = new SeasonDirector({ workspace, worldId: this.instance.worldId, script: seasonOneScript(this.config),
             config: this.config, now: () => this.clock.nowSim(), nextId: prefix => this.ids.next(prefix) })
+        this.worldReview = new WorldEffectReview(workspace, this.clock, options.worldReview ?? 'auto')
         this.currentRun = this.season.state().tracked?.runId ?? ''
         // Jingjing can only talk: the world channel stays empty.
         workspace.affordance.register('world', () => [])
@@ -155,7 +164,7 @@ export class JingjingGameAdapter implements InstanceExtension {
             investigation: typeof meta.investigation === 'number' ? meta.investigation : null })
         const derived = deriveSnapshotEvents(tracked, this.season.state().tracked!, this.config)
         this.perceive(changes.length ? changes.join('；') : '无新变化', facts, derived, last.eventId)
-        if (derived.length) this.season.ingest({ events: derived, ref: last.eventId, runId, atSim: this.clock.nowSim() })
+        if (derived.length) this.dispatch({ ref: last.eventId, runId, events: derived, summary: '读取器快照派生事件', itemName: '', atSim: this.clock.nowSim(), source: 'snapshot' })
         for (const flag of workspace.motivation.open()) {
             if (flag.owner !== 'user' || flag.criterion?.kind !== 'avoid_purchase') continue
             const criterion = flag.criterion
@@ -171,7 +180,6 @@ export class JingjingGameAdapter implements InstanceExtension {
     private applyEvent(observation: WorldObservationRecord): void {
         const reported = observation.facts.filter(fact => fact.key === 'event').map(fact => String(fact.value)).filter(isGameEvent)
         if (!reported.length) return
-        const workspace = this.instance.workspace
         const facts = Object.fromEntries(observation.facts.map(fact => [fact.key, fact.value]))
         const runId = typeof facts.runId === 'string' ? facts.runId : this.currentRun
         const sale = reported.find(event => event.startsWith('sale:'))
@@ -183,18 +191,43 @@ export class JingjingGameAdapter implements InstanceExtension {
             this.journalAck.set(journalSession, Math.max(this.journalAck.get(journalSession) ?? 0, journalSeq))
         }
         const seen = this.season.state().processed
-        const fresh = events.filter(event => !seen.includes(`${observation.eventId}#${event}`))
+        const fresh = events.filter(event => !seen.includes(`${observation.eventId}#${event}`) && !this.worldReview.knows(observation.eventId, event))
         if (!fresh.length) return
         this.perceive(observation.summary, observation.facts.filter(fact => fact.key !== 'source' && fact.key !== 'event'), fresh, observation.eventId)
+        this.dispatch({ ref: observation.eventId, runId, events: fresh, summary: observation.summary, itemName: String(facts.itemName ?? ''),
+            atSim: observation.atWorldTimeMs, source: 'event' })
+    }
+
+    /** Routine effects apply now; key effects wait for review when review mode is on. */
+    private dispatch(effect: WorldEffect): void {
+        const review = this.worldReview.mode() === 'review'
+        const now = review ? effect.events.filter(isRoutineEvent) : effect.events
+        const held = effect.events.filter(event => !now.includes(event))
+        if (now.length) this.applyEffects({ ...effect, events: now })
+        if (held.length) this.worldReview.enqueue({ ...effect, events: held })
+    }
+
+    private applyEffects(effect: WorldEffect): void {
+        const workspace = this.instance.workspace
         // Seen-story records are per run, so the spoiler gate follows this recording's run.
-        for (const event of fresh.filter(item => item.startsWith('story:'))) {
-            if (workspace.memory.list({ tags: [event], limit: ALL }).some(memory => memory.origin === 'runtime_event' && memory.tags.includes(`run:${runId}`))) continue
-            workspace.writeMemory({ kind: 'episodic', title: `游戏经历：${event}`, content: redactRecipeTerms(observation.summary || event),
-                status: 'fact', origin: 'runtime_event', salience: 0.7, tags: ['world', 'observation', 'story_seen', event, `run:${runId}`] }, RUNTIME_ACTOR, observation.eventId)
+        for (const event of effect.events.filter(item => item.startsWith('story:'))) {
+            if (workspace.memory.list({ tags: [event], limit: ALL }).some(memory => memory.origin === 'runtime_event' && memory.tags.includes(`run:${effect.runId}`))) continue
+            workspace.writeMemory({ kind: 'episodic', title: `游戏经历：${event}`, content: redactRecipeTerms(effect.summary || event),
+                status: 'fact', origin: 'runtime_event', salience: 0.7, tags: ['world', 'observation', 'story_seen', event, `run:${effect.runId}`] }, RUNTIME_ACTOR, effect.ref)
         }
-        this.season.ingest({ events: fresh, ref: observation.eventId, runId, atSim: this.clock.nowSim() })
-        this.season.settlePurchase(fresh, String(facts.itemName ?? ''), observation.eventId, this.currentRun)
-        this.settleLegacyPurchase(fresh, String(facts.itemName ?? ''), observation)
+        this.season.ingest({ events: effect.events, ref: effect.ref, runId: effect.runId, atSim: this.clock.nowSim() })
+        if (effect.source === 'event') {
+            this.season.settlePurchase(effect.events, effect.itemName, effect.ref, this.currentRun)
+            this.settleLegacyPurchase(effect.events, effect.itemName, effect.atSim, effect.ref)
+        }
+    }
+
+    /** Owner decision on a held world effect; approval applies it against the current state. */
+    decideWorldEffect(id: string, decision: 'approve' | 'reject', actorId: string): PendingWorldEffect {
+        const item = this.worldReview.decide(id, decision, actorId)
+        if (decision === 'approve') this.applyEffects(item)
+        else this.season.markProcessed(item.ref, item.events)
+        return item
     }
 
     onUserPercept(percept: Percept): void {
@@ -220,8 +253,14 @@ export class JingjingGameAdapter implements InstanceExtension {
         return review
     }
 
-    applyReview(decision: ReviewDecision): ReturnType<SeasonDirector['applyReview']> {
-        return this.season.applyReview(decision)
+    applyReview(decision: ReviewDecision, final = true): ReturnType<SeasonDirector['applyReview']> {
+        return this.season.applyReview(decision, final)
+    }
+
+    get workspace() { return this.instance.workspace }
+
+    consolePlugin(): ConsolePlugin {
+        return this.#plugin ??= jingjingConsolePlugin(this)
     }
 
     /** Legacy flags (registered before CL-011) settle by episode end, not by game day. */
@@ -246,15 +285,15 @@ export class JingjingGameAdapter implements InstanceExtension {
         }
     }
 
-    private settleLegacyPurchase(events: string[], itemName: string, observation: WorldObservationRecord): void {
+    private settleLegacyPurchase(events: string[], itemName: string, atWorldTimeMs: number, ref: string): void {
         const bought = events.some(event => /^item_bought:(fanta|restricted_chemical)$/i.test(event))
             || events.some(event => event.startsWith('item_bought:')) && /^(芬太|受限化学用品|fanta)$/i.test(itemName)
         if (!bought) return
         for (const flag of this.instance.workspace.motivation.open() as Commitment[]) {
             if (flag.owner !== 'user' || this.season.deadline(flag.id) !== null || flag.criterion?.kind !== 'avoid_purchase') continue
             if (flag.criterion.worldId !== this.instance.worldId || flag.criterion.runId !== this.currentRun) continue
-            if (observation.atWorldTimeMs >= flag.madeAtSim && (flag.criterion.endsAtSim === undefined || observation.atWorldTimeMs <= flag.criterion.endsAtSim)) {
-                this.season.settle(flag, 'broken', observation.eventId)
+            if (atWorldTimeMs >= flag.madeAtSim && (flag.criterion.endsAtSim === undefined || atWorldTimeMs <= flag.criterion.endsAtSim)) {
+                this.season.settle(flag, 'broken', ref)
             }
         }
     }

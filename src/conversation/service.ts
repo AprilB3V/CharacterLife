@@ -23,6 +23,7 @@ import type {
   WorldActionCandidate,
 } from '../types.ts'
 import { ContextManager } from '../context/manager.ts'
+import type { MemoryWriteInput } from '../kernel/memory/store.ts'
 import { ReplyStreamDecoder } from './reply-stream.ts'
 import type { ContextPlan } from '../context/manager.ts'
 import { estimateTokens } from '../context/tokens.ts'
@@ -85,6 +86,8 @@ export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
 }
 
 export interface ConversationServiceOptions {
+    /** Return true to hold a model-proposed memory for owner review instead of writing it. */
+    holdMemory?: (input: MemoryWriteInput, sourceRef: string) => boolean
     onUserPercept?: (percept: Percept) => void
     contextData?: () => string
     /** Deployment-owned reference data, kept outside system instructions and history. */
@@ -135,6 +138,7 @@ export class ConversationService {
   #onContextUsage: ((usage: ContextUsageInput) => void) | null
   #world: ConversationWorldBinding | null
     #onUserPercept: ConversationServiceOptions['onUserPercept']
+    #holdMemory: ConversationServiceOptions['holdMemory']
     #contextData: ConversationServiceOptions['contextData']
     #referenceData: ((query: string) => string) | null
   #lastPlan: ContextPlan | null = null
@@ -151,6 +155,7 @@ export class ConversationService {
     this.#onContextUsage = opts.onContextUsage ?? null
     this.#world = opts.world ?? null
     this.#onUserPercept = opts.onUserPercept
+    this.#holdMemory = opts.holdMemory
     this.#contextData = opts.contextData
     this.#referenceData = opts.referenceData ?? null
   }
@@ -442,19 +447,17 @@ export class ConversationService {
 
     // 5) 记忆写入（含不可信内容降级）
     for (const write of memoryWrites) {
-      this.#workspace.writeMemory(
-        {
-          kind: write.kind,
-          title: write.title,
-          content: write.content,
-          status: write.status,
-          origin: write.kind === 'user' ? 'user_message' : 'character_message',
-          salience: write.salience,
-          tags: write.tags,
-        },
-        CONVERSATION_ACTOR,
-        turnId,
-      )
+      const input: MemoryWriteInput = {
+        kind: write.kind,
+        title: write.title,
+        content: write.content,
+        status: write.status,
+        origin: write.kind === 'user' ? 'user_message' : 'character_message',
+        salience: write.salience,
+        tags: write.tags,
+      }
+      if (this.#holdMemory?.(input, turnId)) continue
+      this.#workspace.writeMemory(input, CONVERSATION_ACTOR, turnId)
     }
 
     // 6) 运行时观察：边界、约定、分歧修复（关系只能从这里变化）

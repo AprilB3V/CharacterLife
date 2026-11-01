@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CharacterLife 后台</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">CharacterLife <span>后台</span></div>
+        <form id="login" class="login" autocomplete="off">
+            <input id="token" type="password" placeholder="后台令牌" aria-label="后台令牌">
+            <button type="submit">连接</button>
+        </form>
+        <label class="field">实例
+            <select id="instance" aria-label="实例"></select>
+        </label>
+        <label class="toggle"><input id="auto" type="checkbox" checked> 自动刷新</label>
+        <button id="refresh" type="button" class="ghost">刷新</button>
+        <span id="status" class="status" role="status"></span>
+    </header>
+    <nav id="tabs" class="tabs" role="tablist"></nav>
+    <main id="view" class="view">
+        <p class="hint">输入后台令牌后连接。令牌只保存在本标签页的会话存储中。</p>
+    </main>
+    <dialog id="dialog">
+        <form id="dialog-form" method="dialog">
+            <h3 id="dialog-title"></h3>
+            <div id="dialog-fields"></div>
+            <menu>
+                <button value="cancel" type="button" id="dialog-cancel" class="ghost">取消</button>
+                <button value="ok" type="submit" class="primary">确定</button>
+            </menu>
+        </form>
+    </dialog>
+    <script src="/app.js"></script>
+</body>
+</html>

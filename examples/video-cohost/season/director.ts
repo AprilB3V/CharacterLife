@@ -68,6 +68,8 @@ interface EpisodeState {
     cashAtOpen: number | null
     review: ReviewList | null
     reviewApplied: boolean
+    /** Per-candidate memory decisions, so the console can review item by item. */
+    memoryDecisions?: Record<string, 'accept' | 'reject'>
 }
 
 interface ProgressRecord {
@@ -163,6 +165,13 @@ export class SeasonDirector {
     }
 
     hasSoldChem(): boolean { return this.state().chemSold }
+
+    /** Mark events as handled without effects (a rejected review), so replays never re-apply them. */
+    markProcessed(ref: string, events: readonly string[]): void {
+        const state = this.state()
+        for (const event of events) if (!state.processed.includes(`${ref}#${event}`)) state.processed.push(`${ref}#${event}`)
+        this.save(state)
+    }
 
     /* ------------------------------------------------------------ beats */
 
@@ -454,7 +463,12 @@ export class SeasonDirector {
      * Apply the streamer's decisions. Candidate text comes from the stored review,
      * never from the decision file; only accept/reject, due day and target value do.
      */
-    applyReview(decision: ReviewDecision): { memories: number; flags: number; rejected: string[] } {
+    /**
+     * `final` closes the review: undecided memory candidates are dropped and undecided
+     * flag candidates stay pending for the next review. Item-by-item console decisions
+     * pass `final: false`; the review then closes once every candidate is decided.
+     */
+    applyReview(decision: ReviewDecision, final = true): { memories: number; flags: number; rejected: string[] } {
         const state = this.state()
         const episode = state.episodes.find(item => item.review?.reviewId === decision.reviewId)
         if (!episode?.review) throw new Error(`Unknown review ${decision.reviewId}`)
@@ -462,9 +476,12 @@ export class SeasonDirector {
         const rejected: string[] = []
         let memories = 0
         let flags = 0
+        const decided = episode.memoryDecisions ??= {}
         for (const item of decision.memories ?? []) {
             const candidate = episode.review.memories.find(memory => memory.id === item.id)
             if (!candidate) { rejected.push(`${item.id}: unknown candidate`); continue }
+            if (decided[item.id]) { rejected.push(`${item.id}: already decided`); continue }
+            decided[item.id] = item.decision
             if (item.decision !== 'accept') continue
             const written = this.remember({ kind: 'episodic', title: candidate.title, content: `${candidate.content}；出处 ${candidate.sourceRefs.join('、')}`,
                 status: 'fact', origin: 'runtime_event', salience: 0.75, tags: ['season', 'reviewed', ...candidate.tags] }, candidate.sourceRefs[0]!, `review:${candidate.id}`)
@@ -496,7 +513,9 @@ export class SeasonDirector {
                 status: 'fact', origin: 'user_message', salience: 0.8, tags: ['commitment', 'user_flag'] }, candidate.sourceRef, `flag_open:${flag.id}`)
             flags++
         }
-        episode.reviewApplied = true
+        const allDecided = episode.review.memories.every(memory => decided[memory.id])
+            && episode.review.flags.every(id => state.flagCandidates.find(flag => flag.id === id)?.status !== 'pending')
+        episode.reviewApplied = final || allDecided
         this.save(state)
         this.workspace.audit.append('decision', 'runtime', `应用 ${decision.reviewId} 审核结果`, { memories, flags, rejected })
         return { memories, flags, rejected }

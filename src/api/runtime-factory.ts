@@ -14,6 +14,7 @@ import { PlatformStore } from '../persistence/platform-store.ts'
 import { IdentityService } from '../identity/identity-service.ts'
 import { InstanceRuntimeManager } from '../runtime/instance-runtime.ts'
 import type { InstanceRuntimeDeps } from '../runtime/instance-runtime.ts'
+import type { MemoryReviewMode } from '../runtime/memory-review.ts'
 import { MessageGateway } from './gateway.ts'
 import { QQAdapter } from '../adapters/qq/adapter.ts'
 import { QQApiClient, FetchTransport } from '../adapters/qq/api-client.ts'
@@ -67,6 +68,8 @@ export interface RuntimeConfig {
     /** Deployment-specific knowledge retrieval; absent deployments keep existing behavior. */
     referenceData?: (query: string) => string
     conversation?: Partial<ConversationConfig>
+    /** Hold chat-model memory proposals for owner review ('model'); default writes immediately. */
+    memoryReview?: MemoryReviewMode
   dbPath: string
   worldId: string
   /** 角色模板；不传则使用原创角色沈知微 */
@@ -208,6 +211,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     auditFile: config.auditFile ?? null,
     budget: config.budget,
     conversation: config.conversation,
+    memoryReview: config.memoryReview,
     probeQuery: '那本被水泡过的书',
     world,
   })
