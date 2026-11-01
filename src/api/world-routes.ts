@@ -22,6 +22,7 @@ import type { WorldActionStatus } from '../kernel/world/contracts.ts'
 import { WORLD_LIMITS } from '../kernel/world/contracts.ts'
 
 export interface WorldRouterOptions {
+    onObservations?: (instanceIds: string[]) => Promise<void>
   service: WorldService
   /** 世界专属 Bearer Token（明文只在内存中） */
   token: string
@@ -181,6 +182,10 @@ export function createWorldRouter(opts: WorldRouterOptions): WorldRouter {
           return true
         }
         const result = service.ingest(worldId, body.events)
+        const accepted = new Set([...result.accepted, ...result.duplicates])
+        const instanceIds = [...new Set(body.events.filter((event: any) => event?.kind === 'observation' && accepted.has(event.eventId))
+            .map((event: any) => String(event.instanceId)))]
+        if (instanceIds.length) await opts.onObservations?.(instanceIds)
         json(res, 200, {
           worldId,
           nowSim: service.nowSim(),

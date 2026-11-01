@@ -23,6 +23,7 @@ import type {
   WorldActionCandidate,
 } from '../types.ts'
 import { ContextManager } from '../context/manager.ts'
+import { ReplyStreamDecoder } from './reply-stream.ts'
 import type { ContextPlan } from '../context/manager.ts'
 import { estimateTokens } from '../context/tokens.ts'
 import type { Clock } from '../kernel/util/clock.ts'
@@ -34,10 +35,13 @@ import { admitWorldIntents } from '../kernel/world/admission.ts'
 import type { WorldService } from '../kernel/world/service.ts'
 import type { WorldActionCapability } from '../kernel/world/contracts.ts'
 import { buildWorldEventContext } from '../kernel/world/observation.ts'
+import type { Percept } from '../kernel/semantics/observation.ts'
+import { buildExternalObservationData } from '../kernel/world/external-observations.ts'
 import {
   CAPABILITY_NOTE,
   buildMessages,
   buildSystemPrompt,
+  renderWorldPromptSection,
   parseEnvelope,
 } from './context.ts'
 import type { WorldPromptContext } from './context.ts'
@@ -48,6 +52,8 @@ import type { WorldPromptContext } from './context.ts'
  * `instanceId` / `worldId` 由服务端（实例记录）决定，模型与用户都无法指定。
  */
 export interface ConversationWorldBinding {
+    useSemanticState?: boolean
+    referenceData?: string
   service: WorldService
   instanceId: string
   worldId: string
@@ -59,6 +65,7 @@ export interface ConversationWorldBinding {
 }
 
 export interface ConversationConfig {
+    memoryCapture?: 'balanced' | 'relaxed'
   temperature: number
   maxTokens: number
   /** 带多少轮历史（1 轮 = 一问一答） */
@@ -78,6 +85,10 @@ export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
 }
 
 export interface ConversationServiceOptions {
+    onUserPercept?: (percept: Percept) => void
+    contextData?: () => string
+    /** Deployment-owned reference data, kept outside system instructions and history. */
+    referenceData?: (query: string) => string
   workspace: CharacterWorkspace
   provider: LLMProvider
   clock: Clock
@@ -123,6 +134,9 @@ export class ConversationService {
   #context: ContextManager | null
   #onContextUsage: ((usage: ContextUsageInput) => void) | null
   #world: ConversationWorldBinding | null
+    #onUserPercept: ConversationServiceOptions['onUserPercept']
+    #contextData: ConversationServiceOptions['contextData']
+    #referenceData: ((query: string) => string) | null
   #lastPlan: ContextPlan | null = null
   #history: LLMMessage[] = []
   #turnCount = 0
@@ -136,6 +150,9 @@ export class ConversationService {
     this.#context = opts.context ?? null
     this.#onContextUsage = opts.onContextUsage ?? null
     this.#world = opts.world ?? null
+    this.#onUserPercept = opts.onUserPercept
+    this.#contextData = opts.contextData
+    this.#referenceData = opts.referenceData ?? null
   }
 
   get config(): Readonly<ConversationConfig> {
@@ -160,14 +177,14 @@ export class ConversationService {
     this.#history = messages.map((m) => ({ ...m }))
   }
 
-  async send(userText: string): Promise<ConversationTurnResult> {
+  async send(userText: string, onReplyDelta?: (text: string) => void): Promise<ConversationTurnResult> {
     const turnId = this.#ids.next('turn')
     const nowSim = this.#clock.nowSim()
     const profile = this.#workspace.profile
 
     const signals = analyzeMessage(userText, profile)
     // Observation 槽：用户这条消息是一次感知（不可信文本，只进数据区）
-    this.#workspace.observation.append({
+    const userPercept = this.#workspace.observation.append({
       atSim: nowSim,
       source: 'user',
       from: 'user',
@@ -176,6 +193,7 @@ export class ConversationService {
       events: signals.intents.map((i) => `intent:${i}`),
       ref: turnId,
     })
+    this.#onUserPercept?.(userPercept)
     const decision = this.#workspace.decide(signals)
 
     // 世界交互：清单来自服务端（代码常量 ∩ 白名单），与用户文本无关。
@@ -186,6 +204,7 @@ export class ConversationService {
           manifest: worldManifest,
           confirmed: world.context?.confirmed ?? [],
           unconfirmed: world.context?.unconfirmed ?? [],
+          referenceData: world.referenceData,
         }
       : undefined
 
@@ -238,8 +257,16 @@ export class ConversationService {
     // 2) 组装上下文并调用 Provider
     //    世界关闭时不传 world → 提示词与旧版本逐字节一致。
     const system = buildSystemPrompt(
-      worldPrompt ? { profile, decision, capabilityNote: CAPABILITY_NOTE, world: worldPrompt } : { profile, decision, capabilityNote: CAPABILITY_NOTE },
+        { profile, decision, capabilityNote: CAPABILITY_NOTE, world: worldPrompt, memoryCapture: this.#config.memoryCapture },
     )
+
+    // External observations remain data, never instructions or user speech in history.
+    const observationData = world && !world.useSemanticState
+        ? buildExternalObservationData(world.service.observations(world.instanceId), nowSim)
+        : ''
+    const referenceData = this.#referenceData?.(`${userText}\n${observationData}`) ?? ''
+    const worldReference = worldPrompt ? renderWorldPromptSection(worldPrompt, 'reference') : ''
+    const contextUserText = [userText, observationData, worldReference, referenceData, this.#contextData?.()].filter(Boolean).join('\n\n')
 
     // 有 ContextManager 时走预算化组装；否则退回 V0.1 的固定轮数拼装（向后兼容）。
     let messages: LLMMessage[]
@@ -249,7 +276,7 @@ export class ConversationService {
         protectedSystem: system,
         memories: retrieved.map((r) => r.entry),
         history: this.#history,
-        userText,
+        userText: contextUserText,
         nowSim,
       })
       this.#lastPlan = plan
@@ -290,7 +317,7 @@ export class ConversationService {
         system,
         memories: retrieved.map((r) => r.entry),
         history: this.#history,
-        userText,
+        userText: contextUserText,
         nowSim,
         historyTurns: this.#config.historyTurns,
       })
@@ -314,7 +341,9 @@ export class ConversationService {
     let worldCandidates: WorldActionCandidate[] = []
 
     try {
+      const replyStream = onReplyDelta ? new ReplyStreamDecoder(onReplyDelta) : null
       const response = await this.#provider.complete({
+        onTextDelta: replyStream ? text => replyStream.push(text) : undefined,
         system,
         messages,
         temperature: this.#config.temperature,
@@ -339,6 +368,9 @@ export class ConversationService {
       const parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
       parseError = parsed.error
       reply = parsed.fallbackText
+      if (onReplyDelta && !parsed.envelope && parsed.fallbackText.trimStart().startsWith('{')) {
+          reply = '刚才的回复没有完整生成，你再说一次？'
+      }
       if (parsed.envelope) {
         if (signals.injectionMarkers.length > 0 && parsed.envelope.reply.length === 0) {
           reply = INJECTION_PUSHBACK_REPLY

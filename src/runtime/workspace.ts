@@ -143,6 +143,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
   readonly timeline: Timeline
 
   #voice: CharacterVoice
+    #extensions: Record<string, unknown> = {}
   #sink: StateSink | null
 
   #pendingMessages: PendingMessage[] = []
@@ -193,6 +194,14 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
   setStateSink(sink: StateSink | null): void {
     this.#sink = sink
   }
+
+    extensionState<T>(key: string): T | null {
+        return this.#extensions[key] === undefined ? null : structuredClone(this.#extensions[key]) as T
+    }
+
+    setExtensionState(key: string, value: unknown): void {
+        this.#extensions[key] = structuredClone(value)
+    }
 
   /** 内核钩子：提议落地后通知持久层；时间线有变化时附带完整时间线。 */
   protected override afterApplied(evt: StateAppliedEvent): void {
@@ -489,7 +498,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
       this.declareUserBoundary(userText, signals.declaredBoundary)
     }
 
-    if (signals.promiseText) {
+    if (signals.promiseText && !this.motivation.commitments().some(item => item.owner === 'user' && item.sourceRef === turnId)) {
       const dueAtSim = now + parseDueOffsetDays(userText) * DAY
       const promise: TrackedPromise = {
         id: this.ids.next('prom'),
@@ -770,6 +779,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
     const kernel: KernelRuntimeState = this.kernelRuntimeState()
     return {
       pendingMessages: this.#pendingMessages,
+      extensions: this.#extensions,
       promises: kernel.promises,
       relationshipWrites: kernel.relationshipWrites,
       lastUserMessageSim: this.#lastUserMessageSim,
@@ -780,6 +790,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
 
   fromJSON(value: unknown): void {
     const v = value as {
+      extensions?: Record<string, unknown>
       pendingMessages?: PendingMessage[]
       promises?: TrackedPromise[]
       relationshipWrites?: number[]
@@ -789,6 +800,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
     }
     if (!v || typeof v !== 'object') throw new Error('runtime section 结构非法')
     this.#pendingMessages = (v.pendingMessages ?? []).map((m) => ({ ...m }))
+    this.#extensions = structuredClone(v.extensions ?? {})
     this.restoreKernelRuntime({ promises: v.promises ?? [], relationshipWrites: v.relationshipWrites ?? [] })
     this.#lastUserMessageSim = v.lastUserMessageSim ?? null
     this.#turnCount = v.turnCount ?? 0

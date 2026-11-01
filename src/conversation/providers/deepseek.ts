@@ -59,7 +59,7 @@ export class DeepSeekProvider implements LLMProvider {
       messages,
       temperature: request.temperature,
       max_tokens: request.maxTokens,
-      stream: false,
+      stream: Boolean(request.onTextDelta),
     }
     if (request.jsonMode) {
       body.response_format = { type: 'json_object' }
@@ -80,11 +80,14 @@ export class DeepSeekProvider implements LLMProvider {
         signal: controller.signal,
       })
     } catch (err) {
-      throw new ProviderError(`网络请求失败: ${(err as Error).message}`, null, { cause: err })
-    } finally {
       clearTimeout(timer)
+      throw new ProviderError(`网络请求失败: ${(err as Error).message}`, null, { cause: err })
     }
 
+    try {
+    if (response.ok && String(response.headers.get('content-type')).includes('event-stream')) {
+        return await this.#consumeStream(response, request, started)
+    }
     const raw = await response.text()
     if (!response.ok) {
       // 注意：错误体里可能包含请求回显，这里只保留前 400 字符，且不记录 Key。
@@ -111,6 +114,7 @@ export class DeepSeekProvider implements LLMProvider {
       throw new ProviderError('DeepSeek 响应缺少 choices[0].message.content', response.status)
     }
 
+    request.onTextDelta?.(text)
     return {
       text,
       provider: this.name,
@@ -125,6 +129,49 @@ export class DeepSeekProvider implements LLMProvider {
       finishReason: choice?.finish_reason ?? null,
       reasoningChars: choice?.message?.reasoning_content?.length ?? 0,
     }
+    } finally { clearTimeout(timer) }
+  }
+
+  async #consumeStream(response: Response, request: LLMRequest, started: number): Promise<LLMResponse> {
+    if (!response.body) throw new ProviderError('Model stream is empty')
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let text = ''
+    let model = this.model
+    let usage: LLMResponse['usage'] = null
+    let finishReason: string | null = null
+    let reasoningChars = 0
+    let completed = false
+    const handleLine = (line: string) => {
+        if (!line.startsWith('data:')) return
+        const raw = line.slice(5).trim()
+        if (!raw) return
+        if (raw === '[DONE]') { completed = true; return }
+        const event = JSON.parse(raw)
+        if (event.error) throw new ProviderError('Model stream returned an error')
+        if (event.model) model = event.model
+        const choice = event.choices?.[0]
+        const content = choice?.delta?.content
+        if (typeof content === 'string' && content) {
+            text += content
+            request.onTextDelta?.(content)
+        }
+        reasoningChars += choice?.delta?.reasoning_content?.length ?? 0
+        if (choice?.finish_reason) finishReason = choice.finish_reason
+        if (event.usage) usage = { promptTokens: event.usage.prompt_tokens ?? 0, completionTokens: event.usage.completion_tokens ?? 0 }
+    }
+    for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true })
+        let newline
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+            handleLine(buffer.slice(0, newline).replace(/\r$/, ''))
+            buffer = buffer.slice(newline + 1)
+        }
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) handleLine(buffer.trim())
+    if (!completed && !finishReason) throw new ProviderError('Model stream ended before completion')
+    return { text, provider: this.name, model, usage, finishReason, reasoningChars, latencyMs: Date.now() - started }
   }
 }
 

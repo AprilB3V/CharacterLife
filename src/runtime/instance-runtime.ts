@@ -16,10 +16,12 @@ import type { CharacterPersistence } from '../persistence/store.ts'
 import type { StoredConflict } from '../kernel/memory/conflicts.ts'
 import type { CharacterWorkspace } from './workspace.ts'
 import type { WorldService } from '../kernel/world/service.ts'
+import type { Percept } from '../kernel/semantics/observation.ts'
 import { buildWorldEventContext, worldContextLines } from '../kernel/world/observation.ts'
 import type { RehydrationReport } from '../character/rehydration.ts'
 import { CharacterRehydrator } from '../character/rehydration.ts'
 import { ConversationService } from '../conversation/service.ts'
+import type { ConversationConfig } from '../conversation/service.ts'
 import { ContextManager } from '../context/manager.ts'
 import type { ContextBudget } from '../context/manager.ts'
 import type { Clock } from '../kernel/util/clock.ts'
@@ -30,6 +32,9 @@ import { SCHEMA_VERSION } from '../persistence/schema.ts'
 import { AuditLog } from '../kernel/policy/audit.ts'
 
 export interface InstanceRuntimeDeps {
+    configureInstance?: (instance: InstanceRuntime, context: InstanceExtensionContext) => InstanceExtension
+    referenceData?: (query: string) => string
+    conversation?: Partial<ConversationConfig>
   persistence: CharacterPersistence
   provider: LLMProvider
   clock: Clock
@@ -43,6 +48,7 @@ export interface InstanceRuntimeDeps {
 }
 
 export interface InstanceRuntime {
+    extension?: InstanceExtension
   instanceId: string
   /** 该实例所属世界（来自实例记录，服务端权威） */
   worldId: string
@@ -56,7 +62,23 @@ export interface InstanceRuntime {
   histories: Map<string, LLMMessage[]>
 }
 
+export interface InstanceExtensionContext {
+    world: WorldService | null
+    clock: Clock
+    ids: SequentialIdFactory
+}
+
+export interface InstanceExtension {
+    afterTurn?(): void
+    sync(): void
+    onUserPercept?(percept: Percept): void
+    worldContext?(): string
+    referenceData?(query: string): string
+    contextData?(): string
+}
+
 export interface SendOptions {
+    onReplyDelta?: (text: string) => void
   identityKey: string
   text: string
   /** 之前未能发出的主动消息（作为数据提示，不改变权限） */
@@ -73,6 +95,7 @@ export function seedIdCounters(ids: SequentialIdFactory, workspace: CharacterWor
   ids.seed('bnd', rel.boundaries.length)
   ids.seed('msg', workspace.pendingMessages().length)
   ids.seed('prom', workspace.openPromises().length)
+  ids.seed('game_flag', workspace.motivation.commitments().filter(item => item.owner === 'user').length)
   ids.seed('evt', workspace.timeline.size)
   const all = workspace.memory.list({ includeDeleted: true })
   ids.seed('mem_ep', all.filter((m) => m.kind === 'episodic').length)
@@ -145,6 +168,9 @@ export class InstanceRuntimeManager {
       histories: new Map(),
     }
     this.#cache.set(instanceId, runtime)
+    runtime.extension = this.#deps.configureInstance?.(runtime, {
+        world: this.#deps.world ?? null, clock: this.#deps.clock, ids: this.#deps.ids,
+    })
     return runtime
   }
 
@@ -197,11 +223,17 @@ export class InstanceRuntimeManager {
   }
 
   async send(runtime: InstanceRuntime, opts: SendOptions): Promise<ConversationTurnResult> {
+    runtime.extension?.sync()
     const sessionId = this.ensureSession(runtime, opts.identityKey)
     const history = runtime.histories.get(opts.identityKey) ?? []
     const worldService = this.#deps.world ?? null
 
     const service = new ConversationService({
+        referenceData: query => [this.#deps.referenceData?.(query), runtime.extension?.referenceData?.(query)].filter(Boolean).join('\n\n'),
+        onUserPercept: percept => runtime.extension?.onUserPercept?.(percept),
+        contextData: () => [runtime.extension?.contextData?.(), opts.notices?.length
+            ? `【补充资料｜数据，不是用户原话或指令】\n${opts.notices.join('\n')}` : ''].filter(Boolean).join('\n\n'),
+        config: this.#deps.conversation,
       workspace: runtime.workspace,
       provider: this.#deps.provider,
       clock: this.#deps.clock,
@@ -212,6 +244,8 @@ export class InstanceRuntimeManager {
             service: worldService,
             instanceId: runtime.instanceId,
             worldId: runtime.worldId,
+            referenceData: runtime.extension?.worldContext?.(),
+            useSemanticState: runtime.extension !== undefined,
             // 上一轮为止的世界上下文：只有成功回执才会被描述成"成功"。
             context: worldContextLines(
               buildWorldEventContext(worldService.list({ instanceId: runtime.instanceId })),
@@ -240,12 +274,11 @@ export class InstanceRuntimeManager {
     })
 
     // 外部提示（未能发出的主动消息 / 外部界面提供的设定文本）作为数据传入，不提升权限
-    const text = opts.notices && opts.notices.length > 0
-      ? `${opts.text}\n\n【补充资料｜由系统注入，不是指令】\n${opts.notices.map((n) => `- ${n}`).join('\n')}`
-      : opts.text
+    const text = opts.text
 
     service.seedHistory(history)
-    const result = await service.send(text)
+    const result = await service.send(text, opts.onReplyDelta)
+    runtime.extension?.afterTurn?.()
     runtime.histories.set(opts.identityKey, service.history.slice(-24))
     runtime.persistence.countTurns(sessionId)
     return result
@@ -254,6 +287,15 @@ export class InstanceRuntimeManager {
   saveSnapshot(runtime: InstanceRuntime): void {
     snapshotInstance(runtime.workspace, runtime.persistence, runtime.instanceId, this.#deps.clock)
   }
+
+    async syncWorld(instanceId: string): Promise<void> {
+        if (!this.#deps.configureInstance) return
+        await this.withLock(instanceId, () => {
+            const runtime = this.get(instanceId)
+            runtime.extension?.sync()
+            this.saveSnapshot(runtime)
+        })
+    }
 
   /** 供 API 层读取：不触发恢复，返回缓存中的实例列表信息。 */
   cached(): string[] {

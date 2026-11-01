@@ -27,7 +27,7 @@ export function emptySituation(): Situation {
   return { asOfSim: null, location: null, present: [], affords: [], inventory: {}, facts: {} }
 }
 
-const RESERVED = new Set(['snapshot', 'location', 'present', 'affords', 'event'])
+const RESERVED = new Set(['snapshot', 'reset', 'location', 'present', 'affords', 'event'])
 
 function values(p: Pick<Percept, 'facts'>, key: string): Array<string | number | boolean> {
   return p.facts.filter((f) => f.key === key).map((f) => f.value)
@@ -49,6 +49,14 @@ export function applyPercept(prev: Situation, p: Pick<Percept, 'facts' | 'atSim'
     inventory: { ...prev.inventory },
     facts: { ...prev.facts },
   }
+    // Explicit complete snapshots may remove stale facts and absent inventory entries.
+    if (values(p, 'reset').some(value => value === true)) {
+        next.location = null
+        next.present = []
+        next.affords = []
+        next.inventory = {}
+        next.facts = {}
+    }
   const location = values(p, 'location')
   if (location.length > 0) next.location = String(location[location.length - 1])
   if (values(p, 'snapshot').some((v) => v === true)) {

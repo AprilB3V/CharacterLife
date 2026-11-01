@@ -143,6 +143,7 @@ export class MessageGateway {
     adapter: PlatformAdapter,
     message: NormalizedMessage,
     extraNotices: string[] = [],
+    onReplyDelta?: (text: string) => void,
   ): Promise<InboundOutcome> {
     const { platformStore, identityService, runtimeManager, clock } = this.#opts
     const nowIso = (this.#opts.nowIso ?? (() => clock.nowWall().toISOString()))()
@@ -251,6 +252,7 @@ export class MessageGateway {
 
       // 4.3 调角色引擎
       const result = await runtimeManager.send(runtime, {
+        onReplyDelta,
         identityKey: key,
         text: message.text,
         notices: [...extraNotices, ...notices],

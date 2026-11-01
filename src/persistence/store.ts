@@ -343,6 +343,8 @@ export class CharacterPersistence {
    * 必须有 `profile:write` 能力，且会留下 `template_migrated` 事件。
    */
   migrateTemplate(opts: {
+    /** Explicit owner-authorized rename; ordinary version migration still requires the same ID. */
+    renameFrom?: string
     instanceId: string
     template: CharacterTemplate
     actor: Actor
@@ -363,13 +365,13 @@ export class CharacterPersistence {
       throw new Error(`${opts.actor.id} 缺少 profile:write，拒绝模板迁移`)
     }
     const instance = this.requireInstance(opts.instanceId)
-    if (instance.templateId !== opts.template.id) {
+    if (instance.templateId !== opts.template.id && opts.renameFrom !== instance.templateId) {
       throw new Error(`模板迁移只能在同一角色内进行：${instance.templateId} != ${opts.template.id}`)
     }
     this.putTemplate(opts.template)
     this.#db
-      .prepare('UPDATE instances SET template_version = ?, template_hash = ?, last_active_at = ? WHERE id = ?')
-      .run(opts.template.version, opts.template.contentHash, opts.nowIso, opts.instanceId)
+      .prepare('UPDATE instances SET template_id = ?, template_version = ?, template_hash = ?, last_active_at = ? WHERE id = ?')
+      .run(opts.template.id, opts.template.version, opts.template.contentHash, opts.nowIso, opts.instanceId)
     this.appendEvent({
       instanceId: opts.instanceId,
       sessionId: null,
@@ -381,6 +383,7 @@ export class CharacterPersistence {
       data: {
         from: { version: instance.templateVersion, hash: instance.templateHash },
         to: { version: opts.template.version, hash: opts.template.contentHash },
+        templateIds: { from: instance.templateId, to: opts.template.id },
       },
     })
     return {

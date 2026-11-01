@@ -13,6 +13,7 @@ import { CharacterPersistence } from '../persistence/store.ts'
 import { PlatformStore } from '../persistence/platform-store.ts'
 import { IdentityService } from '../identity/identity-service.ts'
 import { InstanceRuntimeManager } from '../runtime/instance-runtime.ts'
+import type { InstanceRuntimeDeps } from '../runtime/instance-runtime.ts'
 import { MessageGateway } from './gateway.ts'
 import { QQAdapter } from '../adapters/qq/adapter.ts'
 import { QQApiClient, FetchTransport } from '../adapters/qq/api-client.ts'
@@ -30,6 +31,7 @@ import { MockProvider } from '../conversation/providers/mock.ts'
 import { DeepSeekProvider, deepSeekConfigFromEnv } from '../conversation/providers/deepseek.ts'
 import type { LLMProvider } from '../types.ts'
 import type { ContextBudget } from '../context/manager.ts'
+import type { ConversationConfig } from '../conversation/service.ts'
 import { WorldService } from '../kernel/world/service.ts'
 import { shenZhiweiProfile, shenZhiweiTimeline, shenZhiweiVoice } from '../../examples/characters/shen-zhiwei.ts'
 
@@ -41,6 +43,8 @@ import { shenZhiweiProfile, shenZhiweiTimeline, shenZhiweiVoice } from '../../ex
  * 既有启动路径的行为完全不变。
  */
 export interface WorldRuntimeConfig {
+    /** Accept external observations only when explicitly enabled by the deployment. */
+    acceptObservations?: boolean
   enabled?: boolean
   /** 授权世界白名单（服务端权威，token 之外的第二道校验） */
   worldIds?: string[]
@@ -59,6 +63,10 @@ export interface WorldRuntimeConfig {
 }
 
 export interface RuntimeConfig {
+    configureInstance?: InstanceRuntimeDeps['configureInstance']
+    /** Deployment-specific knowledge retrieval; absent deployments keep existing behavior. */
+    referenceData?: (query: string) => string
+    conversation?: Partial<ConversationConfig>
   dbPath: string
   worldId: string
   /** 角色模板；不传则使用原创角色沈知微 */
@@ -179,6 +187,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
             return instance ? { worldId: instance.worldId } : null
           },
           worldIds: worldConfig.worldIds,
+          acceptObservations: worldConfig.acceptObservations,
           allowedVerbs: worldConfig.allowedVerbs ?? ['use'],
           allowedTargets: worldConfig.allowedTargets ?? ['desk_01'],
           actionTtlSim: worldConfig.actionTtlMs,
@@ -189,6 +198,8 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
       : null
 
   const runtimeManager = new InstanceRuntimeManager({
+    configureInstance: config.configureInstance,
+    referenceData: config.referenceData,
     persistence,
     provider,
     clock,
@@ -196,6 +207,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     rng: new SeededRng(20250104),
     auditFile: config.auditFile ?? null,
     budget: config.budget,
+    conversation: config.conversation,
     probeQuery: '那本被水泡过的书',
     world,
   })

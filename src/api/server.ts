@@ -168,6 +168,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
       devMode: opts.world?.devMode === true,
       // 实例由持久层权威解析，**不接受**请求体指定
       resolveInstance: (worldId) => runtime.persistence.listInstances({ worldId })[0]?.id ?? null,
+      onObservations: async instanceIds => {
+          for (const instanceId of instanceIds) await runtime.runtimeManager.syncWorld(instanceId)
+      },
       readBody,
       readJson,
       json,
@@ -261,8 +264,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   async function runTurn(
     message: NormalizedMessage,
     notices: string[],
+    onReplyDelta?: (text: string) => void,
   ): Promise<{ reply: string; instanceId: string; sessionId: string; promptTokens: number; completionTokens: number }> {
-    const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices)
+    const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices, onReplyDelta)
     if (!outcome.reply) {
       throw new HttpError(502, 'NO_REPLY', '引擎未产生回复')
     }
@@ -371,11 +375,32 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             identity,
             headerValue(req.headers['x-request-id']),
           )
-          const result = await runTurn(message, notices)
+          const streaming = body.stream === true
+          const writeEvent = (event: Record<string, unknown>) => {
+              if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`)
+          }
+          let keepAlive: ReturnType<typeof setInterval> | undefined
+          if (streaming) {
+              res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive' })
+              res.flushHeaders()
+              writeEvent({ type: 'start' })
+              keepAlive = setInterval(() => { if (!res.destroyed && !res.writableEnded) res.write(': ping\n\n') }, 10000)
+              res.on('close', () => clearInterval(keepAlive))
+          }
+          let result
+          try {
+              result = await runTurn(message, notices, streaming ? text => writeEvent({ type: 'delta', text }) : undefined)
+          } catch (error) {
+              if (!streaming) throw error
+              clearInterval(keepAlive)
+              writeEvent({ type: 'error', message: '本轮对话未完成，请稍后再试。' })
+              res.end()
+              return
+          }
           const instanceId = result.instanceId || runtime.identityService.instanceFor('sillytavern', identity.platformUserId) || ''
           const rt = instanceId ? runtime.runtimeManager.get(instanceId) : null
           const view = rt ? rt.workspace.view() : null
-          json(res, 200, {
+          const payload = {
             reply: result.reply,
             instanceId,
             sessionId: result.sessionId,
@@ -389,7 +414,12 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
                   milestones: view.relationship.milestones.length,
                 }
               : null,
-          })
+          }
+          if (streaming) {
+              clearInterval(keepAlive)
+              writeEvent({ type: 'end', ...payload })
+              res.end()
+          } else json(res, 200, payload)
           return
         }
 

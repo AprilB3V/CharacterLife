@@ -187,6 +187,11 @@ export interface DriveLevel {
  * 字段与 V0.1 的 `TrackedPromise` 完全一致（后者现在是它的别名），旧快照可直接读取。
  */
 export interface Commitment {
+    owner?: 'user' | 'character'
+    sourceRef?: string | null
+    evidenceRef?: string | null
+    criterion?: { kind: string; worldId: string; runId: string; target?: string; value?: number; endEvent?: string;
+        readerSession?: string; readerSeq?: number; coverageIntact?: boolean; endsAtSim?: number; endRef?: string }
   id: string
   text: string
   madeAtSim: number
@@ -399,6 +404,8 @@ export interface LLMMessage {
 }
 
 export interface LLMRequest {
+    /** Optional transport callback for model content chunks; never part of the prompt. */
+    onTextDelta?: (text: string) => void
   system: string
   messages: LLMMessage[]
   temperature: number

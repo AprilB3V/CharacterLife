@@ -49,33 +49,41 @@ export class MotivationSlot {
   /* ------------------------------------------------------------ 承诺账本 */
 
   commitments(): Commitment[] {
-    return this.#commitments.map((c) => ({ ...c }))
+    return structuredClone(this.#commitments)
   }
 
   open(): Commitment[] {
-    return this.#commitments.filter((c) => c.status === 'open').map((c) => ({ ...c }))
+    return structuredClone(this.#commitments.filter((c) => c.status === 'open'))
   }
 
   /** 到期（含已过期）仍未兑现的承诺。 */
   due(nowSim: number = this.#now()): Commitment[] {
-    return this.#commitments.filter((c) => c.status === 'open' && c.dueAtSim <= nowSim).map((c) => ({ ...c }))
+    return structuredClone(this.#commitments.filter((c) => c.status === 'open' && c.dueAtSim <= nowSim))
   }
 
   get(id: string): Commitment | null {
     const c = this.#commitments.find((x) => x.id === id)
-    return c ? { ...c } : null
+    return c ? structuredClone(c) : null
   }
 
   add(commitment: Commitment): Commitment {
-    this.#commitments.push({ ...commitment })
-    return { ...commitment }
+    this.#commitments.push(structuredClone(commitment))
+    return structuredClone(commitment)
   }
 
+    updateCriterion(id: string, criterion: NonNullable<Commitment['criterion']>): boolean {
+        const commitment = this.#commitments.find(item => item.id === id && item.status === 'open')
+        if (!commitment) return false
+        commitment.criterion = structuredClone(criterion)
+        return true
+    }
+
   /** 结算一条仍然有效的承诺。已结算的不能再改（返回 false）。 */
-  settle(id: string, status: 'kept' | 'broken'): boolean {
+  settle(id: string, status: 'kept' | 'broken', evidenceRef?: string): boolean {
     const c = this.#commitments.find((x) => x.id === id)
     if (!c || c.status !== 'open') return false
     c.status = status
+    if (evidenceRef) c.evidenceRef = evidenceRef
     return true
   }
 
@@ -84,6 +92,6 @@ export class MotivationSlot {
   }
 
   fromJSON(items: readonly Commitment[]): void {
-    this.#commitments = items.map((c) => ({ ...c }))
+    this.#commitments = structuredClone([...items])
   }
 }
