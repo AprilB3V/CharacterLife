@@ -54,7 +54,8 @@ const runtime = assembleRuntime({
     configureInstance: (instance, context) => new JingjingGameAdapter({ instance, ...context, knowledge, seasonDir, worldReview: 'review' }),
     memoryReview: 'model',
     dbPath, worldId: 'world_jingjing_video', template: jingjingTemplate, auditFile: null,
-    conversation: { memoryCapture: 'relaxed', memoryLimit: 8, memoryBudgetChars: 1800, maxTokens: 1200 },
+    // maxTokens 0: no completion cap, so reasoning never truncates the structured reply.
+    conversation: { memoryCapture: 'relaxed', memoryLimit: 8, memoryBudgetChars: 1800, maxTokens: 0 },
     budget: { memoryLimit: 8, memoryBudgetChars: 1800 },
     world: { enabled: true, worldIds: ['world_jingjing_video'], acceptObservations: true,
         allowedVerbs: [], allowedTargets: [] },

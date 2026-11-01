@@ -58,9 +58,10 @@ export class DeepSeekProvider implements LLMProvider {
       model: this.model,
       messages,
       temperature: request.temperature,
-      max_tokens: request.maxTokens,
       stream: Boolean(request.onTextDelta),
     }
+    // maxTokens <= 0 sends no max_tokens, leaving the API's own limit.
+    if (request.maxTokens > 0) body.max_tokens = request.maxTokens
     if (request.jsonMode) {
       body.response_format = { type: 'json_object' }
     }

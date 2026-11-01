@@ -68,6 +68,7 @@ export interface ConversationWorldBinding {
 export interface ConversationConfig {
     memoryCapture?: 'balanced' | 'relaxed'
   temperature: number
+  /** Completion token cap; 0 sends no cap to providers that support omitting it. */
   maxTokens: number
   /** 带多少轮历史（1 轮 = 一问一答） */
   historyTurns: number
@@ -346,8 +347,13 @@ export class ConversationService {
     let worldCandidates: WorldActionCandidate[] = []
 
     try {
-      const replyStream = onReplyDelta ? new ReplyStreamDecoder(onReplyDelta) : null
-      const response = await this.#provider.complete({
+      // One automatic retry when the model returns a JSON object without a reply and
+      // nothing has been shown yet (observed intermittently, e.g. `{"type":"json_object"}`).
+      let shown = false
+      const showDelta = onReplyDelta ? (text: string) => { shown = true; onReplyDelta(text) } : undefined
+      const callModel = () => {
+        const replyStream = showDelta ? new ReplyStreamDecoder(showDelta) : null
+        return this.#provider.complete({
         onTextDelta: replyStream ? text => replyStream.push(text) : undefined,
         system,
         messages,
@@ -366,11 +372,23 @@ export class ConversationService {
           userText,
         } satisfies Record<string, unknown>,
       })
+      }
+      let response = await callModel()
+      let parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
+      if (!parsed.envelope && !shown && response.text.trimStart().startsWith('{')) {
+        this.#workspace.audit.append('provider_error', 'conversation', '结构化输出缺少回复，自动重试一次', {
+          turnId,
+          error: parsed.error,
+          raw: response.text.slice(0, 500),
+          finishReason: response.finishReason ?? null,
+        })
+        response = await callModel()
+        parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
+      }
       provider = response.provider
       model = response.model
       usage = response.usage
 
-      const parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
       parseError = parsed.error
       reply = parsed.fallbackText
       if (onReplyDelta && !parsed.envelope && parsed.fallbackText.trimStart().startsWith('{')) {
