@@ -162,6 +162,14 @@ describe('decision rules', () => {
     assert.equal(result.decision, 'ask')
   })
 
+  it('low confidence never makes her speak: below the threshold she stays silent', () => {
+    const result = decideThought(draft({ decision: 'ask', meantConf: 0.3 }), ctx())
+    assert.equal(result.decision, 'silent')
+    assert.match(result.ruling, /below threshold/)
+    // Willing to speak anyway: then the unsure reply becomes a question.
+    assert.equal(decideThought(draft({ decision: 'reply', meantConf: 0.3 }), ctx({ addressed: true })).decision, 'ask')
+  })
+
   it('decisions the stage does not allow fall back to a plain reply', () => {
     const result = decideThought(draft({ decision: 'advise' }), ctx({ addressed: true }))
     assert.equal(result.decision, 'reply')

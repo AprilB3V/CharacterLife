@@ -112,17 +112,19 @@ export function decideThought(draft: ThoughtDraft, ctx: DecideContext): ThoughtR
   const replyOr = (fallback: string) => allowed.has(v.reply) ? v.reply : fallback
 
   if (draft.fallback) return result(allowed.has(draft.decision) ? draft.decision : replyOr(v.silent), 'thinker unavailable: reply as before')
-  if (draft.meantConf < CLARIFY_BELOW && (askedMe || wants) && allowed.has(v.ask)) {
-    return result(v.ask, `meantConf ${draft.meantConf.toFixed(2)} below ${CLARIFY_BELOW}: ask to confirm`)
-  }
+  // Low confidence only changes a reply she gives anyway into a short question; it never makes her speak.
+  const unsure = draft.meantConf < CLARIFY_BELOW && allowed.has(v.ask)
+  const clarify = () => result(v.ask, `meantConf ${draft.meantConf.toFixed(2)} below ${CLARIFY_BELOW}: ask to confirm`)
   if (askedMe) {
+    if (unsure) return clarify()
     const decision = wants && allowed.has(draft.decision) ? draft.decision : replyOr(v.silent)
     return result(decision, 'asked directly: answer')
   }
   if (!wants) return result(v.silent, 'thinker chose silence')
-  const decision = allowed.has(draft.decision) ? draft.decision : replyOr(v.silent)
   if (effective < ctx.speakThreshold) {
     return result(v.silent, `willingness ${effective.toFixed(2)} below threshold ${ctx.speakThreshold.toFixed(2)}`)
   }
+  if (unsure) return clarify()
+  const decision = allowed.has(draft.decision) ? draft.decision : replyOr(v.silent)
   return result(decision, decision === draft.decision ? 'willing and allowed' : `${draft.decision} not allowed now: ${decision}`)
 }

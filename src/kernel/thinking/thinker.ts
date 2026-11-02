@@ -33,6 +33,7 @@ export function buildThinkerPrompt(request: ThinkRequest): { system: string; use
     'meantConf：0 到 1，你对 meant 的把握。',
     `turn：${v.turns.join('|')}。对方这轮说完了没有、是不是在问你。`,
     `decision：${v.decisions.join('|')}。${v.silent} 表示这次不开口：没话可说、没有依据、对方还没说完，都选 ${v.silent}。`,
+    `${v.ask} 只在对方的话需要你回应、而你没听懂时用；没听懂但不需要你回应（对方在自言自语、在操作、在念游戏文本），选 ${v.silent}。识别有错字但意思猜得出来，就按猜的意思处理，不要问。`,
     `emotion：${v.emotions.join('|')}。`,
     'intensity：1|2|3。',
     'innerOS：一句内心独白，可以为空。',
