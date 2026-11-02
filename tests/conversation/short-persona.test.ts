@@ -47,3 +47,20 @@ describe('short persona', () => {
     assert.equal(renderProfileSection(profile), renderProfileSection(shenZhiweiProfile))
   })
 })
+
+describe('short persona storage', () => {
+  it('an explicitly undefined shortPersona survives the storage round trip with the same hash', async () => {
+    const { defineTemplate, verifyTemplate } = await import('../../src/character/template.ts')
+    const { CharacterDatabase } = await import('../../src/persistence/database.ts')
+    const { CharacterPersistence } = await import('../../src/persistence/store.ts')
+    const template = defineTemplate({ version: 1, profile: { ...shenZhiweiProfile, shortPersona: undefined }, voice: { proactive: { idle_check_in: [], promise_reminder: [], life_update: [], story_followup: [], boundary_pushback: [] } } })
+    const database = new CharacterDatabase(':memory:')
+    try {
+      const persistence = new CharacterPersistence(database)
+      persistence.putTemplate(template)
+      const stored = persistence.getTemplate(template.id, template.version)!
+      assert.equal(stored.contentHash, template.contentHash)
+      assert.doesNotThrow(() => verifyTemplate(stored))
+    } finally { database.close() }
+  })
+})

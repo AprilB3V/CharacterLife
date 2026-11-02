@@ -51,12 +51,15 @@ export class TemplateIntegrityError extends Error {
   }
 }
 
-/** 稳定序列化：键排序，保证同一内容得到同一哈希。 */
+/**
+ * 稳定序列化：键排序，保证同一内容得到同一哈希。
+ * 值为 undefined 的键会被跳过，与 JSON 存储往返一致（否则 `{ shortPersona: undefined }` 存入再读出后哈希不同）。
+ */
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map((v) => stableStringify(v)).join(',')}]`
   const obj = value as Record<string, unknown>
-  const keys = Object.keys(obj).sort()
+  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort()
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`
 }
 
