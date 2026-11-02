@@ -394,6 +394,8 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
           const body = readJson(await readBody(req))
           const identity = resolveIdentity(req, principal, body)
           const inputs = parseThinkInputs(body.inputs)
+          // Data hints for the reply (e.g. "the previous reply never reached them"); never instructions.
+          const notices = Array.isArray(body.notices) ? body.notices.map(String).slice(0, 5) : []
           const requestId = headerValue(req.headers['x-request-id'])
           const probe = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: inputs.map((input) => input.text).join('\n') }] }, identity, requestId)
           const instanceId = runtime.identityService.resolveOrCreate(probe.platform, probe.identity.platformUserId, probe.identity.displayName).instance.id
@@ -433,7 +435,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             run.phase = 'speaking'
             const message = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: outcome.text }] }, identity, requestId)
             const guidance = rt.extension?.thoughtGuidance?.(outcome.thought) ?? guidanceFor(outcome.thought)
-            const result = await runTurn(message, [], streaming ? (text) => writeEvent({ type: 'delta', text }) : undefined, guidance)
+            const result = await runTurn(message, notices, streaming ? (text) => writeEvent({ type: 'delta', text }) : undefined, guidance)
             const payload = { reply: result.reply, silent: false, thought: { ...outcome.thought, text: result.reply }, instanceId, sessionId: result.sessionId }
             if (streaming) { writeEvent({ type: 'end', ...payload }); res.end() } else json(res, 200, payload)
           } catch (error) {

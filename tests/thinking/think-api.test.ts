@@ -45,7 +45,10 @@ async function boot(thinker: LLMProvider | null) {
     method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
     body: JSON.stringify({ inputs, stream }),
   })
-  return { runtime, main, think, close: async () => { await handle.close(); runtime.close() } }
+  const post = (payload: Record<string, unknown>) => fetch(`${url}/v1/think`, {
+    method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  return { runtime, main, think, post, close: async () => { await handle.close(); runtime.close() } }
 }
 
 const speech = (text: string) => ({ kind: 'speech', text })
@@ -120,6 +123,16 @@ describe('/v1/think', () => {
       const text = await (await streamed).text()
       const types = text.split('\n').filter((line) => line.startsWith('data:')).map((line) => JSON.parse(line.slice(5)).type)
       assert.deepEqual(types.filter((type) => type !== 'delta'), ['start', 'thought_step', 'decided', 'end'])
+    } finally { await h.close() }
+  })
+
+  it('notices reach the reply as data', async () => {
+    const thinker = new ScriptedThinker([{ json: thought({ turn: 'asking_me', decision: 'reply' }) }])
+    const h = await boot(thinker)
+    try {
+      await h.post({ inputs: [speech('还有一件事')], notices: ['上一条回复对方没看到'] })
+      const userText = h.main.requests.at(-1)!.messages.map((message) => message.content).join('\n')
+      assert.match(userText, /补充资料[\s\S]*上一条回复对方没看到/)
     } finally { await h.close() }
   })
 
