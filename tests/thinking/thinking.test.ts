@@ -46,6 +46,13 @@ describe('thinker output', () => {
     assert.equal(parsed.reason, '他问了价')
   })
 
+  it('keeps up to three unfamiliar terms, with meaning and plain meaning only when given', () => {
+    const parsed = parseThought(JSON.stringify({ decision: 'silent', terms: [
+      { term: '恩惠', meaning: '王尔德那边的代币', plain: '好处' }, { term: '老王' }, { term: '' }, { term: '博士' }, { term: '第四个' },
+    ] }), request([{ kind: 'speech', text: '恩惠64' }]))!
+    assert.deepEqual(parsed.terms, [{ term: '恩惠', meaning: '王尔德那边的代币', plain: '好处' }, { term: '老王' }, { term: '博士' }])
+  })
+
   it('rejects prose and arrays', () => {
     assert.equal(parseThought('我觉得应该回复', request([])), null)
     assert.equal(parseThought('[1,2]', request([])), null)

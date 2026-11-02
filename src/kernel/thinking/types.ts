@@ -23,6 +23,12 @@ export interface ThoughtNote {
   source: string
 }
 
+export interface ThoughtTerm {
+  term: string
+  meaning?: string
+  plain?: string
+}
+
 /** Structured output of one thinking step. Free prose is never accepted. */
 export interface ThoughtDraft {
   heard: string
@@ -38,6 +44,11 @@ export interface ThoughtDraft {
   notes?: ThoughtNote[]
   /** Set when the new speech answers an earlier clarification question. */
   clarifies?: { heard: string; meant: string }
+  /**
+   * Unfamiliar or in-group words in what was heard (input for jargon learning). `meaning` is what the
+   * word means here, `plain` what it would mean on its own; both only when they can be inferred.
+   */
+  terms?: ThoughtTerm[]
   /** How many times this turn was continued. */
   chainDepth: number
   /** True when the thinker failed and the draft is a fallback. */

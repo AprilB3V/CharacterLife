@@ -91,7 +91,7 @@ export interface InstanceExtension {
     /** Engine-layer backend contributed to the owner console as a plugin. */
     consolePlugin?(): ConsolePlugin
     /** Role-specific policy for the thinking loop: allowed decisions, threshold, situation. */
-    thinkingPolicy?(): ThinkingPolicy
+    thinkingPolicy?(inputs: readonly ThinkInput[]): ThinkingPolicy
     /** Called with every decided thought (including silence), e.g. to emit synthetic events. */
     onThought?(thought: ThoughtResult, inputs: readonly ThinkInput[]): void
     /**
@@ -365,7 +365,7 @@ export class InstanceRuntimeManager {
     const thinker = this.#deps.thinker
     if (!thinker) throw new Error('Thinking loop is not configured')
     runtime.extension?.sync()
-    const policy = runtime.extension?.thinkingPolicy?.()
+    const policy = runtime.extension?.thinkingPolicy?.(opts.inputs)
     const vocabulary: ThinkingVocabulary = { ...DEFAULT_VOCABULARY, ...policy?.vocabulary }
     const allowed = policy?.allowed ?? vocabulary.decisions
     const profile = runtime.workspace.profile

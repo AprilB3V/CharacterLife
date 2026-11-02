@@ -6,7 +6,7 @@
  * produces a fallback draft that keeps the old behavior (reply) instead of going mute.
  */
 import type { LLMProvider } from '../types.ts'
-import type { ThinkRequest, Thinker, ThoughtDraft, ThoughtNote } from './types.ts'
+import type { ThinkRequest, Thinker, ThoughtDraft, ThoughtNote, ThoughtTerm } from './types.ts'
 
 export interface LlmThinkerOptions {
   provider: LLMProvider
@@ -39,6 +39,7 @@ export function buildThinkerPrompt(request: ThinkRequest): { system: string; use
     'innerOS：一句内心独白，可以为空。',
     'reason：一句话说明决定的依据，引用具体的数字、物品或对方刚做的事；没有依据就写"没有依据"。',
     'clarifies：只有当新的话是在回答你之前的确认问题时才给出 {"heard": 当时识别的原话, "meant": 确认后的意思}，否则省略。',
+    'terms：对方话里你不认识的词、像黑话或专有名词的词（最多 3 个），每个 {"term": 词}；能从上下文推断时再加 "meaning"（在这里的意思）和 "plain"（单看这个词的通常意思）。没有就省略。',
   ].filter(Boolean).join('\n')
   const user = [
     request.recent.length ? `最近对话：\n${request.recent.join('\n')}` : '最近对话：无',
@@ -78,6 +79,16 @@ export function parseThought(text: string, request: ThinkRequest): ThoughtDraft 
         return content ? [{ content, source: shortText(item?.source, 40) ?? 'unknown' }] : []
       }).slice(0, 5)
     : undefined
+  const terms = Array.isArray(value.terms)
+    ? value.terms.flatMap((raw): ThoughtTerm[] => {
+        const item = raw as Record<string, unknown> | null
+        const term = shortText(item?.term, 20)
+        if (!term) return []
+        const meaning = shortText(item?.meaning, 100)
+        const plain = shortText(item?.plain, 100)
+        return [{ term, ...(meaning ? { meaning } : {}), ...(plain ? { plain } : {}) }]
+      }).slice(0, 3)
+    : undefined
   const clarifiesRaw = value.clarifies as Record<string, unknown> | undefined
   const clarifies = clarifiesRaw && typeof clarifiesRaw === 'object'
     ? { heard: shortText(clarifiesRaw.heard, 200), meant: shortText(clarifiesRaw.meant, 200) }
@@ -94,6 +105,7 @@ export function parseThought(text: string, request: ThinkRequest): ThoughtDraft 
     ...(shortText(value.reason, 200) ? { reason: shortText(value.reason, 200) } : {}),
     ...(notes?.length ? { notes } : {}),
     ...(clarifies?.heard && clarifies.meant ? { clarifies: { heard: clarifies.heard, meant: clarifies.meant } } : {}),
+    ...(terms?.length ? { terms } : {}),
     chainDepth: request.chainDepth,
   }
 }
