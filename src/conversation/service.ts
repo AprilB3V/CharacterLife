@@ -183,7 +183,7 @@ export class ConversationService {
     this.#history = messages.map((m) => ({ ...m }))
   }
 
-  async send(userText: string, onReplyDelta?: (text: string) => void): Promise<ConversationTurnResult> {
+  async send(userText: string, onReplyDelta?: (text: string) => void, options: { guidance?: string[] } = {}): Promise<ConversationTurnResult> {
     const turnId = this.#ids.next('turn')
     const nowSim = this.#clock.nowSim()
     const profile = this.#workspace.profile
@@ -200,7 +200,9 @@ export class ConversationService {
       ref: turnId,
     })
     this.#onUserPercept?.(userPercept)
-    const decision = this.#workspace.decide(signals)
+    const decided = this.#workspace.decide(signals)
+    // Guidance from the thinking loop joins the rationale; it never changes permissions.
+    const decision = options.guidance?.length ? { ...decided, rationale: [...decided.rationale, ...options.guidance] } : decided
 
     // 世界交互：清单来自服务端（代码常量 ∩ 白名单），与用户文本无关。
     const world = this.#world

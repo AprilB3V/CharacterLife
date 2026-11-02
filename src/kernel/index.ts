@@ -44,6 +44,9 @@ export * from './memory/conflicts.ts'
 export * from './state.ts'
 export * from './storage/snapshot.ts'
 
+// Thinking loop: listen -> think -> continue -> decide (silence is a decision)
+export * from './thinking/index.ts'
+
 // 可注入的时间、id、随机源与文本工具
 export * from './util/clock.ts'
 export * from './util/ids.ts'

@@ -36,6 +36,9 @@ import {
   SillyTavernRequestError,
 } from '../adapters/sillytavern/openai.ts'
 import { OWNER_ACTOR } from '../kernel/policy/policy.ts'
+import type { ThinkInput } from '../kernel/thinking/types.ts'
+import { identityKey } from './gateway.ts'
+import { guidanceFor } from './think-guidance.ts'
 import { createWorldRouter } from './world-routes.ts'
 import type { WorldRouter } from './world-routes.ts'
 
@@ -96,6 +99,24 @@ function headerValue(value: string | string[] | undefined): string | null {
   if (typeof value === 'string') return value
   if (Array.isArray(value) && value.length > 0) return value[0] ?? null
   return null
+}
+
+const MAX_THINK_INPUTS = 20
+
+/** Validate thinking inputs: a non-empty list of speech or event lines. */
+function parseThinkInputs(raw: unknown): ThinkInput[] {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_THINK_INPUTS) {
+    throw new HttpError(400, 'INVALID_INPUTS', `inputs 必须是 1 到 ${MAX_THINK_INPUTS} 条`)
+  }
+  return raw.map((item) => {
+    const value = item as Record<string, unknown> | null
+    const kind = value?.kind === 'event' ? 'event' : value?.kind === 'speech' ? 'speech' : null
+    const text = typeof value?.text === 'string' ? value.text.trim() : ''
+    if (!kind || !text || text.length > 2000) throw new HttpError(400, 'INVALID_INPUTS', '每条输入需要 kind（speech/event）和不超过 2000 字的 text')
+    const confidence = typeof value?.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : undefined
+    const ref = typeof value?.ref === 'string' && value.ref.length <= 120 ? value.ref : undefined
+    return { kind, text, ...(confidence !== undefined ? { confidence } : {}), ...(ref ? { ref } : {}) }
+  })
 }
 
 export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
@@ -265,8 +286,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
     message: NormalizedMessage,
     notices: string[],
     onReplyDelta?: (text: string) => void,
+    guidance?: string[],
   ): Promise<{ reply: string; instanceId: string; sessionId: string; promptTokens: number; completionTokens: number }> {
-    const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices, onReplyDelta)
+    const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices, onReplyDelta, guidance)
     if (!outcome.reply) {
       throw new HttpError(502, 'NO_REPLY', '引擎未产生回复')
     }
@@ -278,6 +300,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
       completionTokens: outcome.usage?.completionTokens ?? 0,
     }
   }
+
+  /** In-flight thinking runs per instance: input during thinking joins the queue. */
+  const thinkRuns = new Map<string, { phase: 'thinking' | 'speaking'; queue: ThinkInput[] }>()
 
   const server = createServer((req, res) => {
     const started = Date.now()
@@ -364,6 +389,63 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
         }
 
         /* ------------------------------ 原生接口 ------------------------------ */
+        if (method === 'POST' && path === '/v1/think') {
+          if (!runtime.thinkProvider) throw new HttpError(503, 'THINKING_DISABLED', '未配置思考模型')
+          const body = readJson(await readBody(req))
+          const identity = resolveIdentity(req, principal, body)
+          const inputs = parseThinkInputs(body.inputs)
+          const requestId = headerValue(req.headers['x-request-id'])
+          const probe = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: inputs.map((input) => input.text).join('\n') }] }, identity, requestId)
+          const instanceId = runtime.identityService.resolveOrCreate(probe.platform, probe.identity.platformUserId, probe.identity.displayName).instance.id
+          const active = thinkRuns.get(instanceId)
+          if (active?.phase === 'thinking') {
+            // Listen: new input during thinking is queued and continues the same thought.
+            active.queue.push(...inputs)
+            json(res, 202, { merged: true })
+            return
+          }
+          if (active?.phase === 'speaking') throw new HttpError(409, 'SPEAKING', '正在说话，这句请按打断处理')
+          const run = { phase: 'thinking' as 'thinking' | 'speaking', queue: [] as ThinkInput[] }
+          thinkRuns.set(instanceId, run)
+          const streaming = body.stream === true
+          const writeEvent = (event: Record<string, unknown>) => {
+            if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`)
+          }
+          try {
+            if (streaming) {
+              res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive' })
+              res.flushHeaders()
+              writeEvent({ type: 'start' })
+            }
+            const rt = runtime.runtimeManager.get(instanceId)
+            const outcome = await runtime.runtimeManager.withLock(instanceId, () => runtime.runtimeManager.think(rt, {
+              identityKey: identityKey(probe.identity), inputs, drain: () => run.queue.splice(0),
+            }))
+            if (streaming) {
+              for (const step of outcome.steps) writeEvent({ type: 'thought_step', ...step })
+              writeEvent({ type: 'decided', thought: outcome.thought })
+            }
+            if (outcome.silent || !outcome.text) {
+              const payload = { reply: '', silent: true, thought: outcome.thought, instanceId }
+              if (streaming) { writeEvent({ type: 'end', ...payload }); res.end() } else json(res, 200, payload)
+              return
+            }
+            run.phase = 'speaking'
+            const message = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: outcome.text }] }, identity, requestId)
+            const guidance = rt.extension?.thoughtGuidance?.(outcome.thought) ?? guidanceFor(outcome.thought)
+            const result = await runTurn(message, [], streaming ? (text) => writeEvent({ type: 'delta', text }) : undefined, guidance)
+            const payload = { reply: result.reply, silent: false, thought: { ...outcome.thought, text: result.reply }, instanceId, sessionId: result.sessionId }
+            if (streaming) { writeEvent({ type: 'end', ...payload }); res.end() } else json(res, 200, payload)
+          } catch (error) {
+            if (!streaming) throw error
+            writeEvent({ type: 'error', message: '本轮思考未完成，请稍后再试。' })
+            res.end()
+          } finally {
+            thinkRuns.delete(instanceId)
+          }
+          return
+        }
+
         if (method === 'POST' && path === '/v1/messages') {
           const body = readJson(await readBody(req))
           const identity = resolveIdentity(req, principal, body)

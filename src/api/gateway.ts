@@ -144,6 +144,7 @@ export class MessageGateway {
     message: NormalizedMessage,
     extraNotices: string[] = [],
     onReplyDelta?: (text: string) => void,
+    guidance?: string[],
   ): Promise<InboundOutcome> {
     const { platformStore, identityService, runtimeManager, clock } = this.#opts
     const nowIso = (this.#opts.nowIso ?? (() => clock.nowWall().toISOString()))()
@@ -256,6 +257,7 @@ export class MessageGateway {
         identityKey: key,
         text: message.text,
         notices: [...extraNotices, ...notices],
+        ...(guidance?.length ? { guidance } : {}),
       })
       runtimeManager.saveSnapshot(runtime)
 

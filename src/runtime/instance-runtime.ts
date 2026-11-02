@@ -33,6 +33,8 @@ import { AuditLog } from '../kernel/policy/audit.ts'
 import { MemoryReviewQueue } from './memory-review.ts'
 import type { ConsolePlugin } from '../console/plugin.ts'
 import type { MemoryReviewMode } from './memory-review.ts'
+import { DEFAULT_VOCABULARY, ThinkingLoop, Willingness, decideThought } from '../kernel/thinking/index.ts'
+import type { ThinkInput, Thinker, ThinkingPolicy, ThinkingVocabulary, ThoughtDraft, ThoughtResult, WillingnessConfig } from '../kernel/thinking/index.ts'
 
 export interface InstanceRuntimeDeps {
     configureInstance?: (instance: InstanceRuntime, context: InstanceExtensionContext) => InstanceExtension
@@ -50,6 +52,9 @@ export interface InstanceRuntimeDeps {
   probeQuery?: string
   /** 世界交互服务；未启用时为 null（此时对话层完全不感知世界） */
   world?: WorldService | null
+  /** Thinking loop model (cheap and fast); absent disables `think`. */
+  thinker?: Thinker
+  willingness?: Partial<WillingnessConfig>
 }
 
 export interface InstanceRuntime {
@@ -83,6 +88,12 @@ export interface InstanceExtension {
     contextData?(): string
     /** Engine-layer backend contributed to the owner console as a plugin. */
     consolePlugin?(): ConsolePlugin
+    /** Role-specific policy for the thinking loop: allowed decisions, threshold, situation. */
+    thinkingPolicy?(): ThinkingPolicy
+    /** Called with every decided thought (including silence), e.g. to emit synthetic events. */
+    onThought?(thought: ThoughtResult, inputs: readonly ThinkInput[]): void
+    /** Phrase the decided thought for the reply model; default guidance is used when absent. */
+    thoughtGuidance?(thought: ThoughtResult): string[]
 }
 
 export interface SendOptions {
@@ -91,7 +102,29 @@ export interface SendOptions {
   text: string
   /** 之前未能发出的主动消息（作为数据提示，不改变权限） */
   notices?: string[]
+  /** Decision guidance from the thinking loop, added to this turn's behavior rationale. */
+  guidance?: string[]
 }
+
+export interface ThinkOptions {
+  identityKey: string
+  inputs: readonly ThinkInput[]
+  /** Input queued while thinking; drained between steps. */
+  drain?: () => ThinkInput[]
+  onStep?: (step: { chainDepth: number; latencyMs: number; draft: ThoughtDraft }) => void
+}
+
+export interface ThinkOutcome {
+  thought: ThoughtResult
+  inputs: ThinkInput[]
+  /** Speech text of this turn, ready for `send` when the decision is not silent. */
+  text: string
+  silent: boolean
+  steps: Array<{ chainDepth: number; latencyMs: number }>
+}
+
+/** Lines heard without a reply are kept here and folded into the next spoken turn. */
+const MAX_UNANSWERED = 8
 
 /**
  * 把 id 计数器抬到数据库已有数量之上，避免跨平台/跨会话产生重复 id。
@@ -136,6 +169,8 @@ export class InstanceRuntimeManager {
   #deps: InstanceRuntimeDeps
   #cache = new Map<string, InstanceRuntime>()
   #locks = new Map<string, Promise<unknown>>()
+  #willingness = new Map<string, Willingness>()
+  #unanswered = new Map<string, string[]>()
 
   constructor(deps: InstanceRuntimeDeps) {
     this.#deps = deps
@@ -284,14 +319,76 @@ export class InstanceRuntimeManager {
     })
 
     // 外部提示（未能发出的主动消息 / 外部界面提供的设定文本）作为数据传入，不提升权限
-    const text = opts.text
+    // Lines she stayed silent on are part of what the other party said before this turn.
+    const unansweredKey = `${runtime.instanceId}\u0000${opts.identityKey}`
+    const unanswered = this.#unanswered.get(unansweredKey) ?? []
+    this.#unanswered.delete(unansweredKey)
+    const text = unanswered.length ? [...unanswered, opts.text].join('\n') : opts.text
 
     service.seedHistory(history)
-    const result = await service.send(text, opts.onReplyDelta)
+    const result = await service.send(text, opts.onReplyDelta, { guidance: opts.guidance })
     runtime.extension?.afterTurn?.()
     runtime.histories.set(opts.identityKey, service.history.slice(-24))
     runtime.persistence.countTurns(sessionId)
     return result
+  }
+
+  /**
+   * Thinking loop for one turn: think, continue while more input arrives, decide.
+   * A silent decision records what was heard (observation + unanswered buffer) without a reply.
+   */
+  async think(runtime: InstanceRuntime, opts: ThinkOptions): Promise<ThinkOutcome> {
+    const thinker = this.#deps.thinker
+    if (!thinker) throw new Error('Thinking loop is not configured')
+    runtime.extension?.sync()
+    const policy = runtime.extension?.thinkingPolicy?.()
+    const vocabulary: ThinkingVocabulary = { ...DEFAULT_VOCABULARY, ...policy?.vocabulary }
+    const allowed = policy?.allowed ?? vocabulary.decisions
+    const profile = runtime.workspace.profile
+    const persona = profile.shortPersona?.trim() || `${profile.name}，${profile.occupation}`
+    const unansweredKey = `${runtime.instanceId}\u0000${opts.identityKey}`
+    const recent = [
+      ...(runtime.histories.get(opts.identityKey) ?? []).slice(-6).map((message) => `${message.role === 'user' ? '对方' : '她'}：${message.content.slice(0, 200)}`),
+      ...(this.#unanswered.get(unansweredKey) ?? []).map((line) => `对方（她没接话）：${line}`),
+    ]
+    const loop = new ThinkingLoop({ thinker })
+    const run = await loop.run({
+      inputs: opts.inputs,
+      drain: opts.drain ?? (() => []),
+      build: (inputs, previous, chainDepth) => ({ inputs, previous, chainDepth, persona, situation: policy?.situation ?? '', recent, vocabulary,
+        pendingClarification: policy?.pendingClarification ?? null }),
+    })
+    for (const step of run.steps) opts.onStep?.(step)
+    let willingness = this.#willingness.get(runtime.instanceId)
+    if (!willingness) this.#willingness.set(runtime.instanceId, willingness = new Willingness(this.#deps.willingness))
+    const speech = run.inputs.filter((input) => input.kind === 'speech')
+    const names = policy?.names ?? [profile.name]
+    const nowSim = this.#deps.clock.nowSim()
+    const thought = decideThought(run.draft, {
+      allowed, speakThreshold: policy?.speakThreshold ?? 0.5, willingness, vocabulary, nowSim,
+      addressed: speech.some((input) => names.some((name) => name && input.text.includes(name))),
+      events: (policy?.freshEvents ?? 0) + run.inputs.filter((input) => input.kind === 'event').length,
+      utterances: speech.length,
+    })
+    const text = speech.map((input) => input.text).join('\n')
+    const silent = thought.decision === vocabulary.silent
+    if (silent) {
+      // Heard, not answered: keep it for the next spoken turn and as a perception.
+      if (text) {
+        const buffer = [...(this.#unanswered.get(unansweredKey) ?? []), ...speech.map((input) => input.text)].slice(-MAX_UNANSWERED)
+        this.#unanswered.set(unansweredKey, buffer)
+        runtime.workspace.observation.append({ atSim: nowSim, source: 'user', from: 'user', text: text.slice(0, 500), facts: [], events: ['thought:silent'],
+          ref: speech.at(-1)?.ref ?? this.#deps.ids.next('heard') })
+      }
+    } else {
+      willingness.spoke(nowSim)
+    }
+    runtime.workspace.audit.append('decision', 'thinking', silent ? '思考后决定不开口' : `思考后决定：${thought.decision}`, {
+      decision: thought.decision, proposed: thought.proposed, ruling: thought.ruling, chainDepth: thought.chainDepth,
+      meantConf: thought.meantConf, turn: thought.turn, willingness: thought.willingness,
+    })
+    runtime.extension?.onThought?.(thought, run.inputs)
+    return { thought, inputs: run.inputs, text, silent, steps: run.steps.map(({ chainDepth, latencyMs }) => ({ chainDepth, latencyMs })) }
   }
 
   saveSnapshot(runtime: InstanceRuntime): void {
