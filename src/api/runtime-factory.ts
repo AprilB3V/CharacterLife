@@ -82,6 +82,8 @@ export interface RuntimeConfig {
    * when that is not configured either, thinking is off and `/v1/think` refuses.
    */
   thinkProvider?: LLMProvider | null
+  /** Completion cap for thinking calls; 0 sends none. Default from CHARACTERLIFE_THINK_MAX_TOKENS, else 0. */
+  thinkMaxTokens?: number
   willingness?: Partial<WillingnessConfig>
   thinkingLoop?: InstanceRuntimeDeps['thinkingLoop']
   clock?: Clock
@@ -170,13 +172,23 @@ export function chooseProvider(config?: LLMProvider): { provider: LLMProvider; n
 /**
  * Thinking model from the environment: any OpenAI-compatible endpoint.
  * CHARACTERLIFE_THINK_BASE_URL, CHARACTERLIFE_THINK_MODEL and CHARACTERLIFE_THINK_API_KEY must all be set.
+ * CHARACTERLIFE_THINK_REASONING=off asks the endpoint not to reason (`thinking: { type: 'disabled' }`,
+ * honored by Volcengine Ark); leave it unset for endpoints that do not accept that field.
  */
 export function thinkProviderFromEnv(env: NodeJS.ProcessEnv = process.env): LLMProvider | null {
   const baseUrl = env.CHARACTERLIFE_THINK_BASE_URL?.trim()
   const model = env.CHARACTERLIFE_THINK_MODEL?.trim()
   const apiKey = env.CHARACTERLIFE_THINK_API_KEY?.trim()
   if (!baseUrl || !model || !apiKey) return null
-  return new DeepSeekProvider({ apiKey, baseUrl, model, timeoutMs: Number(env.CHARACTERLIFE_THINK_TIMEOUT_MS ?? 20000) })
+  const reasoningOff = env.CHARACTERLIFE_THINK_REASONING?.trim().toLowerCase() === 'off'
+  return new DeepSeekProvider({ apiKey, baseUrl, model, timeoutMs: Number(env.CHARACTERLIFE_THINK_TIMEOUT_MS ?? 20000),
+    ...(reasoningOff ? { extraBody: { thinking: { type: 'disabled' } } } : {}) })
+}
+
+/** Completion cap for the thinker: 0 (default) sends none, so a reasoning model never truncates the JSON. */
+export function thinkMaxTokensFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  const value = Number(env.CHARACTERLIFE_THINK_MAX_TOKENS ?? 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
 }
 
 export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
@@ -238,7 +250,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     memoryReview: config.memoryReview,
     probeQuery: '那本被水泡过的书',
     world,
-    ...(thinkProvider ? { thinker: new LlmThinker({ provider: thinkProvider }) } : {}),
+    ...(thinkProvider ? { thinker: new LlmThinker({ provider: thinkProvider, maxTokens: config.thinkMaxTokens ?? thinkMaxTokensFromEnv() }) } : {}),
     willingness: config.willingness,
     thinkingLoop: config.thinkingLoop,
   })

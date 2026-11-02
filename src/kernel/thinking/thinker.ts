@@ -105,7 +105,8 @@ export class LlmThinker implements Thinker {
   constructor(opts: LlmThinkerOptions) {
     this.#provider = opts.provider
     this.#temperature = opts.temperature ?? 0.2
-    this.#maxTokens = opts.maxTokens ?? 400
+    // 0 sends no cap: reasoning models spend tokens before the JSON, and a cap empties the content.
+    this.#maxTokens = opts.maxTokens ?? 0
   }
 
   async think(request: ThinkRequest): Promise<ThoughtDraft> {
@@ -121,18 +122,20 @@ export class LlmThinker implements Thinker {
       })
       const parsed = parseThought(response.text, request)
       if (parsed) return parsed
-    } catch {
-      // Fall through to the fallback draft.
+      return fallbackDraft(request, response.text.trim()
+        ? `unparseable output (finish ${response.finishReason ?? 'unknown'})`
+        : `empty output (finish ${response.finishReason ?? 'unknown'}, reasoning ${response.reasoningChars ?? 0} chars)`)
+    } catch (error) {
+      return fallbackDraft(request, `call failed: ${String((error as Error).message ?? error).slice(0, 120)}`)
     }
-    return fallbackDraft(request)
   }
 }
 
 /** When thinking fails, behave like the pipeline without a thinking layer: reply. */
-export function fallbackDraft(request: ThinkRequest): ThoughtDraft {
+export function fallbackDraft(request: ThinkRequest, why = 'thinker unavailable'): ThoughtDraft {
   const heard = request.inputs.filter((input) => input.kind === 'speech').map((input) => input.text).join(' / ')
   return {
     heard, meant: heard, meantConf: 1, turn: 'done', decision: request.vocabulary.reply,
-    emotion: request.vocabulary.fallbackEmotion, reason: 'thinker unavailable', chainDepth: request.chainDepth, fallback: true,
+    emotion: request.vocabulary.fallbackEmotion, reason: `thinker unavailable: ${why}`, chainDepth: request.chainDepth, fallback: true,
   }
 }

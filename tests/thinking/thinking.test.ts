@@ -60,6 +60,38 @@ describe('thinker output', () => {
     assert.equal((await broken.think(request([{ kind: 'speech', text: '你好' }]))).fallback, true)
   })
 
+  it('sends no completion cap by default, and a fallback says why it happened', async () => {
+    const provider: LLMProvider & { requests: LLMRequest[] } = {
+      name: 'reasoning', model: 'reasoning', requests: [],
+      // A reasoning model that ran out of tokens before writing any content.
+      async complete(req) { provider.requests.push(req); return { text: '', provider: 'reasoning', model: 'reasoning', usage: null, latencyMs: 0, finishReason: 'length', reasoningChars: 1320 } },
+    }
+    const result = await new LlmThinker({ provider }).think(request([{ kind: 'speech', text: '你好' }]))
+    assert.equal(provider.requests[0]!.maxTokens, 0)
+    assert.equal(result.fallback, true)
+    assert.match(result.reason ?? '', /empty output \(finish length, reasoning 1320 chars\)/)
+  })
+
+  it('CHARACTERLIFE_THINK_REASONING=off asks the endpoint not to reason', async () => {
+    const { thinkProviderFromEnv } = await import('../../src/api/runtime-factory.ts')
+    const { DeepSeekProvider } = await import('../../src/conversation/providers/deepseek.ts')
+    const env = { CHARACTERLIFE_THINK_BASE_URL: 'https://example.invalid/v3', CHARACTERLIFE_THINK_MODEL: 'm', CHARACTERLIFE_THINK_API_KEY: 'test-key' }
+    assert.ok(thinkProviderFromEnv({ ...env, CHARACTERLIFE_THINK_REASONING: 'off' }) instanceof DeepSeekProvider)
+    // The extra body field reaches the wire.
+    const bodies: Array<Record<string, unknown>> = []
+    const fetchImpl = (async (_url: string, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body))
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{}' }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+    const off = new DeepSeekProvider({ apiKey: 'k', baseUrl: 'https://example.invalid/v3', model: 'm', fetchImpl, extraBody: { thinking: { type: 'disabled' } } })
+    await off.complete({ system: 's', messages: [{ role: 'user', content: 'u' }], temperature: 0, maxTokens: 0, jsonMode: true })
+    assert.deepEqual(bodies[0]!.thinking, { type: 'disabled' })
+    assert.equal('max_tokens' in bodies[0]!, false)
+    const plain = new DeepSeekProvider({ apiKey: 'k', baseUrl: 'https://example.invalid/v3', model: 'm', fetchImpl })
+    await plain.complete({ system: 's', messages: [{ role: 'user', content: 'u' }], temperature: 0, maxTokens: 0, jsonMode: true })
+    assert.equal('thinking' in bodies[1]!, false, 'off by default')
+  })
+
   it('the prompt carries the previous thought when continuing, and the vocabulary', () => {
     const prompt = buildThinkerPrompt(request([{ kind: 'speech', text: '还有一件事' }], draft({ meant: '房租交了' }), 1))
     assert.match(prompt.user, /接着想/)
