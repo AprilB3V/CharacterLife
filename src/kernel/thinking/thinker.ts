@@ -18,12 +18,15 @@ const clamp01 = (value: unknown): number => typeof value === 'number' && Number.
 const shortText = (value: unknown, max: number): string | undefined =>
   typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined
 
+/** Prompt budget: the thinking call bypasses the context manager, so it bounds itself. */
+export const THINK_PROMPT_LIMITS = { inputs: 12, inputChars: 500, situationChars: 2000, previousChars: 800 } as const
+
 export function buildThinkerPrompt(request: ThinkRequest): { system: string; user: string } {
   const v = request.vocabulary
   const system = [
     '你在替下面这个角色做一次内部判断，不是对外说话。只输出一个 JSON 对象，不要任何其他文字。',
     `角色：${request.persona}`,
-    request.situation ? `当前情境：\n${request.situation}` : '',
+    request.situation ? `当前情境：\n${request.situation.slice(0, THINK_PROMPT_LIMITS.situationChars)}` : '',
     '字段：',
     'heard：原样复述新听到的话（多句用 / 分隔）。',
     'meant：对方真正的意思。语音识别可能有同音错字，结合情境推断；推断不出就照抄 heard。',
@@ -41,9 +44,11 @@ export function buildThinkerPrompt(request: ThinkRequest): { system: string; use
     request.pendingClarification
       ? `你之前问过一句确认：识别原话「${request.pendingClarification.heard}」，你猜是「${request.pendingClarification.meant}」。`
       : '',
-    request.previous ? `你刚才的内部判断（接着想，不要从头开始）：${JSON.stringify(stripDraft(request.previous))}` : '',
+    request.previous ? `你刚才的内部判断（接着想，不要从头开始）：${JSON.stringify(stripDraft(request.previous)).slice(0, THINK_PROMPT_LIMITS.previousChars)}` : '',
     '新听到/看到的：',
-    ...request.inputs.map((input) => `- [${input.kind === 'speech' ? '对方' : '事件'}] ${input.text}`),
+    ...(request.inputs.length > THINK_PROMPT_LIMITS.inputs ? [`（前面还有 ${request.inputs.length - THINK_PROMPT_LIMITS.inputs} 条，略）`] : []),
+    ...request.inputs.slice(-THINK_PROMPT_LIMITS.inputs).map((input) =>
+      `- [${input.kind === 'speech' ? '对方' : '事件'}] ${input.text.slice(0, THINK_PROMPT_LIMITS.inputChars)}`),
   ].filter(Boolean).join('\n')
   return { system, user }
 }

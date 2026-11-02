@@ -183,7 +183,17 @@ export class ConversationService {
     this.#history = messages.map((m) => ({ ...m }))
   }
 
-  async send(userText: string, onReplyDelta?: (text: string) => void, options: { guidance?: string[] } = {}): Promise<ConversationTurnResult> {
+  async send(
+    newText: string,
+    onReplyDelta?: (text: string) => void,
+    options: {
+      /** Trusted decision guidance for the behavior rationale. */
+      guidance?: string[]
+      /** Lines the other party said earlier that got no reply; the model sees them, perception does not repeat them. */
+      prior?: readonly string[]
+    } = {},
+  ): Promise<ConversationTurnResult> {
+    const userText = options.prior?.length ? [...options.prior, newText].join('\n') : newText
     const turnId = this.#ids.next('turn')
     const nowSim = this.#clock.nowSim()
     const profile = this.#workspace.profile
@@ -194,7 +204,7 @@ export class ConversationService {
       atSim: nowSim,
       source: 'user',
       from: 'user',
-      text: userText.slice(0, 500),
+      text: newText.slice(0, 500),
       facts: [],
       events: signals.intents.map((i) => `intent:${i}`),
       ref: turnId,

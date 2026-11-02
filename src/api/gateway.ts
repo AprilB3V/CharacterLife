@@ -139,17 +139,49 @@ export class MessageGateway {
     return this.handleMessage(adapter, message)
   }
 
+  /**
+   * Idempotency and per-identity rate limit, for a message that is processed before `handleMessage`
+   * (the thinking loop may end in silence and never reach it). Call `handleMessage` with
+   * `preAdmitted` afterwards so the same message is not counted twice.
+   */
+  admit(message: NormalizedMessage): { ok: true } | { ok: false; status: 'duplicate' | 'rate_limited'; reason: string } {
+    const { platformStore, clock } = this.#opts
+    const nowIso = (this.#opts.nowIso ?? (() => clock.nowWall().toISOString()))()
+    const first = platformStore.markProcessed({
+      platform: message.platform,
+      platformMessageId: message.platformMessageId,
+      instanceId: null,
+      status: 'processing',
+      nowIso,
+    })
+    if (!first) return { ok: false, status: 'duplicate', reason: 'ALREADY_PROCESSED' }
+    const limit = this.#limiter.check(identityKey(message.identity), Date.now())
+    if (!limit.allowed) {
+      platformStore.updateProcessedStatus(message.platform, message.platformMessageId, 'rate_limited')
+      return { ok: false, status: 'rate_limited', reason: `RATE_LIMITED: retry after ${limit.retryAfterMs}ms` }
+    }
+    return { ok: true }
+  }
+
   async handleMessage(
     adapter: PlatformAdapter,
     message: NormalizedMessage,
     extraNotices: string[] = [],
     onReplyDelta?: (text: string) => void,
-    guidance?: string[],
+    options: {
+      /** Trusted decision guidance for the behavior rationale (no user-derived text). */
+      guidance?: string[]
+      /** Untrusted thinking conclusions, injected as data. */
+      thoughtData?: string[]
+      /** Idempotency and rate limit were already applied by `admit` (the thinking loop). */
+      preAdmitted?: boolean
+    } = {},
   ): Promise<InboundOutcome> {
     const { platformStore, identityService, runtimeManager, clock } = this.#opts
     const nowIso = (this.#opts.nowIso ?? (() => clock.nowWall().toISOString()))()
     const key = identityKey(message.identity)
 
+    if (!options.preAdmitted) {
     // 1) 幂等：同一条平台消息只处理一次
     const first = platformStore.markProcessed({
       platform: message.platform,
@@ -187,6 +219,7 @@ export class MessageGateway {
         reason: `RATE_LIMITED: retry after ${limit.retryAfterMs}ms`,
         usage: null,
       }
+    }
     }
 
     // 3) 身份 → 实例
@@ -257,7 +290,8 @@ export class MessageGateway {
         identityKey: key,
         text: message.text,
         notices: [...extraNotices, ...notices],
-        ...(guidance?.length ? { guidance } : {}),
+        ...(options.guidance?.length ? { guidance: options.guidance } : {}),
+        ...(options.thoughtData?.length ? { thoughtData: options.thoughtData } : {}),
       })
       runtimeManager.saveSnapshot(runtime)
 

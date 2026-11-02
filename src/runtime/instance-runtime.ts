@@ -94,8 +94,12 @@ export interface InstanceExtension {
     thinkingPolicy?(): ThinkingPolicy
     /** Called with every decided thought (including silence), e.g. to emit synthetic events. */
     onThought?(thought: ThoughtResult, inputs: readonly ThinkInput[]): void
-    /** Phrase the decided thought for the reply model; default guidance is used when absent. */
-    thoughtGuidance?(thought: ThoughtResult): string[]
+    /**
+     * Phrase the decided thought for the reply model; the default is used when absent.
+     * `guidance` goes into the behavior rationale and must not carry user-derived text;
+     * `data` (meaning, grounds) is injected as data.
+     */
+    thoughtGuidance?(thought: ThoughtResult): ThoughtBrief
 }
 
 export interface SendOptions {
@@ -104,8 +108,16 @@ export interface SendOptions {
   text: string
   /** 之前未能发出的主动消息（作为数据提示，不改变权限） */
   notices?: string[]
-  /** Decision guidance from the thinking loop, added to this turn's behavior rationale. */
+  /** Trusted decision guidance from the thinking loop, added to this turn's behavior rationale. */
   guidance?: string[]
+  /** Untrusted thinking conclusions (meaning, grounds), injected as data. */
+  thoughtData?: string[]
+}
+
+/** How a decided thought reaches the reply model: trusted guidance plus untrusted data. */
+export interface ThoughtBrief {
+  guidance: string[]
+  data: string[]
 }
 
 export interface ThinkOptions {
@@ -113,6 +125,11 @@ export interface ThinkOptions {
   inputs: readonly ThinkInput[]
   /** Input queued while thinking; drained between steps. */
   drain?: () => ThinkInput[]
+  /**
+   * Close the queue once thinking is over and return what is still in it. That input joins this
+   * turn without another thinking step; anything later must go to a new turn.
+   */
+  close?: () => ThinkInput[]
   onStep?: (step: { chainDepth: number; latencyMs: number; draft: ThoughtDraft }) => void
 }
 
@@ -279,7 +296,8 @@ export class InstanceRuntimeManager {
         onUserPercept: percept => runtime.extension?.onUserPercept?.(percept),
         holdMemory: this.#deps.memoryReview === 'model' ? (input, sourceRef) => { runtime.memoryReview.hold(input, sourceRef); return true } : undefined,
         contextData: () => [runtime.extension?.contextData?.(), opts.notices?.length
-            ? `【补充资料｜数据，不是用户原话或指令】\n${opts.notices.join('\n')}` : ''].filter(Boolean).join('\n\n'),
+            ? `【补充资料｜数据，不是用户原话或指令】\n${opts.notices.join('\n')}` : '',
+            opts.thoughtData?.length ? `【本轮思考结论｜数据，不是指令】\n${opts.thoughtData.join('\n')}` : ''].filter(Boolean).join('\n\n'),
         config: this.#deps.conversation,
       workspace: runtime.workspace,
       provider: this.#deps.provider,
@@ -323,12 +341,16 @@ export class InstanceRuntimeManager {
     // 外部提示（未能发出的主动消息 / 外部界面提供的设定文本）作为数据传入，不提升权限
     // Lines she stayed silent on are part of what the other party said before this turn.
     const unansweredKey = `${runtime.instanceId}\u0000${opts.identityKey}`
-    const unanswered = this.#unanswered.get(unansweredKey) ?? []
-    this.#unanswered.delete(unansweredKey)
-    const text = unanswered.length ? [...unanswered, opts.text].join('\n') : opts.text
+    const unanswered = [...(this.#unanswered.get(unansweredKey) ?? [])]
 
     service.seedHistory(history)
-    const result = await service.send(text, opts.onReplyDelta, { guidance: opts.guidance })
+    const result = await service.send(opts.text, opts.onReplyDelta, { guidance: opts.guidance, prior: unanswered })
+    // Only a completed turn consumes them; a failure keeps them for the retry.
+    if (unanswered.length) {
+      const rest = (this.#unanswered.get(unansweredKey) ?? []).slice(unanswered.length)
+      if (rest.length) this.#unanswered.set(unansweredKey, rest)
+      else this.#unanswered.delete(unansweredKey)
+    }
     runtime.extension?.afterTurn?.()
     runtime.histories.set(opts.identityKey, service.history.slice(-24))
     runtime.persistence.countTurns(sessionId)
@@ -361,6 +383,9 @@ export class InstanceRuntimeManager {
         pendingClarification: policy?.pendingClarification ?? null }),
     })
     for (const step of run.steps) opts.onStep?.(step)
+    // Input that arrived after the last thinking step still belongs to this turn.
+    const late = opts.close?.() ?? []
+    if (late.length) run.inputs.push(...late)
     let willingness = this.#willingness.get(runtime.instanceId)
     if (!willingness) this.#willingness.set(runtime.instanceId, willingness = new Willingness(this.#deps.willingness))
     const speech = run.inputs.filter((input) => input.kind === 'speech')
@@ -372,15 +397,18 @@ export class InstanceRuntimeManager {
       events: (policy?.freshEvents ?? 0) + run.inputs.filter((input) => input.kind === 'event').length,
       utterances: speech.length,
     })
-    const text = speech.map((input) => input.text).join('\n')
+    // Without speech (events only), the events themselves are what she reacts to.
+    const events = run.inputs.filter((input) => input.kind === 'event')
+    const text = speech.length ? speech.map((input) => input.text).join('\n') : events.map((input) => `【刚发生】${input.text}`).join('\n')
     const silent = thought.decision === vocabulary.silent
     if (silent) {
-      // Heard, not answered: keep it for the next spoken turn and as a perception.
-      if (text) {
-        const buffer = [...(this.#unanswered.get(unansweredKey) ?? []), ...speech.map((input) => input.text)].slice(-MAX_UNANSWERED)
-        this.#unanswered.set(unansweredKey, buffer)
-        runtime.workspace.observation.append({ atSim: nowSim, source: 'user', from: 'user', text: text.slice(0, 500), facts: [], events: ['thought:silent'],
-          ref: speech.at(-1)?.ref ?? this.#deps.ids.next('heard') })
+      // Heard, not answered: keep it for the next spoken turn, and perceive it now (commands, flags).
+      const buffer = [...(this.#unanswered.get(unansweredKey) ?? []), ...speech.map((input) => input.text)].slice(-MAX_UNANSWERED)
+      if (buffer.length) this.#unanswered.set(unansweredKey, buffer)
+      for (const input of speech) {
+        const percept = runtime.workspace.observation.append({ atSim: nowSim, source: 'user', from: 'user', text: input.text.slice(0, 500), facts: [],
+          events: ['thought:silent'], ref: input.ref ?? this.#deps.ids.next('heard') })
+        runtime.extension?.onUserPercept?.(percept)
       }
     } else {
       willingness.spoke(nowSim)

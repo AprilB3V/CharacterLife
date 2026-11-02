@@ -286,9 +286,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
     message: NormalizedMessage,
     notices: string[],
     onReplyDelta?: (text: string) => void,
-    guidance?: string[],
+    options: { guidance?: string[]; thoughtData?: string[]; preAdmitted?: boolean } = {},
   ): Promise<{ reply: string; instanceId: string; sessionId: string; promptTokens: number; completionTokens: number }> {
-    const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices, onReplyDelta, guidance)
+    const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices, onReplyDelta, options)
     if (!outcome.reply) {
       throw new HttpError(502, 'NO_REPLY', '引擎未产生回复')
     }
@@ -399,7 +399,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
           const requestId = headerValue(req.headers['x-request-id'])
           const probe = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: inputs.map((input) => input.text).join('\n') }] }, identity, requestId)
           const instanceId = runtime.identityService.resolveOrCreate(probe.platform, probe.identity.platformUserId, probe.identity.displayName).instance.id
-          const active = thinkRuns.get(instanceId)
+          // One run per instance and speaker: another speaker's words never join this turn.
+          const runKey = `${instanceId}\u0000${identityKey(probe.identity)}`
+          const active = thinkRuns.get(runKey)
           if (active?.phase === 'thinking') {
             // Listen: new input during thinking is queued and continues the same thought.
             active.queue.push(...inputs)
@@ -409,8 +411,15 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
           if (active?.phase === 'speaking') throw new HttpError(409, 'SPEAKING', '正在说话，这句请按打断处理')
           // A merge must never start a turn of its own: the caller re-sends it as a new turn.
           if (body.mergeOnly === true) throw new HttpError(409, 'NOT_THINKING', '思考已结束，这句请作为新的一轮发送')
+          // Idempotency and rate limit before any model call: a silent turn never reaches the gateway.
+          const admitted = runtime.gateway.admit(probe)
+          if (!admitted.ok) {
+            throw admitted.status === 'duplicate'
+              ? new HttpError(409, 'DUPLICATE', '这条请求已经处理过')
+              : new HttpError(429, 'RATE_LIMITED', admitted.reason)
+          }
           const run = { phase: 'thinking' as 'thinking' | 'speaking', queue: [] as ThinkInput[] }
-          thinkRuns.set(instanceId, run)
+          thinkRuns.set(runKey, run)
           const streaming = body.stream === true
           const writeEvent = (event: Record<string, unknown>) => {
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`)
@@ -424,6 +433,8 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             const rt = runtime.runtimeManager.get(instanceId)
             const outcome = await runtime.runtimeManager.withLock(instanceId, () => runtime.runtimeManager.think(rt, {
               identityKey: identityKey(probe.identity), inputs, drain: () => run.queue.splice(0),
+              // Thinking is over: later input gets 409 and goes to a new turn; what is queued joins this one.
+              close: () => { run.phase = 'speaking'; return run.queue.splice(0) },
             }))
             if (streaming) {
               for (const step of outcome.steps) writeEvent({ type: 'thought_step', ...step })
@@ -436,8 +447,9 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             }
             run.phase = 'speaking'
             const message = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: outcome.text }] }, identity, requestId)
-            const guidance = rt.extension?.thoughtGuidance?.(outcome.thought) ?? guidanceFor(outcome.thought)
-            const result = await runTurn(message, notices, streaming ? (text) => writeEvent({ type: 'delta', text }) : undefined, guidance)
+            const brief = rt.extension?.thoughtGuidance?.(outcome.thought) ?? guidanceFor(outcome.thought)
+            const result = await runTurn(message, notices, streaming ? (text) => writeEvent({ type: 'delta', text }) : undefined,
+              { guidance: brief.guidance, thoughtData: brief.data, preAdmitted: true })
             const payload = { reply: result.reply, silent: false, thought: { ...outcome.thought, text: result.reply }, instanceId, sessionId: result.sessionId }
             if (streaming) { writeEvent({ type: 'end', ...payload }); res.end() } else json(res, 200, payload)
           } catch (error) {
@@ -445,7 +457,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             writeEvent({ type: 'error', message: '本轮思考未完成，请稍后再试。' })
             res.end()
           } finally {
-            thinkRuns.delete(instanceId)
+            thinkRuns.delete(runKey)
           }
           return
         }
