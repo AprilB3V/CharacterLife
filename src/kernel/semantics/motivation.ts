@@ -13,7 +13,7 @@
  * Mind 只能提出新的承诺候选。
  */
 
-import type { CharacterDynamicState, CharacterGoal, Commitment } from '../types.ts'
+import type { CharacterDynamicState, CharacterGoal, Commitment, CommitmentCriterion } from '../types.ts'
 import type { DriveProfile, DriveReading } from './drives.ts'
 import { readDrives } from './drives.ts'
 
@@ -67,16 +67,17 @@ export class MotivationSlot {
   }
 
   add(commitment: Commitment): Commitment {
-    this.#commitments.push(structuredClone(commitment))
-    return structuredClone(commitment)
+    const stored = normalizeCommitment(commitment)
+    this.#commitments.push(stored)
+    return structuredClone(stored)
   }
 
-    updateCriterion(id: string, criterion: NonNullable<Commitment['criterion']>): boolean {
-        const commitment = this.#commitments.find(item => item.id === id && item.status === 'open')
-        if (!commitment) return false
-        commitment.criterion = structuredClone(criterion)
-        return true
-    }
+  updateCriterion(id: string, criterion: CommitmentCriterion): boolean {
+    const commitment = this.#commitments.find(item => item.id === id && item.status === 'open')
+    if (!commitment) return false
+    commitment.criterion = normalizeCriterion(criterion)
+    return true
+  }
 
   /** 结算一条仍然有效的承诺。已结算的不能再改（返回 false）。 */
   settle(id: string, status: 'kept' | 'broken', evidenceRef?: string): boolean {
@@ -92,6 +93,22 @@ export class MotivationSlot {
   }
 
   fromJSON(items: readonly Commitment[]): void {
-    this.#commitments = structuredClone([...items])
+    this.#commitments = items.map(normalizeCommitment)
   }
+}
+
+function normalizeCommitment(commitment: Commitment): Commitment {
+  const copy = structuredClone(commitment)
+  if (copy.criterion) copy.criterion = normalizeCriterion(copy.criterion)
+  return copy
+}
+
+/**
+ * Accepts both the current `{ kind, params }` shape and the pre-0.7 flat shape
+ * (`{ kind, worldId, runId, ... }`), folding legacy fields into `params`.
+ */
+export function normalizeCriterion(criterion: CommitmentCriterion | Record<string, unknown>): CommitmentCriterion {
+  const { kind, params, ...legacy } = structuredClone(criterion) as Record<string, unknown>
+  const base = params !== null && typeof params === 'object' && !Array.isArray(params) ? params as Record<string, unknown> : {}
+  return { kind: String(kind ?? ''), params: { ...legacy, ...base } }
 }

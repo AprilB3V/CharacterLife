@@ -78,19 +78,30 @@ Free Roam 的斗场「宪法」会作为一个 WorldDriver 接进来。
 
 - `src/kernel/**` 只 import 自己和 `node:` 内置模块；
 - `src/kernel/world/**` 不 import memory / agent / cycle / semantics（世界协议无法改写角色状态）；
-- 外部项目只从 `src/kernel/index.ts` import。
+- 外部项目只从包的公开入口 import（见 §5），不引用 `src/**` 下的内部路径；
+- 承诺的 `criterion` 只有 `kind` 和不透明的 `params`，判定与结算由扩展完成（例如 VideoCohost 的当铺读取器连续性），
+  旧快照里的扁平字段在载入时折叠进 `params`。
 
 陪伴扩展的位置不变（`src/runtime`、`src/conversation`、`src/adapters`、`src/api`、`src/character`、
 `src/persistence` …），它们现在 import 内核。`CharacterWorkspace extends AgentCore`，
 旧的快照格式、SQLite 事件日志与重放全部兼容（测试覆盖）。
 
-## 5. 给 Free Roam（独立仓库）的接入方式
+## 5. 外部仓库的接入方式（公开 API）
 
-Node 的类型擦除**不处理 `node_modules` 里的 .ts 文件**，所以内核暂时不能作为 npm 依赖直接安装使用。两个可选方案：
+`package.json` 的 `exports` 定义公开面：**列出来的就是本体，没列出来的就是内部实现**，内部文件可以随时重构。
 
-1. **git submodule（推荐，零构建）**：把 CharacterLife 作为子模块放在 `vendor/characterlife`，
-   从 `vendor/characterlife/src/kernel/index.ts` import。内核零依赖，子模块不需要安装任何东西。
-2. 以后需要发包时，再给内核加一个 `tsc` 构建产物（`dist/kernel`），改为普通 npm 依赖。
+| 入口 | 文件 | 内容 |
+|---|---|---|
+| `characterlife` | `src/index.ts` | 类型、时钟/随机/id 工具、策略与审计、工作区、对话服务、模板、持久化、平台适配协议 |
+| `characterlife/kernel` | `src/kernel/index.ts` | 六语义微内核、完整性层、世界端口、自主循环 |
+| `characterlife/runtime` | `src/runtime/index.ts` | `InstanceRuntimeManager`、`InstanceExtension` 钩子、工作区 |
+| `characterlife/api` | `src/api/index.ts` | `assembleRuntime`、`loadEnvConfig`、HTTP 服务 |
+| `characterlife/console` | `src/console/index.ts` | 主人后台服务与插件协议 |
+
+接入方式：把 CharacterLife 作为 git submodule 放在 `vendor/characterlife`，钉在 **main 上的版本标签**（不钉功能分支），
+再在扩展的 `package.json` 里声明 `"characterlife": "file:vendor/characterlife"` 并 `npm install`。
+npm 会在 `node_modules/characterlife` 建一个指向子模块的链接；Node 解析到真实路径（不在 `node_modules` 内），
+所以零构建的类型擦除照常工作。需要发 npm 包时，再给公开入口加 `tsc` 构建产物。
 
 ## 6. 尚未做的（等宪法）
 

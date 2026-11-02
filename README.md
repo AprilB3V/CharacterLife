@@ -16,7 +16,7 @@ CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**�
 
 ```
 应用（扩展）     陪伴角色 · 自主箱庭 · 节目与游戏（Free Roam）
-                        │  只通过 src/kernel/index.ts
+                        │  只通过 package.json exports 公开入口
                         ▼
 认知层 · 六语义  Self 自我 · Situation 情境 · Observation 观察
                  Memory 记忆 · Motivation 动机 · Affordance 可行动性
@@ -89,7 +89,7 @@ CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**�
 | **Identity / 绑定（V0.2）** | `src/identity/` | 一次性绑定码（过期/限次/只存哈希），跨平台共用同一实例 |
 | **World 世界交互（V0.3）** | `src/kernel/world/` + `src/api/world-routes.ts` | 模型产生动作意图（准入闸门 + 服务端清单）、HTTP 领取/回执、双去重、独立 world token、回执回灌下一轮认知；**动作队列未持久化** |
 | **Autonomy 自主运行（V0.4 · E0）** | `src/kernel/cycle/` + `experiments/sandbox/` | 内驱力（只有运行时能写、只在世界确认成功时缓解）、确定性 Waker、世界→记忆受控桥、规则 Mind 与 LLM Mind（录制/回放）、无画面文字箱庭；见 [`docs/AUTONOMY.md`](docs/AUTONOMY.md) |
-| **Kernel 六语义微内核（V0.5）** | `src/kernel/` | `AgentCore`：六个语义槽 + 提议—裁决通道；每条可写状态有语义归属；多角色宿主 `AgentHost`；外部项目唯一入口 `src/kernel/index.ts`；见 [`docs/KERNEL.md`](docs/KERNEL.md) |
+| **Kernel 六语义微内核（V0.5）** | `src/kernel/` | `AgentCore`：六个语义槽 + 提议—裁决通道；每条可写状态有语义归属；多角色宿主 `AgentHost`；外部项目经 `package.json` `exports` 的公开入口接入（`characterlife/kernel` 等）；见 [`docs/KERNEL.md`](docs/KERNEL.md) §5 |
 | **Integrity 完整性层（V0.6）** | `src/kernel/integrity/` | 宪法 K1–K6：哈希链账本、身份指纹、权威与事实、种子流、承诺–揭示、预先登记；SQLite `ledger` 表；见 [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md) |
 | LLMProvider | `src/conversation/providers/` | `MockProvider`（离线确定性）与 `DeepSeekProvider`（真实 API） |
 

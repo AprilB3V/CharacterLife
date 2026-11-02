@@ -351,3 +351,18 @@ src/conversation/service.ts      一轮对话：解析 worldActions → 准入 �
 - **第一阶段队列只在内存**：`persistent` 恒为 `false`，重启即丢，HTTP 响应里带 `_persistent: false` 明示。
 
 详见 [`WORLD_PROTOCOL.md`](WORLD_PROTOCOL.md)。
+
+## 11. 仓库划分与公开 API（2026-11-02 架构评审）
+
+内容不进 CL 本体：游戏、剧本、具体角色放在扩展仓库，CL 只保留通用能力和一个通用最小示例（`examples/characters/shen-zhiwei.ts`）。
+
+| 仓库 | 放什么 |
+|---|---|
+| CharacterLife | kernel、runtime（计划新增事件流与话轮）、api、console、通用平台适配（SillyTavern、OneBot、QQ） |
+| [CharacterLife-VideoCohost](https://github.com/AprilB3V/CharacterLife-VideoCohost) | 当铺 adapter、第一季剧本、鲸鲸模板与知识库、console 插件、语音 adapter（先放这里） |
+| Free-Roam | 竞技场规则、角色、解说 |
+
+扩展的接缝是 `InstanceExtension`（同步世界观察、注入上下文、结算承诺、贡献后台插件），扩展只从 `exports` 列出的入口 import，
+入口清单与接入方式见 [`KERNEL.md` §5](KERNEL.md)。语音链路改为双向事件流，草案见 [`EVENT_STREAM_PROTOCOL.md`](EVENT_STREAM_PROTOCOL.md)。
+共享代码的规则：出现第二个使用方再抽，不提前抽象。
+

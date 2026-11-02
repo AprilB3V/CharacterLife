@@ -144,6 +144,7 @@ export type {
   StatePatchData,
 } from './persistence/store.ts'
 export { SqliteSink } from './persistence/sink.ts'
+export { SqliteLedgerSink } from './persistence/ledger-sink.ts'
 export { SCHEMA_VERSION } from './persistence/schema.ts'
 
 /* Context Manager */

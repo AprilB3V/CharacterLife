@@ -186,12 +186,23 @@ export interface DriveLevel {
  * 只记**当前状态**；承诺是怎么来的、后来发生了什么，由带出处的记忆保存。
  * 字段与 V0.1 的 `TrackedPromise` 完全一致（后者现在是它的别名），旧快照可直接读取。
  */
+/**
+ * 承诺的可验证判定条件。
+ *
+ * 内核只认 `kind` 与不透明的 `params`：判定什么、何时结算由扩展决定
+ * （通过 `InstanceExtension` 钩子读取证据后调用 `motivation.settle`）。
+ * 世界、局次、读取器日志等概念都属于具体扩展，不进入内核类型。
+ */
+export interface CommitmentCriterion {
+    kind: string
+    params: Record<string, unknown>
+}
+
 export interface Commitment {
     owner?: 'user' | 'character'
     sourceRef?: string | null
     evidenceRef?: string | null
-    criterion?: { kind: string; worldId: string; runId: string; target?: string; value?: number; endEvent?: string;
-        readerSession?: string; readerSeq?: number; coverageIntact?: boolean; endsAtSim?: number; endRef?: string }
+    criterion?: CommitmentCriterion
   id: string
   text: string
   madeAtSim: number

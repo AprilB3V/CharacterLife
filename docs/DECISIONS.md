@@ -319,3 +319,13 @@
 | 种子算法 | 字符串种子用 FNV-1a + mulberry32，与《罐中斗》第一期引擎逐位一致 | Free Roam 迁移后同种子跑出同一局 | 与 CL 原有整数种子 `SeededRng` 并存 |
 | 规范化 | 非 JSON 值确定性降级（NaN → "NaN"，bigint → 字符串，函数 → null），落库用规范化 JSON | 审计里出现的任何数据都能入账，读回后哈希逐位一致 | 极少数值的表示与原始 JSON 不同 |
 
+## 19. 扩展拆分与公开 API（2026-11-02 架构评审）
+
+| 决策 | 选择 | 理由 | 代价 |
+|---|---|---|---|
+| 内容放哪 | 鲸鲸视频搭档、第一季剧本、鲸鲸模板全部移到 CharacterLife-VideoCohost；CL 只留通用示例 | 两份代码已分叉（8 个文件全部不同）；内容属于 adapter 层 | 扩展需要跟随 CL 版本升级 |
+| 公开面 | `package.json` `exports`：`.`、`/kernel`、`/runtime`、`/api`、`/console` | 扩展原先直接引用 `src/**` 内部路径，CL 内部重构一次扩展就崩 | 公开面变化要按版本号管理 |
+| 扩展如何依赖 | submodule 钉标签 + `file:vendor/characterlife` 链接 | 不需要构建；链接的真实路径在 `node_modules` 外，类型擦除可用 | 依赖 npm 的链接行为；发包时需改为构建产物 |
+| 承诺判定条件 | `criterion` 收窄为 `{ kind, params }`，旧扁平字段载入时折叠 | `readerSession` / `readerSeq` / `coverageIntact` 是当铺读取器的概念，Free Roam 用不上 | 扩展读取时要自己声明 `params` 的类型 |
+| 语音协议 | 计划改为双向事件流，话轮判断放 CL runtime | 一问一答协议承载不了“等你说完”、续想、打断、主动开口 | 需要自写语音 adapter；Open-LLM-VTuber 降级为 I/O 或弃用 |
+

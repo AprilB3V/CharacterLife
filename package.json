@@ -1,9 +1,17 @@
 {
   "name": "characterlife",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "CharacterLife · 可信 AI 角色的心智内核：六语义认知层 + 宪法完整性层（V0.6）",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./kernel": "./src/kernel/index.ts",
+    "./runtime": "./src/runtime/index.ts",
+    "./api": "./src/api/index.ts",
+    "./console": "./src/console/index.ts",
+    "./package.json": "./package.json"
+  },
   "engines": {
     "node": ">=22.6"
   },
