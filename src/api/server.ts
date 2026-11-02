@@ -407,6 +407,8 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             return
           }
           if (active?.phase === 'speaking') throw new HttpError(409, 'SPEAKING', '正在说话，这句请按打断处理')
+          // A merge must never start a turn of its own: the caller re-sends it as a new turn.
+          if (body.mergeOnly === true) throw new HttpError(409, 'NOT_THINKING', '思考已结束，这句请作为新的一轮发送')
           const run = { phase: 'thinking' as 'thinking' | 'speaking', queue: [] as ThinkInput[] }
           thinkRuns.set(instanceId, run)
           const streaming = body.stream === true

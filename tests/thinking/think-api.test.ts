@@ -136,6 +136,15 @@ describe('/v1/think', () => {
     } finally { await h.close() }
   })
 
+  it('a merge-only request never starts a turn of its own', async () => {
+    const h = await boot(new ScriptedThinker([]))
+    try {
+      const response = await h.post({ inputs: [speech('还有一件事')], mergeOnly: true })
+      assert.equal(response.status, 409)
+      assert.equal(((await response.json()) as { error: { code: string } }).error.code, 'NOT_THINKING')
+    } finally { await h.close() }
+  })
+
   it('rejects malformed inputs', async () => {
     const h = await boot(new ScriptedThinker([]))
     try {
