@@ -34,7 +34,7 @@ import { MemoryReviewQueue } from './memory-review.ts'
 import type { ConsolePlugin } from '../console/plugin.ts'
 import type { MemoryReviewMode } from './memory-review.ts'
 import { DEFAULT_VOCABULARY, ThinkingLoop, Willingness, decideThought } from '../kernel/thinking/index.ts'
-import type { ThinkInput, Thinker, ThinkingPolicy, ThinkingVocabulary, ThoughtDraft, ThoughtResult, WillingnessConfig } from '../kernel/thinking/index.ts'
+import type { ThinkInput, Thinker, ThinkingLoopOptions, ThinkingPolicy, ThinkingVocabulary, ThoughtDraft, ThoughtResult, WillingnessConfig } from '../kernel/thinking/index.ts'
 
 export interface InstanceRuntimeDeps {
     configureInstance?: (instance: InstanceRuntime, context: InstanceExtensionContext) => InstanceExtension
@@ -55,6 +55,8 @@ export interface InstanceRuntimeDeps {
   /** Thinking loop model (cheap and fast); absent disables `think`. */
   thinker?: Thinker
   willingness?: Partial<WillingnessConfig>
+  /** Thinking loop timing; replays inject a sleep that advances a virtual clock. */
+  thinkingLoop?: Pick<ThinkingLoopOptions, 'maxChain' | 'holdMs' | 'sleep'>
 }
 
 export interface InstanceRuntime {
@@ -351,7 +353,7 @@ export class InstanceRuntimeManager {
       ...(runtime.histories.get(opts.identityKey) ?? []).slice(-6).map((message) => `${message.role === 'user' ? '对方' : '她'}：${message.content.slice(0, 200)}`),
       ...(this.#unanswered.get(unansweredKey) ?? []).map((line) => `对方（她没接话）：${line}`),
     ]
-    const loop = new ThinkingLoop({ thinker })
+    const loop = new ThinkingLoop({ thinker, ...this.#deps.thinkingLoop })
     const run = await loop.run({
       inputs: opts.inputs,
       drain: opts.drain ?? (() => []),

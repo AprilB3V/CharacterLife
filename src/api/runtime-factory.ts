@@ -83,6 +83,7 @@ export interface RuntimeConfig {
    */
   thinkProvider?: LLMProvider | null
   willingness?: Partial<WillingnessConfig>
+  thinkingLoop?: InstanceRuntimeDeps['thinkingLoop']
   clock?: Clock
   budget?: Partial<ContextBudget>
   auditFile?: string | null
@@ -239,6 +240,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     world,
     ...(thinkProvider ? { thinker: new LlmThinker({ provider: thinkProvider }) } : {}),
     willingness: config.willingness,
+    thinkingLoop: config.thinkingLoop,
   })
 
   const gateway = new MessageGateway({
