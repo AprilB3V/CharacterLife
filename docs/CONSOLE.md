@@ -8,9 +8,9 @@
 
 后台在 CL 进程内运行，与聊天 API 共用同一份内存状态，不会出现第二个写入方。
 
-- 鲸鲸视频实例：`examples/video-cohost/start-server.ts` 启动时一并开启，地址 `http://127.0.0.1:8788/`（`CHARACTERLIFE_CONSOLE_PORT` 可改）。
-- 令牌：首次启动生成到 `jingjing-overlay/data/console-token.txt`，也可用 `CHARACTERLIFE_CONSOLE_TOKEN` 指定。它与聊天令牌、世界令牌分开；启动日志只打印文件位置，不打印令牌。
-- 离线演示（内存数据库、脚本模型、模拟事件，不读写真实数据）：`node examples/video-cohost/console-demo.ts`，打开 `http://127.0.0.1:8798/`，演示令牌会打印在终端。
+- 鲸鲸视频实例（扩展仓库 `CharacterLife-VideoCohost`）：其启动入口会一并开启后台，地址 `http://127.0.0.1:8788/`（`CHARACTERLIFE_CONSOLE_PORT` 可改）。
+- 令牌：首次启动生成到扩展的本地数据目录（默认 `jingjing-overlay/data/console-token.txt`），也可用 `CHARACTERLIFE_CONSOLE_TOKEN` 指定。它与聊天令牌、世界令牌分开；启动日志只打印文件位置，不打印令牌。
+- 离线演示（内存数据库、脚本模型、模拟事件，不读写真实数据）：扩展仓库中的 `console-demo.ts`，打开 `http://127.0.0.1:8798/`，演示令牌会打印在终端。
 
 ## 安全边界
 
@@ -45,7 +45,7 @@
 - `act(actionId, params, actorId)` 在服务端执行操作，抛出的错误会以 409 返回给页面；
 - 插件不能提供脚本或 HTML。操作参数只能是标量，需要填写的内容由 `fields` 声明，页面弹窗收集。
 
-鲸鲸的 Probably Stolen 插件（`examples/video-cohost/console-plugin.ts`）有四个面板：世界事件审批（逐条或按顺序批准、切换模式）、剧本（节拍表、推进记录）、每期与 Flag（收尾本期、逐条审核候选记忆、收为承诺时填写截止天数、承诺账本）、事件覆盖（能产生和缺失的事件）。逐条审核全部决定后，审核自动完成；“完成审核”会丢弃未决定的候选记忆，未决定的 flag 留到下一次审核。文件和命令行审核仍然可用。
+鲸鲸的 Probably Stolen 插件（位于扩展仓库 `CharacterLife-VideoCohost`）有四个面板：世界事件审批（逐条或按顺序批准、切换模式）、剧本（节拍表、推进记录）、每期与 Flag（收尾本期、逐条审核候选记忆、收为承诺时填写截止天数、承诺账本）、事件覆盖（能产生和缺失的事件）。逐条审核全部决定后，审核自动完成；“完成审核”会丢弃未决定的候选记忆，未决定的 flag 留到下一次审核。文件和命令行审核仍然可用。
 
 ## 已知限制
 

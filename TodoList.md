@@ -65,3 +65,5 @@
 - **2026-11-01 · CL-012 / Claude**：后台在 CL 进程内运行，只监听 127.0.0.1:8788，使用独立令牌。模型提出的记忆进入待审队列，批准后按原身份写入；关键世界事件实时进入观察，但推进节拍和写剧情记忆要等批准，日常事件直接生效。游戏适配层通过 `consolePlugin()` 提供四个面板。`npm test` 400/400。已知限制：约定识别不经审批，审计页只显示本进程内的事件。
 
 - **2026-11-02 · 进度整理 / Claude**：CL-011、CL-012 此前记为“未提交”，实际已分别提交于 `claude/cl-010-011-video-cohost-season1`（`6e391ef`、`841f918`），并追加修复 `f4a39a8`（对话：结构化输出缺失时重试；放开 token 上限）。本地复跑 `npm test` 404/404、`npm run typecheck` 通过。该分支尚未合并入 `main`；CL-001 仍为下一项优先任务。
+
+- **2026-11-02 · 扩展拆分 / Claude**：鲸鲸视频搭档与第一季剧本（`examples/video-cohost/`、`season/`、相关测试与文档）已移至独立仓库 `AprilB3V/CharacterLife-VideoCohost`，以 submodule 固定本分支 `f4a39a8`。本分支移除这些副本，仅保留核心改动与 `examples/characters/jingjing.ts` 角色模板。`npm test` 389/389，typecheck 通过。核心控制台（`src/console/`）的测试原位于扩展仓库中，本仓库暂无该测试，需补充。
