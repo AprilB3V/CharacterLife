@@ -286,14 +286,15 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
     message: NormalizedMessage,
     notices: string[],
     onReplyDelta?: (text: string) => void,
-    options: { guidance?: string[]; thoughtData?: string[]; preAdmitted?: boolean } = {},
+    options: { guidance?: string[]; thoughtData?: string[]; preAdmitted?: boolean; silentOnBudgetExceeded?: boolean } = {},
   ): Promise<{ reply: string; instanceId: string; sessionId: string; promptTokens: number; completionTokens: number }> {
     const outcome = await runtime.gateway.handleMessage(runtime.sillyTavernAdapter, message, notices, onReplyDelta, options)
-    if (!outcome.reply) {
+    // An empty reply is expected only when the caller asked for silence over the context budget.
+    if (!outcome.reply && !(options.silentOnBudgetExceeded && outcome.status === 'replied')) {
       throw new HttpError(502, 'NO_REPLY', '引擎未产生回复')
     }
     return {
-      reply: outcome.reply,
+      reply: outcome.reply ?? '',
       instanceId: outcome.instanceId ?? '',
       sessionId: outcome.sessionId ?? '',
       promptTokens: outcome.usage?.promptTokens ?? 0,
@@ -449,7 +450,13 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
             const message = runtime.sillyTavernAdapter.build({ messages: [{ role: 'user', content: outcome.text }] }, identity, requestId)
             const brief = rt.extension?.thoughtGuidance?.(outcome.thought) ?? guidanceFor(outcome.thought)
             const result = await runTurn(message, notices, streaming ? (text) => writeEvent({ type: 'delta', text }) : undefined,
-              { guidance: brief.guidance, thoughtData: brief.data, preAdmitted: true })
+              { guidance: brief.guidance, thoughtData: brief.data, preAdmitted: true, silentOnBudgetExceeded: true })
+            if (!result.reply) {
+              // Over the context budget even after degradation: stay silent rather than speak a fixed line.
+              const payload = { reply: '', silent: true, budgetExceeded: true, thought: outcome.thought, instanceId }
+              if (streaming) { writeEvent({ type: 'end', ...payload }); res.end() } else json(res, 200, payload)
+              return
+            }
             const payload = { reply: result.reply, silent: false, thought: { ...outcome.thought, text: result.reply }, instanceId, sessionId: result.sessionId }
             if (streaming) { writeEvent({ type: 'end', ...payload }); res.end() } else json(res, 200, payload)
           } catch (error) {

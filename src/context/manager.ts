@@ -114,11 +114,14 @@ export class ContextManager {
     let degradation: DegradationLevel = 'none'
     let digestText: string | null = null
     let droppedMemoryIds: string[] = []
+    // Ladder 4 swaps in a truncated user text; build() must use it, not the original.
+    let userText = input.userText
+    let userHeader = '【用户这条消息】'
 
     const build = (): { messages: LLMMessage[]; tokens: number; historyTokens: number; memoryTokens: number; userTokens: number } => {
       const recent = turns.slice(turns.length - keptTurns).flatMap((t) => t.messages)
       const memoryBlock = renderMemoryData(memories, input.nowSim)
-      const userContent = `${memoryBlock}\n\n【用户这条消息】\n${input.userText}`
+      const userContent = `${memoryBlock}\n\n${userHeader}\n${userText}`
       const messages: LLMMessage[] = []
       if (digestText) {
         // 摘要永远以「资料」身份出现，并且是 user 角色 —— 不可能变成系统指令。
@@ -129,7 +132,7 @@ export class ContextManager {
 
       const historyTokens = recent.reduce((n, m) => n + estimateTokens(m.content), 0)
       const memoryTokens = estimateTokens(memoryBlock)
-      const userTokens = estimateTokens(input.userText)
+      const userTokens = estimateTokens(userText)
       const total =
         protectedTokens +
         historyTokens +
@@ -189,12 +192,8 @@ export class ContextManager {
         const spare =
           budget.maxPromptTokens - protectedTokens - current.historyTokens - current.memoryTokens
         if (spare >= budget.minUserTokens) {
-          const truncated = truncateToTokens(input.userText, spare - 2)
-          const memoryBlock = renderMemoryData(memories, input.nowSim)
-          current.messages[current.messages.length - 1] = {
-            role: 'user',
-            content: `${memoryBlock}\n\n【用户这条消息（因预算被截断）】\n${truncated}`,
-          }
+          userText = truncateToTokens(input.userText, spare - 2)
+          userHeader = '【用户这条消息（因预算被截断）】'
           current = build()
           degradation = 'hard_trim'
           notes.push('截断本轮用户消息')

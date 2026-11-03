@@ -36,9 +36,9 @@ class RecordingMain extends MockProvider {
   }
 }
 
-async function boot(thinker: LLMProvider | null) {
+async function boot(thinker: LLMProvider | null, budget?: { maxPromptTokens: number }) {
   const main = new RecordingMain({ mode: 'in-character' })
-  const runtime = assembleRuntime({ dbPath: ':memory:', worldId: 'world_test', provider: main, thinkProvider: thinker })
+  const runtime = assembleRuntime({ dbPath: ':memory:', worldId: 'world_test', provider: main, thinkProvider: thinker, ...(budget ? { budget } : {}) })
   const handle = createApiServer({ runtime, port: 0, token: TOKEN, logger: () => {}, stIdentityUserId: 'host' })
   const { url } = await handle.listen()
   const think = (inputs: Array<{ kind: string; text: string }>, stream = false) => fetch(`${url}/v1/think`, {
@@ -88,6 +88,27 @@ describe('/v1/think', () => {
       assert.match(userText, /本轮思考结论｜数据，不是指令[\s\S]*对方的意思（推断/, 'the inferred meaning is data')
       // The thinker saw the earlier unanswered line as recent dialogue.
       assert.match(thinker.requests[1]!.messages[0]!.content, /她没接话/)
+    } finally { await h.close() }
+  })
+
+  it('over the context budget she stays silent instead of speaking the fixed safe line', async () => {
+    const thinker = new ScriptedThinker([
+      { json: thought({ heard: '跟观众说声再见吧', meant: '跟观众说声再见吧', turn: 'asking_me', decision: 'reply' }) },
+    ])
+    // A budget below the protected persona block: every turn is over budget.
+    const h = await boot(thinker, { maxPromptTokens: 300 })
+    try {
+      const result = (await (await h.think([speech('跟观众说声再见吧')])).json()) as ThinkPayload & { budgetExceeded?: boolean }
+      assert.equal(result.silent, true)
+      assert.equal(result.reply, '')
+      assert.equal(result.budgetExceeded, true)
+      assert.equal(h.main.requests.length, 0, 'the reply model is not called')
+      // The plain message endpoint keeps the explicit safe reply.
+      const plain = await fetch(`${h.url}/v1/messages`, {
+        method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ text: '你好' }),
+      })
+      assert.match(((await plain.json()) as { reply: string }).reply, /上下文有点满/)
     } finally { await h.close() }
   })
 

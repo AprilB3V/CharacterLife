@@ -112,6 +112,8 @@ export interface SendOptions {
   guidance?: string[]
   /** Untrusted thinking conclusions (meaning, grounds), injected as data. */
   thoughtData?: string[]
+  /** Return an empty reply instead of the fixed safe reply when the context budget cannot fit. */
+  silentOnBudgetExceeded?: boolean
 }
 
 /** How a decided thought reaches the reply model: trusted guidance plus untrusted data. */
@@ -344,7 +346,15 @@ export class InstanceRuntimeManager {
     const unanswered = [...(this.#unanswered.get(unansweredKey) ?? [])]
 
     service.seedHistory(history)
-    const result = await service.send(opts.text, opts.onReplyDelta, { guidance: opts.guidance, prior: unanswered })
+    const result = await service.send(opts.text, opts.onReplyDelta, {
+      guidance: opts.guidance, prior: unanswered, silentOnBudgetExceeded: opts.silentOnBudgetExceeded,
+    })
+    if (opts.silentOnBudgetExceeded && result.provider === 'context-budget-exceeded') {
+      // Nothing was said: like a silent thought, keep this turn's lines for the next spoken turn.
+      const buffer = [...(this.#unanswered.get(unansweredKey) ?? []), ...opts.text.split('\n').filter(Boolean)].slice(-MAX_UNANSWERED)
+      this.#unanswered.set(unansweredKey, buffer)
+      return result
+    }
     // Only a completed turn consumes them; a failure keeps them for the retry.
     if (unanswered.length) {
       const rest = (this.#unanswered.get(unansweredKey) ?? []).slice(unanswered.length)

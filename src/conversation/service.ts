@@ -191,6 +191,11 @@ export class ConversationService {
       guidance?: string[]
       /** Lines the other party said earlier that got no reply; the model sees them, perception does not repeat them. */
       prior?: readonly string[]
+      /**
+       * When the context budget cannot fit even after every degradation step, return an empty reply
+       * and leave history untouched instead of the fixed safe reply (callers that can stay silent).
+       */
+      silentOnBudgetExceeded?: boolean
     } = {},
   ): Promise<ConversationTurnResult> {
     const userText = options.prior?.length ? [...options.prior, newText].join('\n') : newText
@@ -307,9 +312,14 @@ export class ConversationService {
           protectedTokens: plan.protectedTokens,
           notes: plan.notes,
         })
-        const safeReply = '等一下，我这边上下文有点满了，刚才那段我接不住。你能把要紧的那句再说一遍吗？'
-        this.#history.push({ role: 'user', content: userText })
-        this.#history.push({ role: 'assistant', content: safeReply })
+        // Silent mode: nothing was said, so nothing enters history; the caller keeps the lines for the next turn.
+        const safeReply = options.silentOnBudgetExceeded
+          ? ''
+          : '等一下，我这边上下文有点满了，刚才那段我接不住。你能把要紧的那句再说一遍吗？'
+        if (safeReply) {
+          this.#history.push({ role: 'user', content: userText })
+          this.#history.push({ role: 'assistant', content: safeReply })
+        }
         this.#turnCount++
         this.#recordContextUsage(turnId, 'context-budget-exceeded', 'none', {
           system,

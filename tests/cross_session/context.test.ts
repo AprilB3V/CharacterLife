@@ -142,6 +142,27 @@ describe('Context Manager · 预算与压缩阶梯', () => {
     assert.ok(plan.messages.filter((m) => m.role === 'user').length >= 1)
   })
 
+  it('超长用户消息在硬截断后放得下，而不是放弃调用模型', () => {
+    // Regression: the truncated text used to be overwritten by a rebuild from the original, so the
+    // plan always ended in `exceeded` even when truncation alone would fit.
+    const cm = new ContextManager({ maxPromptTokens: 400, recentTurns: 4, minRecentTurns: 2, minUserTokens: 24 })
+    const userText = '主播这句话。' + '【运行时资料】游戏状态与变化'.repeat(60)
+    const plan = cm.plan({
+      protectedSystem: '你是沈知微。',
+      memories: [memory('m1', '共同经历', '一起修书')],
+      history: history(3),
+      userText,
+      nowSim: 0,
+    })
+    assert.equal(plan.fits, true, `实际降级=${plan.degradation}`)
+    assert.equal(plan.degradation, 'hard_trim')
+    assert.ok(plan.estPromptTokens <= plan.budget)
+    const last = plan.messages.at(-1)!.content
+    assert.match(last, /因预算被截断/)
+    assert.match(last, /主播这句话。/, '截断保留开头的用户发言')
+    assert.ok(last.length < userText.length)
+  })
+
   it('截断到极限时可以只保留用户最后一句', () => {
     const cm = new ContextManager({ maxPromptTokens: 150, recentTurns: 4, minRecentTurns: 0, minUserTokens: 8 })
     const plan = cm.plan({

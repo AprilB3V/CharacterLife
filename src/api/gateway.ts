@@ -175,6 +175,8 @@ export class MessageGateway {
       thoughtData?: string[]
       /** Idempotency and rate limit were already applied by `admit` (the thinking loop). */
       preAdmitted?: boolean
+      /** Over the context budget: reply nothing (empty reply, no delivery) instead of the fixed safe reply. */
+      silentOnBudgetExceeded?: boolean
     } = {},
   ): Promise<InboundOutcome> {
     const { platformStore, identityService, runtimeManager, clock } = this.#opts
@@ -292,8 +294,13 @@ export class MessageGateway {
         notices: [...extraNotices, ...notices],
         ...(options.guidance?.length ? { guidance: options.guidance } : {}),
         ...(options.thoughtData?.length ? { thoughtData: options.thoughtData } : {}),
+        ...(options.silentOnBudgetExceeded ? { silentOnBudgetExceeded: true } : {}),
       })
       runtimeManager.saveSnapshot(runtime)
+      if (options.silentOnBudgetExceeded && !result.reply) {
+        // Silent over-budget turn: there is nothing to deliver.
+        return { reply: '', sessionId, delivery: null, status: 'replied' as InboundStatus, usage: null }
+      }
 
       // 4.4 发送回复
       const outbound = this.#outbound(message, result.reply)
