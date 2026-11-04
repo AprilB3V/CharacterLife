@@ -104,14 +104,21 @@ export interface DecideContext {
 export function decideThought(draft: ThoughtDraft, ctx: DecideContext): ThoughtResult {
   const v = ctx.vocabulary
   const allowed = new Set(ctx.allowed)
-  const askedMe = draft.turn === 'asking_me'
+  // Being asked needs someone speaking: with events only, a line addressed to someone else in the
+  // world (an NPC asking the shopkeeper) must not force her to answer.
+  const heardSpeech = ctx.utterances > 0
+  const askedMe = draft.turn === 'asking_me' && heardSpeech
   const wants = draft.decision !== v.silent
   const value = ctx.willingness.observe({ addressed: ctx.addressed, question: askedMe, events: ctx.events, utterances: ctx.utterances }, ctx.nowSim)
   const effective = Math.min(1, value + (wants ? ctx.willingness.config.thinkerWants : 0))
   const result = (decision: string, ruling: string): ThoughtResult => ({ ...draft, decision, proposed: draft.decision, ruling, willingness: effective })
   const replyOr = (fallback: string) => allowed.has(v.reply) ? v.reply : fallback
 
-  if (draft.fallback) return result(allowed.has(draft.decision) ? draft.decision : replyOr(v.silent), 'thinker unavailable: reply as before')
+  if (draft.fallback) {
+    // Without speech there is nothing to reply to "as before".
+    if (!heardSpeech) return result(v.silent, 'thinker unavailable and nobody spoke: stay silent')
+    return result(allowed.has(draft.decision) ? draft.decision : replyOr(v.silent), 'thinker unavailable: reply as before')
+  }
   // Low confidence only changes a reply she gives anyway into a short question; it never makes her speak.
   const unsure = draft.meantConf < CLARIFY_BELOW && allowed.has(v.ask)
   const clarify = () => result(v.ask, `meantConf ${draft.meantConf.toFixed(2)} below ${CLARIFY_BELOW}: ask to confirm`)

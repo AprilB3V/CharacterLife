@@ -186,6 +186,16 @@ describe('decision rules', () => {
   it('a thinker failure keeps the old behavior instead of going mute', () => {
     assert.equal(decideThought(draft({ decision: 'reply', fallback: true }), ctx()).decision, 'reply')
   })
+
+  it('with events only nobody asked her: asking_me does not force a reply, and a thinker failure stays silent', () => {
+    const eventsOnly = ctx({ utterances: 0, events: 3 })
+    const asked = decideThought(draft({ decision: 'silent', turn: 'asking_me' }), eventsOnly)
+    assert.equal(asked.decision, 'silent', 'an NPC asking the shopkeeper is not a question to her')
+    assert.equal(asked.ruling, 'thinker chose silence')
+    assert.equal(decideThought(draft({ decision: 'reply', fallback: true }), ctx({ utterances: 0, events: 3 })).decision, 'silent')
+    // When she does want to speak on events, willingness still decides as usual.
+    assert.equal(decideThought(draft({ decision: 'tease', turn: 'asking_me' }), ctx({ utterances: 0, events: 3 })).decision, 'tease')
+  })
 })
 
 describe('willingness', () => {
