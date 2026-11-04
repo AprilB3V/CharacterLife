@@ -395,6 +395,11 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 
 ## 15. 文档索引
 
+**协作入口**
+
+- [`AGENTS.md`](AGENTS.md)：给 AI 协作者（Claude Code / Codex / GPT）的开工顺序、硬约束与收尾规则
+- [`TodoList.md`](TodoList.md)：任务状态与交接的单一入口
+
 **引擎**
 
 - [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md)：宪法 · 完整性微内核（K1–K6，V0.6 已实现）
