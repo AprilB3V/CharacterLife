@@ -36,6 +36,7 @@
     "world:real": "node experiments/real-model/world-intent.ts",
     "sandbox": "node experiments/sandbox/run.ts",
     "sandbox:h5": "node experiments/sandbox/h5.ts",
+    "sandbox:live": "node experiments/sandbox/live-server.ts",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:builtin": "node --test tests/",
     "typecheck": "tsc -p tsconfig.json",
