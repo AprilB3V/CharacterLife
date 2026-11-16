@@ -32,6 +32,7 @@
     "continuity": "node experiments/persona-continuity/run.ts",
     "real:smoke": "node experiments/real-model/smoke.ts",
     "real:continuity": "node experiments/real-model/continuity.ts",
+    "real:baseline": "node experiments/real-model/baseline.ts",
     "world:real": "node experiments/real-model/world-intent.ts",
     "sandbox": "node experiments/sandbox/run.ts",
     "sandbox:h5": "node experiments/sandbox/h5.ts",
