@@ -99,6 +99,9 @@ test('probes: expected word must appear, forbidden word must not', () => {
     assert.equal(attempt(probeLine, [call()], '我不太记得了。').probeHit, false)
     assert.equal(attempt(mangoLine, [call()], '芒果班戟不错。').probeHit, false)
     assert.equal(attempt(mangoLine, [call()], '双皮奶吧。').probeHit, true)
+    assert.equal(attempt(mangoLine, [call()], '先绕开芒果，你过敏。双皮奶吧。').probeHit, true)
+    assert.equal(attempt(mangoLine, [call()], '双皮奶，上面不加芒果粒那种。').probeHit, true)
+    assert.equal(attempt(mangoLine, [call()], '你过敏我记得。芒果班戟倒是不错。').probeHit, false)
     assert.equal(attempt(plainLine, [call()], '在。').probeHit, null)
 })
 

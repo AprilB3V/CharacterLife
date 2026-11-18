@@ -29,6 +29,8 @@ import { detectInjectionMarkers, lexicalOverlap, sanitizeForMemory, tokenize } f
 import { rankMemories } from './ranking.ts'
 import { recallByCues } from './cues.ts'
 import type { CueRecall } from './cues.ts'
+import { selectPinned } from './pins.ts'
+import type { PinnedOptions } from './pins.ts'
 import type { RankParts } from './ranking.ts'
 import type { SnapshotSection } from '../storage/snapshot.ts'
 
@@ -243,6 +245,11 @@ export class MemoryStore implements SnapshotSection {
       entry: cloneEntry(r.entry),
       keys: r.keys,
     }))
+  }
+
+  /** Pinned layer: safety / boundary / address facts carried on every turn. */
+  pinned(opts: PinnedOptions): MemoryEntry[] {
+    return selectPinned(this.#user, opts).map(cloneEntry)
   }
 
   /** 软删除：保留审计痕迹。权限由 Policy 层检查，Memory 只执行存储语义。 */

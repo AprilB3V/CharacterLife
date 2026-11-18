@@ -10,6 +10,7 @@
  *   node experiments/real-model/baseline.ts --provider mock
  *   node experiments/real-model/baseline.ts --provider deepseek --sessions 1 --turns 10 --max-calls 40
  *   node experiments/real-model/baseline.ts --provider doubao --max-calls 800
+ *   node experiments/real-model/baseline.ts --provider deepseek --script memory --max-calls 400
  *
  * Real providers read the key from the environment only and refuse to run without --max-calls.
  */
@@ -31,6 +32,8 @@ import { defineTemplate } from '../../src/character/template.ts'
 import { PersistentSession } from '../../src/character/persistent-session.ts'
 import { shenZhiweiProfile, shenZhiweiVoice } from '../../examples/characters/shen-zhiwei.ts'
 import { BASELINE_SCRIPT, SCRIPT_VERSION } from './baseline-script.ts'
+import type { ScriptLine } from './baseline-script.ts'
+import { MEMORY_SCRIPT, MEMORY_SCRIPT_VERSION } from './memory-script.ts'
 import { classifyAttempt, needsResend, summarize } from './baseline-classify.ts'
 import type { AttemptRecord, CallObservation } from './baseline-classify.ts'
 
@@ -46,10 +49,16 @@ const START_WALL = '2026-11-16T09:00:00.000Z'
 const TURN_STEP_MS = 2 * 60 * 1000
 const INSTANCE_ID = 'inst_m0_baseline'
 
+const SCRIPTS: Record<string, { lines: ScriptLine[]; version: string }> = {
+    baseline: { lines: BASELINE_SCRIPT, version: SCRIPT_VERSION },
+    memory: { lines: MEMORY_SCRIPT, version: MEMORY_SCRIPT_VERSION },
+}
+
 type ProviderName = 'mock' | keyof typeof REAL_PROFILES
 
 interface Args {
     provider: ProviderName
+    script: string
     sessions: number
     turns: number
     maxCalls: number
@@ -76,12 +85,16 @@ function parseArgs(argv: string[]): Args {
         if (!Number.isInteger(n) || n <= 0) throw new Error(`--${name} must be a positive integer`)
         return n
     }
+    const script = values.get('script') ?? 'baseline'
+    if (!(script in SCRIPTS)) throw new Error(`Unknown script "${script}" (${Object.keys(SCRIPTS).join(' | ')})`)
+    const lines = SCRIPTS[script]!.lines
     const maxCalls = int('max-calls', provider === 'mock' ? Number.MAX_SAFE_INTEGER : 0)
     if (maxCalls === 0) throw new Error('A real provider needs --max-calls <n>: the hard cap on model calls.')
     return {
         provider,
+        script,
         sessions: int('sessions', DEFAULT_SESSIONS),
-        turns: Math.min(int('turns', BASELINE_SCRIPT.length), BASELINE_SCRIPT.length),
+        turns: Math.min(int('turns', lines.length), lines.length),
         maxCalls,
         seed: int('seed', DEFAULT_SEED),
         out: values.get('out') ?? null,
@@ -188,12 +201,13 @@ async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2))
     const here = dirname(fileURLToPath(import.meta.url))
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '')
-    const outDir = args.out ?? join(here, '.data', `baseline-${args.provider}-${stamp}`)
+    const chosen = SCRIPTS[args.script]!
+    const outDir = args.out ?? join(here, '.data', `${args.script}-${args.provider}-${stamp}`)
     mkdirSync(outDir, { recursive: true })
     const eventsFile = join(outDir, 'events.jsonl')
     const attemptsFile = join(outDir, 'attempts.jsonl')
 
-    const script = BASELINE_SCRIPT.slice(0, args.turns)
+    const script = chosen.lines.slice(0, args.turns)
     const position = { session: 0, line: 0, attempt: 0 }
     const provider = new RecordingProvider(buildProvider(args.provider), args.maxCalls, eventsFile, () => ({ ...position }))
 
@@ -207,8 +221,8 @@ async function main(): Promise<void> {
         maxCalls: args.provider === 'mock' ? null : args.maxCalls,
         seed: args.seed,
         character: shenZhiweiProfile.name,
-        scriptVersion: SCRIPT_VERSION,
-        scriptHash: createHash('sha256').update(JSON.stringify(BASELINE_SCRIPT)).digest('hex'),
+        scriptVersion: chosen.version,
+        scriptHash: createHash('sha256').update(JSON.stringify(chosen.lines)).digest('hex'),
         commit: gitCommit(here),
         kernelDirtyHash: gitDirtyHash(here),
     }, null, 4), 'utf8')

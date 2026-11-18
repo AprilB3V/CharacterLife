@@ -10,6 +10,8 @@
  */
 
 import { CUE_TAG_PREFIX } from '../kernel/memory/cues.ts'
+import { isPinKind, PIN_TAG_PREFIX } from '../kernel/memory/pins.ts'
+import type { PinKind } from '../kernel/memory/pins.ts'
 import type {
   BehaviorDecision,
   CharacterProfile,
@@ -66,7 +68,8 @@ const OUTPUT_PROTOCOL_BODY = `【输出协议】
   "memoryWrites": [
     { "kind": "episodic" | "user", "title": "短标题", "content": "这条记忆的内容",
       "status": "fact" | "speculation" | "fiction", "salience": 0.0-1.0, "tags": ["..."],
-      "cues": ["以后用户可能用来提起这件事的 1-4 个词：必须含用户平时最可能说的最短叫法（单字也行），再加上位词或具体名字，例如 琴、钢琴、学琴、乐器"] }
+      "cues": ["以后用户可能用来提起这件事的 1-4 个词：必须含用户平时最可能说的最短叫法（单字也行），再加上位词或具体名字，例如 琴、钢琴、学琴、乐器"],
+      "pin": 可选，仅 user 记忆："safety" 过敏/疾病/用药 | "boundary" 用户不想碰的话题 | "address" 用户想要的称呼；其余省略 }
   ]`
 
 const OUTPUT_PROTOCOL_WORLD_FIELD = `,
@@ -299,7 +302,7 @@ export function parseEnvelope(raw: string, opts: ParseEnvelopeOptions = {}): Par
               : 'speculation') as EpistemicStatus,
           salience: typeof m.salience === 'number' ? Math.min(1, Math.max(0, m.salience)) : 0.5,
           // Cues ride in tags with a prefix: no schema change needed.
-          tags: mergeCueTags(m.tags, m.cues),
+          tags: mergeMemoryTags(m.tags, m.cues, m.kind === 'user' && isPinKind(m.pin) ? m.pin : null),
         }))
         .filter((m) => m.title.length > 0 && m.content.length > 0)
     : []
@@ -323,20 +326,21 @@ const MAX_CUE_LENGTH = 8
 const MAX_CUES = 4
 
 /**
- * Cues go first, prefixed, so the store's tag cap cannot drop them and the cue channel can tell
+ * The pin tag and cues go first, prefixed, so the store's tag cap cannot drop them and the cue channel can tell
  * them from category tags such as 日常 or 宠物.
  */
-function mergeCueTags(tags: unknown, cues: unknown): string[] {
-  const out: string[] = []
+function mergeMemoryTags(tags: unknown, cues: unknown, pin: PinKind | null): string[] {
+  // The pin tag only comes from the dedicated field; `pin:` in plain tags is dropped.
+  const out: string[] = pin ? [`${PIN_TAG_PREFIX}${pin}`] : []
   if (Array.isArray(cues)) {
     for (const raw of cues) {
       const value = String(raw).trim()
       const tag = `${CUE_TAG_PREFIX}${value}`
       if (value.length === 0 || value.length > MAX_CUE_LENGTH || out.includes(tag)) continue
       out.push(tag)
-      if (out.length >= MAX_CUES) break
+      if (out.filter((t) => t.startsWith(CUE_TAG_PREFIX)).length >= MAX_CUES) break
     }
   }
-  if (Array.isArray(tags)) out.push(...tags.map(String))
+  if (Array.isArray(tags)) out.push(...tags.map(String).filter((t) => !t.startsWith(PIN_TAG_PREFIX)))
   return out
 }

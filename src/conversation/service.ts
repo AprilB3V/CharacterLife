@@ -79,6 +79,10 @@ export interface ConversationConfig {
   memoryBudgetChars: number
   /** Extra memories recalled by cue keys, beside the lexical top-k; 0 disables the channel */
   cueLimit: number
+  /** Pinned safety / boundary / address facts carried on every turn; 0 disables the layer */
+  pinnedLimit: number
+  /** Character budget (title + content) of the pinned layer */
+  pinnedBudgetChars: number
 }
 
 export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
@@ -90,6 +94,8 @@ export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
   memoryLimit: 5,
   memoryBudgetChars: 900,
   cueLimit: 2,
+  pinnedLimit: 5,
+  pinnedBudgetChars: 300,
 }
 
 export interface ConversationServiceOptions {
@@ -247,6 +253,9 @@ export class ConversationService {
         }
       : undefined
 
+    // Pinned layer first: it rides every turn, so the other channels need not spend slots on it.
+    const pinned = this.#workspace.memory.pinned({ limit: this.#config.pinnedLimit, budgetChars: this.#config.pinnedBudgetChars })
+    const pinnedIds = new Set(pinned.map((m) => m.id))
     const retrieved = this.#workspace.memory.search(userText, {
       nowSim,
       limit: this.#config.memoryLimit,
@@ -255,10 +264,10 @@ export class ConversationService {
     // Second channel: memories named by a cue in the user's words, outside the lexical top-k.
     // A cue hit that is also in the lexical top-k moves to the cue group, so it keeps cue priority
     // when the context budget trims memories.
-    const cued = this.#workspace.memory.recallByCues(userText, { limit: this.#config.cueLimit })
+    const cued = this.#workspace.memory.recallByCues(userText, { limit: this.#config.cueLimit, excludeIds: pinnedIds })
     const cuedIds = new Set(cued.map((r) => r.entry.id))
-    const lexicalOnly = retrieved.map((r) => r.entry).filter((m) => !cuedIds.has(m.id))
-    const recalledMemories = [...lexicalOnly, ...cued.map((r) => r.entry)]
+    const lexicalOnly = retrieved.map((r) => r.entry).filter((m) => !cuedIds.has(m.id) && !pinnedIds.has(m.id))
+    const recalledMemories = [...pinned, ...lexicalOnly, ...cued.map((r) => r.entry)]
     const recalledIds = recalledMemories.map((m) => m.id)
 
     const blockedReasons: PolicyCode[] = []
@@ -323,6 +332,7 @@ export class ConversationService {
         protectedSystem: system,
         memories: lexicalOnly,
         cueMemories: cued.map((r) => r.entry),
+        pinnedMemories: pinned,
         history: this.#history,
         userText: contextUserText,
         nowSim,
@@ -562,6 +572,7 @@ export class ConversationService {
       rejected: outcome.rejected.length,
       retrieved: retrieved.map((r) => r.entry.id),
       cued: cued.map((r) => ({ id: r.entry.id, keys: r.keys })),
+      pinned: pinned.map((m) => m.id),
       injectionMarkers: signals.injectionMarkers,
       intents: signals.intents,
     })

@@ -57,6 +57,8 @@ export interface ContextPlanInput {
   memories: MemoryEntry[]
   /** Recalled by a cue in the user's words: outside memoryLimit, trimmed only after `memories` */
   cueMemories?: MemoryEntry[]
+  /** Pinned safety / boundary / address facts: outside memoryLimit, trimmed only after everything else */
+  pinnedMemories?: MemoryEntry[]
   history: LLMMessage[]
   userText: string
   nowSim: number
@@ -114,7 +116,8 @@ export class ContextManager {
     let keptTurns = Math.min(budget.recentTurns, turns.length)
     let lexicalMemories = input.memories.slice(0, budget.memoryLimit)
     let cueMemories = input.cueMemories ?? []
-    let memories = [...lexicalMemories, ...cueMemories]
+    let pinnedMemories = input.pinnedMemories ?? []
+    let memories = [...pinnedMemories, ...lexicalMemories, ...cueMemories]
     let degradation: DegradationLevel = 'none'
     let digestText: string | null = null
     let droppedMemoryIds: string[] = []
@@ -158,12 +161,19 @@ export class ContextManager {
 
       // 阶梯 2：按打分从低到高丢弃记忆（memories 已按分数降序）
       while (current.tokens > budget.maxPromptTokens && memories.length > 0) {
-        // Lowest lexical score first; cue-recalled memories go last.
-        const fromLexical = lexicalMemories.length > 0
-        const dropped = fromLexical ? lexicalMemories[lexicalMemories.length - 1]! : cueMemories[cueMemories.length - 1]!
-        if (fromLexical) lexicalMemories = lexicalMemories.slice(0, -1)
-        else cueMemories = cueMemories.slice(0, -1)
-        memories = [...lexicalMemories, ...cueMemories]
+        // Lowest lexical score first, then cue-recalled memories, pinned facts last.
+        let dropped: MemoryEntry
+        if (lexicalMemories.length > 0) {
+          dropped = lexicalMemories[lexicalMemories.length - 1]!
+          lexicalMemories = lexicalMemories.slice(0, -1)
+        } else if (cueMemories.length > 0) {
+          dropped = cueMemories[cueMemories.length - 1]!
+          cueMemories = cueMemories.slice(0, -1)
+        } else {
+          dropped = pinnedMemories[pinnedMemories.length - 1]!
+          pinnedMemories = pinnedMemories.slice(0, -1)
+        }
+        memories = [...pinnedMemories, ...lexicalMemories, ...cueMemories]
         droppedMemoryIds = [...droppedMemoryIds, dropped.id]
         current = build()
         degradation = 'trim_memory'

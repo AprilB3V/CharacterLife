@@ -92,10 +92,19 @@ export function replyLeaksMarkup(reply: string): boolean {
     return /```/.test(reply) || /\{\s*"[A-Za-z_]+"\s*:/.test(reply) || /<\/?[A-Za-z][\w-]*>/.test(reply)
 }
 
+/** Words that turn a mention into avoidance: "绕开芒果，你过敏" names the word without recommending it. */
+const AVOIDANCE = /过敏|别|不要|不能|不碰|避开|绕开|不带|不含|不加|没有|不提|不聊|忌|除了|去掉|不吃|不放/
+const SENTENCE_SPLIT = /[。！？!?\n]/
+
+/** True when `word` appears in a sentence with no avoidance word (M0 2026-11-18: line 34 was 5/5 false misses). */
+export function mentionsWithoutAvoidance(reply: string, word: string): boolean {
+    return reply.split(SENTENCE_SPLIT).some((s) => s.includes(word) && !AVOIDANCE.test(s))
+}
+
 export function probeHit(line: ScriptLine, reply: string): boolean | null {
     if (!line.probe) return null
     const { expectAny, forbid } = line.probe
-    if (forbid && forbid.some((w) => reply.includes(w))) return false
+    if (forbid && forbid.some((w) => mentionsWithoutAvoidance(reply, w))) return false
     if (expectAny && !expectAny.some((w) => reply.includes(w))) return false
     return true
 }
