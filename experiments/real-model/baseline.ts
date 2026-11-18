@@ -12,6 +12,7 @@
  *   node experiments/real-model/baseline.ts --provider doubao --max-calls 800
  *   node experiments/real-model/baseline.ts --provider deepseek --script memory --max-calls 400
  *   node experiments/real-model/baseline.ts --provider deepseek --script memory --pinned-limit 0 --max-calls 400
+ *   node experiments/real-model/baseline.ts --provider deepseek --script curve --memory-curve off --max-calls 300
  *
  * Real providers read the key from the environment only and refuse to run without --max-calls.
  */
@@ -35,6 +36,7 @@ import { shenZhiweiProfile, shenZhiweiVoice } from '../../examples/characters/sh
 import { BASELINE_SCRIPT, SCRIPT_VERSION } from './baseline-script.ts'
 import type { ScriptLine } from './baseline-script.ts'
 import { MEMORY_SCRIPT, MEMORY_SCRIPT_VERSION } from './memory-script.ts'
+import { CURVE_SCRIPT, CURVE_SCRIPT_VERSION } from './curve-script.ts'
 import { classifyAttempt, needsResend, summarize } from './baseline-classify.ts'
 import type { AttemptRecord, CallObservation } from './baseline-classify.ts'
 
@@ -48,11 +50,13 @@ const DEFAULT_SESSIONS = 5
 const DEFAULT_SEED = 20261116
 const START_WALL = '2026-11-16T09:00:00.000Z'
 const TURN_STEP_MS = 2 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
 const INSTANCE_ID = 'inst_m0_baseline'
 
 const SCRIPTS: Record<string, { lines: ScriptLine[]; version: string }> = {
     baseline: { lines: BASELINE_SCRIPT, version: SCRIPT_VERSION },
     memory: { lines: MEMORY_SCRIPT, version: MEMORY_SCRIPT_VERSION },
+    curve: { lines: CURVE_SCRIPT, version: CURVE_SCRIPT_VERSION },
 }
 
 type ProviderName = 'mock' | keyof typeof REAL_PROFILES
@@ -62,6 +66,8 @@ interface Args {
     script: string
     /** null keeps the kernel default */
     pinnedLimit: number | null
+    /** false turns the memory curve off */
+    memoryCurve: boolean
     sessions: number
     turns: number
     maxCalls: number
@@ -97,6 +103,7 @@ function parseArgs(argv: string[]): Args {
         provider,
         script,
         pinnedLimit: values.has('pinned-limit') ? nonNegative(values.get('pinned-limit')!, 'pinned-limit') : null,
+        memoryCurve: onOff(values.get('memory-curve') ?? 'on', 'memory-curve'),
         sessions: int('sessions', DEFAULT_SESSIONS),
         turns: Math.min(int('turns', lines.length), lines.length),
         maxCalls,
@@ -109,6 +116,11 @@ function nonNegative(raw: string, name: string): number {
     const n = Number(raw)
     if (!Number.isInteger(n) || n < 0) throw new Error(`--${name} must be a non-negative integer`)
     return n
+}
+
+function onOff(raw: string, name: string): boolean {
+    if (raw !== 'on' && raw !== 'off') throw new Error(`--${name} must be on or off`)
+    return raw === 'on'
 }
 
 function buildProvider(name: ProviderName): LLMProvider {
@@ -212,7 +224,10 @@ async function main(): Promise<void> {
     const here = dirname(fileURLToPath(import.meta.url))
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '')
     const chosen = SCRIPTS[args.script]!
-    const conversation = args.pinnedLimit === null ? {} : { pinnedLimit: args.pinnedLimit }
+    const conversation = {
+        ...(args.pinnedLimit === null ? {} : { pinnedLimit: args.pinnedLimit }),
+        ...(args.memoryCurve ? {} : { memoryCurve: null }),
+    }
     const outDir = args.out ?? join(here, '.data', `${args.script}-${args.provider}-${stamp}`)
     mkdirSync(outDir, { recursive: true })
     const eventsFile = join(outDir, 'events.jsonl')
@@ -272,6 +287,7 @@ async function main(): Promise<void> {
         })
         try {
             for (const line of script) {
+                if (line.gapDays) session.workspace.advanceTo(clock.nowSim() + line.gapDays * DAY_MS)
                 for (let attempt = 1; attempt <= 1 + MAX_RESENDS; attempt++) {
                     Object.assign(position, { session: s, line: line.n, attempt })
                     provider.buffer = []

@@ -34,6 +34,7 @@ import type {
   TimelineEvent,
   EpistemicStatus,
 } from '../types.ts'
+import type { RecallState } from '../kernel/memory/curve.ts'
 import type { Clock } from '../kernel/util/clock.ts'
 import { DAY, HOUR } from '../kernel/util/clock.ts'
 import type { IdFactory } from '../kernel/util/ids.ts'
@@ -116,6 +117,8 @@ export interface WorkspaceStateDump {
   runtime: unknown
   episodic: MemoryEntry[]
   user: MemoryEntry[]
+  /** Memory curve state by memory id; absent in dumps from before the curve */
+  recall?: Record<string, RecallState>
 }
 
 export interface AdvanceOutcome {
@@ -223,6 +226,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
       runtime: this.toJSON(),
       episodic: all.filter((e) => e.kind === 'episodic'),
       user: all.filter((e) => e.kind === 'user'),
+      recall: this.memory.recallStates(),
     }
   }
 
@@ -234,6 +238,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
     runtime?: unknown
     episodic?: MemoryEntry[]
     user?: MemoryEntry[]
+    recall?: Record<string, RecallState>
   }): void {
     if (state.episodic || state.user || state.relationship || state.dynamic) {
       this.memory.fromJSON({
@@ -241,6 +246,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
         user: state.user ?? [],
         dynamicState: state.dynamic,
         relationship: state.relationship,
+        recall: state.recall,
       })
     }
     if (state.timeline) this.timeline.fromJSON(state.timeline)

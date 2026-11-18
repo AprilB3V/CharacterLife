@@ -31,6 +31,8 @@ export interface RankOptions {
   /** 累计字符预算（标题+正文） */
   budgetChars?: number
   halfLifeMs?: number
+  /** Memory curve: when given, its 0..1 retention replaces the half-life recency term */
+  retention?: (entry: MemoryEntry) => number
 }
 
 const DEFAULT_HALF_LIFE = 2 * 24 * 60 * 60 * 1000
@@ -62,7 +64,7 @@ export function rankMemories(
     const docTokens = tokenize(`${entry.title} ${entry.content} ${entry.tags.join(' ')}`)
     const lexical = qTokens.length === 0 ? 0 : lexicalOverlap(qTokens, docTokens)
     const age = Math.max(0, opts.nowSim - entry.createdAtSim)
-    const recency = Math.pow(0.5, age / halfLife)
+    const recency = opts.retention ? opts.retention(entry) : Math.pow(0.5, age / halfLife)
     const status = statusWeight(entry.status)
     const confirmed = entry.confirmed ? 1 : 0
     let score = 0.45 * lexical + 0.25 * entry.salience + 0.2 * recency + 0.1 * status + 0.05 * confirmed

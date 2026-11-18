@@ -59,6 +59,8 @@ export interface ContextPlanInput {
   cueMemories?: MemoryEntry[]
   /** Pinned safety / boundary / address facts: outside memoryLimit, trimmed only after everything else */
   pinnedMemories?: MemoryEntry[]
+  /** Memories rendered as a vague impression (memory curve) */
+  fuzzyIds?: ReadonlySet<string>
   history: LLMMessage[]
   userText: string
   nowSim: number
@@ -76,6 +78,8 @@ export interface ContextPlan {
   degradation: DegradationLevel
   droppedHistoryTurns: number
   droppedMemoryIds: string[]
+  /** Memories actually rendered into the prompt, after memoryLimit and budget trimming */
+  promptMemoryIds: string[]
   digestedTurns: number
   digestText: string | null
   notes: string[]
@@ -127,7 +131,7 @@ export class ContextManager {
 
     const build = (): { messages: LLMMessage[]; tokens: number; historyTokens: number; memoryTokens: number; userTokens: number } => {
       const recent = turns.slice(turns.length - keptTurns).flatMap((t) => t.messages)
-      const memoryBlock = renderMemoryData(memories, input.nowSim)
+      const memoryBlock = renderMemoryData(memories, input.nowSim, input.fuzzyIds)
       const userContent = `${memoryBlock}\n\n${userHeader}\n${userText}`
       const messages: LLMMessage[] = []
       if (digestText) {
@@ -239,6 +243,7 @@ export class ContextManager {
       degradation,
       droppedHistoryTurns: turns.length - keptTurns,
       droppedMemoryIds,
+      promptMemoryIds: fits ? memories.map((m) => m.id) : [],
       digestedTurns: digestText ? turns.length - keptTurns : 0,
       digestText,
       notes,

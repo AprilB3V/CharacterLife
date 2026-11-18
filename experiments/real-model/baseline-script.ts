@@ -23,6 +23,8 @@ export interface ScriptLine {
     /** The model is expected to write a memory on this turn (F6a check). */
     expectMemory?: boolean
     probe?: ScriptProbe
+    /** Simulated days to skip before this line (curve script) */
+    gapDays?: number
 }
 
 const LONG_COMPLAINT = [

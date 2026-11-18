@@ -32,6 +32,7 @@ import { rankMemories } from '../kernel/memory/ranking.ts'
 import type { RankedMemory } from '../kernel/memory/ranking.ts'
 import type { TemplateEventSpec } from '../character/template.ts'
 import { SCHEMA_VERSION } from './schema.ts'
+import type { RecallState } from '../kernel/memory/curve.ts'
 
 /* ==========================================================================
  * 事件（append-only）
@@ -816,6 +817,32 @@ export class CharacterPersistence {
     return rows.map(rowToMemory)
   }
 
+  /** Memory curve: upsert the recall state of one memory (no event: it changes on most turns). */
+  upsertMemoryRecall(instanceId: string, memoryId: string, state: RecallState): void {
+    this.requireInstance(instanceId)
+    this.#db
+      .prepare(
+        `INSERT INTO memory_recall (instance_id, memory_id, stability_ms, last_recalled_sim, recalls)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(instance_id, memory_id) DO UPDATE SET
+           stability_ms = excluded.stability_ms,
+           last_recalled_sim = excluded.last_recalled_sim,
+           recalls = excluded.recalls`,
+      )
+      .run(instanceId, memoryId, state.stability, state.lastRecalledSim, state.recalls)
+  }
+
+  listMemoryRecall(instanceId: string): Record<string, RecallState> {
+    const rows = this.#db
+      .prepare('SELECT memory_id, stability_ms, last_recalled_sim, recalls FROM memory_recall WHERE instance_id = ?')
+      .all(instanceId) as Array<{ memory_id: string; stability_ms: number; last_recalled_sim: number | null; recalls: number }>
+    return Object.fromEntries(rows.map((r) => [r.memory_id, {
+      stability: r.stability_ms,
+      lastRecalledSim: r.last_recalled_sim,
+      recalls: r.recalls,
+    }]))
+  }
+
   softDeleteMemory(instanceId: string, memoryId: string, sim: number): boolean {
     const info = this.#db
       .prepare('UPDATE memories SET deleted_at_sim = ? WHERE instance_id = ? AND id = ? AND deleted_at_sim IS NULL')
@@ -1062,6 +1089,8 @@ export class CharacterPersistence {
     instance: CharacterInstance
     state: PersistedState | null
     memories: MemoryEntry[]
+    /** Memory curve state by memory id */
+    memoryRecall: Record<string, RecallState>
     sessions: SessionRecord[]
     conflicts: StoredConflict[]
     events: PersistedEvent[]
@@ -1072,6 +1101,7 @@ export class CharacterPersistence {
       instance: this.requireInstance(instanceId),
       state: this.loadState(instanceId),
       memories: this.listMemories(instanceId, { includeDeleted: true }),
+      memoryRecall: this.listMemoryRecall(instanceId),
       sessions: this.listSessions(instanceId),
       conflicts: this.listConflicts(instanceId),
       events: this.listEvents(instanceId),

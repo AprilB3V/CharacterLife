@@ -11,7 +11,7 @@
  * - `snapshots` 保存状态快照 + 对应的最后事件序号，恢复时只需重放其后的补丁。
  */
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /**
  * V0.2 新增：平台接入层需要的表。
@@ -240,5 +240,20 @@ CREATE TABLE IF NOT EXISTS ledger (
   PRIMARY KEY (instance_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_kind ON ledger(instance_id, kind)
+`
+
+/**
+ * V4: memory curve state, one row per recalled memory. Kept apart from `memories` so memory
+ * content stays immutable; a missing row means "never recalled" (initial state from salience).
+ */
+export const MEMORY_RECALL_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS memory_recall (
+  instance_id       TEXT NOT NULL REFERENCES instances(id),
+  memory_id         TEXT NOT NULL,
+  stability_ms      REAL NOT NULL,
+  last_recalled_sim INTEGER,
+  recalls           INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (instance_id, memory_id)
+)
 `
 

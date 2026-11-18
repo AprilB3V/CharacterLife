@@ -24,6 +24,8 @@ import type {
 } from '../types.ts'
 import { ContextManager } from '../context/manager.ts'
 import type { MemoryWriteInput } from '../kernel/memory/store.ts'
+import { DEFAULT_CURVE } from '../kernel/memory/curve.ts'
+import type { CurveConfig } from '../kernel/memory/curve.ts'
 import { ReplyStreamDecoder } from './reply-stream.ts'
 import { isAbsenceClaim } from './meta-memory.ts'
 import type { ContextPlan } from '../context/manager.ts'
@@ -83,6 +85,8 @@ export interface ConversationConfig {
   pinnedLimit: number
   /** Character budget (title + content) of the pinned layer */
   pinnedBudgetChars: number
+  /** Memory curve: decay, consolidation on recall, fuzzy / forgotten tiers; null keeps the half-life recency */
+  memoryCurve: CurveConfig | null
 }
 
 export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
@@ -96,6 +100,7 @@ export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
   cueLimit: 2,
   pinnedLimit: 5,
   pinnedBudgetChars: 300,
+  memoryCurve: DEFAULT_CURVE,
 }
 
 export interface ConversationServiceOptions {
@@ -260,6 +265,7 @@ export class ConversationService {
       nowSim,
       limit: this.#config.memoryLimit,
       budgetChars: this.#config.memoryBudgetChars,
+      curve: this.#config.memoryCurve ?? undefined,
     })
     // Second channel: memories named by a cue in the user's words, outside the lexical top-k.
     // A cue hit that is also in the lexical top-k moves to the cue group, so it keeps cue priority
@@ -269,6 +275,11 @@ export class ConversationService {
     const lexicalOnly = retrieved.map((r) => r.entry).filter((m) => !cuedIds.has(m.id) && !pinnedIds.has(m.id))
     const recalledMemories = [...pinned, ...lexicalOnly, ...cued.map((r) => r.entry)]
     const recalledIds = recalledMemories.map((m) => m.id)
+    // Faded memories reach the prompt marked as a vague impression.
+    const curve = this.#config.memoryCurve
+    const fuzzyIds = new Set(curve
+      ? recalledMemories.filter((m) => this.#workspace.memory.tierOf(m, nowSim, curve) !== 'clear').map((m) => m.id)
+      : [])
 
     const blockedReasons: PolicyCode[] = []
 
@@ -327,12 +338,15 @@ export class ConversationService {
     // 有 ContextManager 时走预算化组装；否则退回 V0.1 的固定轮数拼装（向后兼容）。
     let messages: LLMMessage[]
     let plan: ContextPlan | null = null
+    // Without a ContextManager every recalled memory is rendered.
+    let promptMemoryIds: string[] = recalledIds
     if (this.#context) {
       plan = this.#context.plan({
         protectedSystem: system,
         memories: lexicalOnly,
         cueMemories: cued.map((r) => r.entry),
         pinnedMemories: pinned,
+        fuzzyIds,
         history: this.#history,
         userText: contextUserText,
         nowSim,
@@ -375,10 +389,12 @@ export class ConversationService {
         }
       }
       messages = plan.messages
+      promptMemoryIds = plan.promptMemoryIds
     } else {
       messages = buildMessages({
         system,
         memories: recalledMemories,
+        fuzzyIds,
         history: this.#history,
         userText: contextUserText,
         nowSim,
@@ -448,6 +464,9 @@ export class ConversationService {
 
       parseError = parsed.error
       reply = parsed.fallbackText
+      // Memory curve: a memory counts as recalled once the model answered with it in view
+      // (Codex review 2026-11-19: not before the call, not on provider errors or broken output).
+      if (curve && parsed.envelope) this.#workspace.memory.markRecalled(promptMemoryIds, nowSim, curve)
       // A broken envelope (`{}`, truncated JSON, a dangling fence) must never reach the user
       // as raw text, streamed or not. Plain prose without JSON is still shown as-is (F4).
       if (!parsed.envelope && isBrokenEnvelope(response.text, response.finishReason)) {
@@ -573,6 +592,7 @@ export class ConversationService {
       retrieved: retrieved.map((r) => r.entry.id),
       cued: cued.map((r) => ({ id: r.entry.id, keys: r.keys })),
       pinned: pinned.map((m) => m.id),
+      fuzzy: [...fuzzyIds],
       injectionMarkers: signals.injectionMarkers,
       intents: signals.intents,
     })

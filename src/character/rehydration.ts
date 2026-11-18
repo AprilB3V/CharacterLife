@@ -298,6 +298,7 @@ export class CharacterRehydrator {
       runtime,
       episodic: memories.filter((m) => m.kind === 'episodic'),
       user: memories.filter((m) => m.kind === 'user'),
+      recall: persistence.listMemoryRecall(instanceId),
     }
 
     const snapshotStore = new SnapshotStore(

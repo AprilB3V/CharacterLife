@@ -94,7 +94,7 @@ describe('完整性账本 · SQLite', () => {
     const db = new CharacterDatabase(file)
     const version = db.db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as { value: string }
     assert.equal(Number(version.value), SCHEMA_VERSION)
-    assert.equal(SCHEMA_VERSION, 3)
+    assert.ok(SCHEMA_VERSION >= 3)
     const marker = db.db.prepare(`SELECT value FROM meta WHERE key = 'marker'`).get() as { value: string }
     assert.equal(marker.value, 'kept')
     const table = db.db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ledger'`).get()

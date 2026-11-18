@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { BASELINE_SCRIPT } from '../experiments/real-model/baseline-script.ts'
 import { MEMORY_SCRIPT } from '../experiments/real-model/memory-script.ts'
+import { CURVE_SCRIPT } from '../experiments/real-model/curve-script.ts'
 
 // M0 run 4 (2026-11-18): the cue example "猫、栗子、宠物" matched a planted fact and polluted recall.
 test('protocol example words never appear in a test script', () => {
@@ -11,7 +12,7 @@ test('protocol example words never appear in a test script', () => {
         .flatMap((m) => m[1]!.split(/[、\s]+/))
         .filter((w) => /^[一-鿿]+$/.test(w))
     assert.ok(examples.length > 0, 'found the example words')
-    const text = [...BASELINE_SCRIPT, ...MEMORY_SCRIPT].map((l) => l.text).join('\n')
+    const text = [...BASELINE_SCRIPT, ...MEMORY_SCRIPT, ...CURVE_SCRIPT].map((l) => l.text).join('\n')
     assert.deepEqual(examples.filter((w) => text.includes(w)), [])
 })
 
