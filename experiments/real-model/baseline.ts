@@ -16,7 +16,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../src/types.ts'
@@ -167,6 +167,23 @@ function gitCommit(cwd: string): string | null {
     }
 }
 
+/** Hash of uncommitted kernel changes (tracked diff + untracked files), so runs on one commit stay distinguishable. */
+function gitDirtyHash(cwd: string): string | null {
+    try {
+        const git = (...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' })
+        const diff = git('diff', 'HEAD', '--', ':(top)src')
+        const untracked = git('ls-files', '--others', '--exclude-standard', '--full-name', '--', ':(top)src')
+            .split('\n').filter(Boolean).sort()
+        if (diff.length === 0 && untracked.length === 0) return null
+        const root = git('rev-parse', '--show-toplevel').trim()
+        const hash = createHash('sha256').update(diff)
+        for (const file of untracked) hash.update(`\0${file}\0`).update(readFileSync(join(root, file)))
+        return hash.digest('hex').slice(0, 16)
+    } catch {
+        return null
+    }
+}
+
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2))
     const here = dirname(fileURLToPath(import.meta.url))
@@ -193,6 +210,7 @@ async function main(): Promise<void> {
         scriptVersion: SCRIPT_VERSION,
         scriptHash: createHash('sha256').update(JSON.stringify(BASELINE_SCRIPT)).digest('hex'),
         commit: gitCommit(here),
+        kernelDirtyHash: gitDirtyHash(here),
     }, null, 4), 'utf8')
 
     const template = defineTemplate({

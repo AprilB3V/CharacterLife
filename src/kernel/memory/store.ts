@@ -27,6 +27,8 @@ import type { Clock } from '../util/clock.ts'
 import type { IdFactory } from '../util/ids.ts'
 import { detectInjectionMarkers, lexicalOverlap, sanitizeForMemory, tokenize } from '../util/text.ts'
 import { rankMemories } from './ranking.ts'
+import { recallByCues } from './cues.ts'
+import type { CueRecall } from './cues.ts'
 import type { RankParts } from './ranking.ts'
 import type { SnapshotSection } from '../storage/snapshot.ts'
 
@@ -233,6 +235,14 @@ export class MemoryStore implements SnapshotSection {
       halfLifeMs: opts.halfLifeMs,
     })
     return ranked.map((r) => ({ ...r, entry: cloneEntry(r.entry) }))
+  }
+
+  /** Cue channel: memories whose cue keys occur in `text`, outside the lexical ranking. */
+  recallByCues(text: string, opts: { limit: number; excludeIds?: ReadonlySet<string> }): CueRecall[] {
+    return recallByCues([...this.#episodic, ...this.#user], text, opts).map((r) => ({
+      entry: cloneEntry(r.entry),
+      keys: r.keys,
+    }))
   }
 
   /** 软删除：保留审计痕迹。权限由 Policy 层检查，Memory 只执行存储语义。 */

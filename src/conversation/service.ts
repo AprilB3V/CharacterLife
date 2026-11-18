@@ -25,6 +25,7 @@ import type {
 import { ContextManager } from '../context/manager.ts'
 import type { MemoryWriteInput } from '../kernel/memory/store.ts'
 import { ReplyStreamDecoder } from './reply-stream.ts'
+import { isAbsenceClaim } from './meta-memory.ts'
 import type { ContextPlan } from '../context/manager.ts'
 import { estimateTokens } from '../context/tokens.ts'
 import type { Clock } from '../kernel/util/clock.ts'
@@ -76,14 +77,19 @@ export interface ConversationConfig {
   memoryLimit: number
   /** 记忆资料注入的字符预算 */
   memoryBudgetChars: number
+  /** Extra memories recalled by cue keys, beside the lexical top-k; 0 disables the channel */
+  cueLimit: number
 }
 
 export const DEFAULT_CONVERSATION_CONFIG: ConversationConfig = {
   temperature: 0.7,
-  maxTokens: 800,
+  // Reasoning models spend this cap on thinking too. 800 truncated 4 of 5 sessions on a long
+  // user message in the M0 baseline (2026-11-17); 2000 matches the Frankenstein pilot config.
+  maxTokens: 2000,
   historyTurns: 6,
   memoryLimit: 5,
   memoryBudgetChars: 900,
+  cueLimit: 2,
 }
 
 export interface ConversationServiceOptions {
@@ -128,6 +134,16 @@ const INJECTION_PUSHBACK_REPLY =
  * 直接透传会让 UI 出现一个空气泡，所以这里给一个确定性的降级台词，并写审计。
  */
 const EMPTY_REPLY_FALLBACK = '嗯……刚才那句我没接住。你再说一遍，好吗？'
+const BROKEN_ENVELOPE_FALLBACK = '刚才的回复没有完整生成，你再说一次？'
+
+/**
+ * True when an unparsable output is a structured envelope gone wrong rather than plain prose:
+ * it starts like JSON or a code fence, or it was cut at the length limit.
+ */
+function isBrokenEnvelope(text: string, finishReason: string | null | undefined): boolean {
+  const head = text.trimStart()
+  return head.startsWith('{') || head.startsWith('```') || finishReason === 'length'
+}
 
 export class ConversationService {
   #workspace: CharacterWorkspace
@@ -236,6 +252,14 @@ export class ConversationService {
       limit: this.#config.memoryLimit,
       budgetChars: this.#config.memoryBudgetChars,
     })
+    // Second channel: memories named by a cue in the user's words, outside the lexical top-k.
+    // A cue hit that is also in the lexical top-k moves to the cue group, so it keeps cue priority
+    // when the context budget trims memories.
+    const cued = this.#workspace.memory.recallByCues(userText, { limit: this.#config.cueLimit })
+    const cuedIds = new Set(cued.map((r) => r.entry.id))
+    const lexicalOnly = retrieved.map((r) => r.entry).filter((m) => !cuedIds.has(m.id))
+    const recalledMemories = [...lexicalOnly, ...cued.map((r) => r.entry)]
+    const recalledIds = recalledMemories.map((m) => m.id)
 
     const blockedReasons: PolicyCode[] = []
 
@@ -255,7 +279,7 @@ export class ConversationService {
         decision,
         appliedProposals: [],
         rejectedProposals: [],
-        retrievedMemoryIds: retrieved.map((r) => r.entry.id),
+        retrievedMemoryIds: recalledIds,
         provider: 'policy-short-circuit',
         model: 'none',
         usage: null,
@@ -297,7 +321,8 @@ export class ConversationService {
     if (this.#context) {
       plan = this.#context.plan({
         protectedSystem: system,
-        memories: retrieved.map((r) => r.entry),
+        memories: lexicalOnly,
+        cueMemories: cued.map((r) => r.entry),
         history: this.#history,
         userText: contextUserText,
         nowSim,
@@ -330,7 +355,7 @@ export class ConversationService {
           decision,
           appliedProposals: [],
           rejectedProposals: [],
-          retrievedMemoryIds: retrieved.map((r) => r.entry.id),
+          retrievedMemoryIds: recalledIds,
           provider: 'context-budget-exceeded',
           model: 'none',
           usage: null,
@@ -343,7 +368,7 @@ export class ConversationService {
     } else {
       messages = buildMessages({
         system,
-        memories: retrieved.map((r) => r.entry),
+        memories: recalledMemories,
         history: this.#history,
         userText: contextUserText,
         nowSim,
@@ -397,7 +422,7 @@ export class ConversationService {
       }
       let response = await callModel()
       let parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
-      if (!parsed.envelope && !shown && response.text.trimStart().startsWith('{')) {
+      if (!parsed.envelope && !shown && isBrokenEnvelope(response.text, response.finishReason)) {
         this.#workspace.audit.append('provider_error', 'conversation', '结构化输出缺少回复，自动重试一次', {
           turnId,
           error: parsed.error,
@@ -413,8 +438,17 @@ export class ConversationService {
 
       parseError = parsed.error
       reply = parsed.fallbackText
-      if (onReplyDelta && !parsed.envelope && parsed.fallbackText.trimStart().startsWith('{')) {
-          reply = '刚才的回复没有完整生成，你再说一次？'
+      // A broken envelope (`{}`, truncated JSON, a dangling fence) must never reach the user
+      // as raw text, streamed or not. Plain prose without JSON is still shown as-is (F4).
+      if (!parsed.envelope && isBrokenEnvelope(response.text, response.finishReason)) {
+        this.#workspace.audit.append('provider_error', 'conversation', '结构化输出不完整，已使用降级台词', {
+          turnId,
+          error: parsed.error,
+          raw: response.text.slice(0, 500),
+          finishReason: response.finishReason ?? null,
+          reasoningChars: response.reasoningChars ?? 0,
+        })
+        reply = BROKEN_ENVELOPE_FALLBACK
       }
       if (parsed.envelope) {
         if (signals.injectionMarkers.length > 0 && parsed.envelope.reply.length === 0) {
@@ -466,7 +500,7 @@ export class ConversationService {
       latencyMs,
     })
 
-    if (parseError && parsedProposals.length === 0 && !reply.includes('网好像')) {
+    if (parseError && parsedProposals.length === 0 && !reply.includes('网好像') && reply !== BROKEN_ENVELOPE_FALLBACK) {
       this.#workspace.audit.append('provider_error', 'conversation', '结构化输出解析失败，降级为纯回复', {
         turnId,
         error: parseError,
@@ -487,6 +521,16 @@ export class ConversationService {
 
     // 5) 记忆写入（含不可信内容降级）
     for (const write of memoryWrites) {
+      // Recall about recall ("no record of X") is not stored: it would outrank the real fact.
+      if (isAbsenceClaim(write.title, write.content)) {
+        this.#workspace.audit.append('memory_skipped', 'conversation', '跳过元记忆写入', {
+          turnId,
+          kind: write.kind,
+          title: write.title,
+          content: write.content.slice(0, 200),
+        })
+        continue
+      }
       const input: MemoryWriteInput = {
         kind: write.kind,
         title: write.title,
@@ -517,6 +561,7 @@ export class ConversationService {
       applied: outcome.applied.length,
       rejected: outcome.rejected.length,
       retrieved: retrieved.map((r) => r.entry.id),
+      cued: cued.map((r) => ({ id: r.entry.id, keys: r.keys })),
       injectionMarkers: signals.injectionMarkers,
       intents: signals.intents,
     })
@@ -531,7 +576,7 @@ export class ConversationService {
       decision,
       appliedProposals: outcome.applied,
       rejectedProposals: outcome.rejected,
-      retrievedMemoryIds: retrieved.map((r) => r.entry.id),
+      retrievedMemoryIds: recalledIds,
       provider,
       model,
       usage,

@@ -15,6 +15,7 @@ export type AuditEventType =
   | 'proposal_rejected'
   | 'memory_written'
   | 'memory_deleted'
+  | 'memory_skipped'
   | 'profile_write_attempt'
   | 'policy_write_attempt'
   | 'injection_detected'

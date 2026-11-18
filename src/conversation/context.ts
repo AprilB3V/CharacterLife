@@ -9,6 +9,7 @@
  * 3. 用户消息永远在自己的角色位，无法伪造 system 角色。
  */
 
+import { CUE_TAG_PREFIX } from '../kernel/memory/cues.ts'
 import type {
   BehaviorDecision,
   CharacterProfile,
@@ -64,7 +65,8 @@ const OUTPUT_PROTOCOL_BODY = `【输出协议】
   ],
   "memoryWrites": [
     { "kind": "episodic" | "user", "title": "短标题", "content": "这条记忆的内容",
-      "status": "fact" | "speculation" | "fiction", "salience": 0.0-1.0, "tags": ["..."] }
+      "status": "fact" | "speculation" | "fiction", "salience": 0.0-1.0, "tags": ["..."],
+      "cues": ["以后用户可能用来提起这件事的 1-4 个词：必须含用户平时最可能说的最短叫法（单字也行），再加上位词或具体名字，例如 琴、钢琴、学琴、乐器"] }
   ]`
 
 const OUTPUT_PROTOCOL_WORLD_FIELD = `,
@@ -296,7 +298,8 @@ export function parseEnvelope(raw: string, opts: ParseEnvelopeOptions = {}): Par
               ? 'fiction'
               : 'speculation') as EpistemicStatus,
           salience: typeof m.salience === 'number' ? Math.min(1, Math.max(0, m.salience)) : 0.5,
-          tags: Array.isArray(m.tags) ? m.tags.map(String) : [],
+          // Cues ride in tags with a prefix: no schema change needed.
+          tags: mergeCueTags(m.tags, m.cues),
         }))
         .filter((m) => m.title.length > 0 && m.content.length > 0)
     : []
@@ -314,4 +317,26 @@ export function parseEnvelope(raw: string, opts: ParseEnvelopeOptions = {}): Par
     fallbackText: obj.reply,
     error: null,
   }
+}
+
+const MAX_CUE_LENGTH = 8
+const MAX_CUES = 4
+
+/**
+ * Cues go first, prefixed, so the store's tag cap cannot drop them and the cue channel can tell
+ * them from category tags such as 日常 or 宠物.
+ */
+function mergeCueTags(tags: unknown, cues: unknown): string[] {
+  const out: string[] = []
+  if (Array.isArray(cues)) {
+    for (const raw of cues) {
+      const value = String(raw).trim()
+      const tag = `${CUE_TAG_PREFIX}${value}`
+      if (value.length === 0 || value.length > MAX_CUE_LENGTH || out.includes(tag)) continue
+      out.push(tag)
+      if (out.length >= MAX_CUES) break
+    }
+  }
+  if (Array.isArray(tags)) out.push(...tags.map(String))
+  return out
 }

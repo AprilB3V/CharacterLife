@@ -55,6 +55,8 @@ export interface ContextPlanInput {
   /** 受保护 system 文本（人格/权限/决策/协议），只会原样使用 */
   protectedSystem: string
   memories: MemoryEntry[]
+  /** Recalled by a cue in the user's words: outside memoryLimit, trimmed only after `memories` */
+  cueMemories?: MemoryEntry[]
   history: LLMMessage[]
   userText: string
   nowSim: number
@@ -110,7 +112,9 @@ export class ContextManager {
     // 历史按「轮」切分：从最新往回取，保证最近的一问一答优先保留。
     const turns = groupTurns(input.history)
     let keptTurns = Math.min(budget.recentTurns, turns.length)
-    let memories = input.memories.slice(0, budget.memoryLimit)
+    let lexicalMemories = input.memories.slice(0, budget.memoryLimit)
+    let cueMemories = input.cueMemories ?? []
+    let memories = [...lexicalMemories, ...cueMemories]
     let degradation: DegradationLevel = 'none'
     let digestText: string | null = null
     let droppedMemoryIds: string[] = []
@@ -154,8 +158,12 @@ export class ContextManager {
 
       // 阶梯 2：按打分从低到高丢弃记忆（memories 已按分数降序）
       while (current.tokens > budget.maxPromptTokens && memories.length > 0) {
-        const dropped = memories[memories.length - 1]!
-        memories = memories.slice(0, -1)
+        // Lowest lexical score first; cue-recalled memories go last.
+        const fromLexical = lexicalMemories.length > 0
+        const dropped = fromLexical ? lexicalMemories[lexicalMemories.length - 1]! : cueMemories[cueMemories.length - 1]!
+        if (fromLexical) lexicalMemories = lexicalMemories.slice(0, -1)
+        else cueMemories = cueMemories.slice(0, -1)
+        memories = [...lexicalMemories, ...cueMemories]
         droppedMemoryIds = [...droppedMemoryIds, dropped.id]
         current = build()
         degradation = 'trim_memory'
