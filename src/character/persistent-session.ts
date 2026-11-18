@@ -17,6 +17,7 @@ import { CharacterRehydrator } from './rehydration.ts'
 import type { RehydrationReport } from './rehydration.ts'
 import type { CharacterWorkspace } from '../runtime/workspace.ts'
 import { ConversationService } from '../conversation/service.ts'
+import type { ConversationConfig } from '../conversation/service.ts'
 import type { ContextBudget } from '../context/manager.ts'
 import type { Clock } from '../kernel/util/clock.ts'
 import type { SequentialIdFactory } from '../kernel/util/ids.ts'
@@ -33,6 +34,8 @@ export interface PersistentSessionOptions {
   ids: SequentialIdFactory
   rng: Rng
   budget?: Partial<ContextBudget>
+  /** Conversation knobs (memory channels, sampling); kernel defaults when omitted */
+  conversation?: Partial<ConversationConfig>
   auditFile?: string | null
   /** 恢复流程中的探针查询（第 7 步会用一次） */
   probeQuery?: string
@@ -109,6 +112,7 @@ export class PersistentSession {
       clock: opts.clock,
       ids: opts.ids,
       context,
+      config: opts.conversation,
       onContextUsage: (usage) => {
         opts.persistence.recordContextRequest({
           id: createId('ctx'),

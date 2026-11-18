@@ -11,6 +11,7 @@
  *   node experiments/real-model/baseline.ts --provider deepseek --sessions 1 --turns 10 --max-calls 40
  *   node experiments/real-model/baseline.ts --provider doubao --max-calls 800
  *   node experiments/real-model/baseline.ts --provider deepseek --script memory --max-calls 400
+ *   node experiments/real-model/baseline.ts --provider deepseek --script memory --pinned-limit 0 --max-calls 400
  *
  * Real providers read the key from the environment only and refuse to run without --max-calls.
  */
@@ -59,6 +60,8 @@ type ProviderName = 'mock' | keyof typeof REAL_PROFILES
 interface Args {
     provider: ProviderName
     script: string
+    /** null keeps the kernel default */
+    pinnedLimit: number | null
     sessions: number
     turns: number
     maxCalls: number
@@ -93,12 +96,19 @@ function parseArgs(argv: string[]): Args {
     return {
         provider,
         script,
+        pinnedLimit: values.has('pinned-limit') ? nonNegative(values.get('pinned-limit')!, 'pinned-limit') : null,
         sessions: int('sessions', DEFAULT_SESSIONS),
         turns: Math.min(int('turns', lines.length), lines.length),
         maxCalls,
         seed: int('seed', DEFAULT_SEED),
         out: values.get('out') ?? null,
     }
+}
+
+function nonNegative(raw: string, name: string): number {
+    const n = Number(raw)
+    if (!Number.isInteger(n) || n < 0) throw new Error(`--${name} must be a non-negative integer`)
+    return n
 }
 
 function buildProvider(name: ProviderName): LLMProvider {
@@ -202,6 +212,7 @@ async function main(): Promise<void> {
     const here = dirname(fileURLToPath(import.meta.url))
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '')
     const chosen = SCRIPTS[args.script]!
+    const conversation = args.pinnedLimit === null ? {} : { pinnedLimit: args.pinnedLimit }
     const outDir = args.out ?? join(here, '.data', `${args.script}-${args.provider}-${stamp}`)
     mkdirSync(outDir, { recursive: true })
     const eventsFile = join(outDir, 'events.jsonl')
@@ -222,6 +233,7 @@ async function main(): Promise<void> {
         seed: args.seed,
         character: shenZhiweiProfile.name,
         scriptVersion: chosen.version,
+        conversationConfig: conversation,
         scriptHash: createHash('sha256').update(JSON.stringify(chosen.lines)).digest('hex'),
         commit: gitCommit(here),
         kernelDirtyHash: gitDirtyHash(here),
@@ -256,6 +268,7 @@ async function main(): Promise<void> {
             clock,
             ids: new SequentialIdFactory(),
             rng: new SeededRng(args.seed + s),
+            conversation,
         })
         try {
             for (const line of script) {

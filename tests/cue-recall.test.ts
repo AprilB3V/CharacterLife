@@ -62,6 +62,24 @@ test('no cue, no recall; plain category tags never act as cues', () => {
     assert.deepEqual(recallByCues([memory('cat', ['猫'])], '我的猫', { limit: 0 }), [])
 })
 
+// M0 memory probes 2026-11-19: cue 火锅店, user said 吃火锅.
+test('a 3+ char key also matches without its last char, at lower weight than a full match', () => {
+    const shop = memory('shop', ['火锅店', '收桌'])
+    const hits = recallByCues([shop], '朋友约我吃火锅', { limit: 2 })
+    assert.deepEqual(hits.map((h) => [h.entry.id, h.keys]), [['shop', ['火锅']]])
+    const exact = memory('exact', ['火锅'], { salience: 0.1 })
+    assert.deepEqual(recallByCues([shop, exact], '朋友约我吃火锅', { limit: 2 }).map((h) => h.entry.id), ['exact', 'shop'])
+})
+
+test('derived keys: none for short, non-CJK or function-word-led keys', async () => {
+    const { derivedKey } = await import('../src/kernel/memory/cues.ts')
+    assert.equal(derivedKey('火锅店'), '火锅')
+    assert.equal(derivedKey('橘猫'), null)
+    assert.equal(derivedKey('python'), null)
+    assert.equal(derivedKey('那部电影'), null)
+    assert.deepEqual(recallByCues([memory('film', ['那部电影'])], '那部电视剧', { limit: 2 }), [])
+})
+
 test('cues from the envelope become prefixed tags ahead of plain tags, at most four', () => {
     const raw = JSON.stringify({ reply: '嗯。', proposals: [], memoryWrites: [
         { kind: 'user', title: 't', content: 'c', status: 'fact', tags: ['宠物'], cues: ['猫', ' 栗子 ', '猫', '', '一个超过八个字的很长的线索词', '橘猫', '宠物', '小猫'] },
