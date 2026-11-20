@@ -35,6 +35,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../src/types.ts'
 import { DeepSeekProvider } from '../../src/conversation/providers/deepseek.ts'
 import { MockProvider } from '../../src/conversation/providers/mock.ts'
+import { REASONING_MODES, reasoningBody } from '../../src/conversation/providers/reasoning.ts'
+import type { ReasoningMode } from '../../src/conversation/providers/reasoning.ts'
 import { ManualClock } from '../../src/kernel/util/clock.ts'
 import { SeededRng } from '../../src/kernel/util/rng.ts'
 import { SequentialIdFactory } from '../../src/kernel/util/ids.ts'
@@ -108,13 +110,9 @@ type ProviderName = 'mock' | keyof typeof REAL_PROFILES
 
 // Probe 2026-11-19 on the Ark coding endpoint: both models honour thinking.type=disabled; only doubao
 // honours reasoning_effort (deepseek ignores it). Neither exposes a separate thinking-token budget.
-const THINKING_BODIES = {
-    default: {},
-    disabled: { thinking: { type: 'disabled' } },
-    low: { reasoning_effort: 'low' },
-    minimal: { reasoning_effort: 'minimal' },
-} as const
-type ThinkingMode = keyof typeof THINKING_BODIES
+// Here 'default' always sends nothing (no per-model default), so earlier runs stay reproducible.
+const THINKING_BODIES = Object.fromEntries(REASONING_MODES.map((m) => [m, reasoningBody(m)])) as Record<ReasoningMode, Record<string, unknown>>
+type ThinkingMode = ReasoningMode
 
 interface Args {
     provider: ProviderName

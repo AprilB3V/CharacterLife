@@ -79,6 +79,8 @@ export {
   deepSeekConfigFromEnv,
 } from './conversation/providers/deepseek.ts'
 export type { DeepSeekProviderOptions } from './conversation/providers/deepseek.ts'
+export { REASONING_MODES, parseReasoningMode, resolveReasoningMode, reasoningBody } from './conversation/providers/reasoning.ts'
+export type { ReasoningMode } from './conversation/providers/reasoning.ts'
 export {
   buildSystemPrompt,
   buildMessages,

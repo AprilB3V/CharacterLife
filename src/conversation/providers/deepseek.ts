@@ -11,6 +11,8 @@
  */
 
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../types.ts'
+import { parseReasoningMode, resolveReasoningMode } from './reasoning.ts'
+import type { ReasoningMode } from './reasoning.ts'
 
 export interface DeepSeekProviderOptions {
   apiKey: string
@@ -189,11 +191,15 @@ export function deepSeekConfigFromEnv(env: NodeJS.ProcessEnv = process.env): {
   apiKey: string
   baseUrl: string
   model: string
+  /** CHARACTERLIFE_REASONING, else the verified default for the model (see reasoning.ts) */
+  reasoning: ReasoningMode
 } | null {
   if (!hasDeepSeekCredentials(env)) return null
+  const model = env.DEEPSEEK_MODEL?.trim() || 'deepseek-chat'
   return {
     apiKey: env.DEEPSEEK_API_KEY!.trim(),
     baseUrl: env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com',
-    model: env.DEEPSEEK_MODEL?.trim() || 'deepseek-chat',
+    model,
+    reasoning: resolveReasoningMode(model, parseReasoningMode(env.CHARACTERLIFE_REASONING)),
   }
 }

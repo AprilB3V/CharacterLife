@@ -30,6 +30,7 @@ import { SeededRng } from '../kernel/util/rng.ts'
 import { SequentialIdFactory } from '../kernel/util/ids.ts'
 import { MockProvider } from '../conversation/providers/mock.ts'
 import { DeepSeekProvider, deepSeekConfigFromEnv } from '../conversation/providers/deepseek.ts'
+import { parseReasoningMode, reasoningBody } from '../conversation/providers/reasoning.ts'
 import type { LLMProvider } from '../types.ts'
 import { LlmThinker } from '../kernel/thinking/thinker.ts'
 import type { WillingnessConfig } from '../kernel/thinking/willingness.ts'
@@ -162,8 +163,9 @@ export function chooseProvider(config?: LLMProvider): { provider: LLMProvider; n
         apiKey: deepseek.apiKey,
         baseUrl: deepseek.baseUrl,
         model: deepseek.model,
+        extraBody: reasoningBody(deepseek.reasoning),
       }),
-      note: `DeepSeek（请求 ${deepseek.model}）`,
+      note: `DeepSeek（请求 ${deepseek.model}，reasoning ${deepseek.reasoning}）`,
     }
   }
   return { provider: new MockProvider({ mode: 'in-character' }), note: 'MockProvider（未检测到 DEEPSEEK_API_KEY）' }
@@ -172,17 +174,17 @@ export function chooseProvider(config?: LLMProvider): { provider: LLMProvider; n
 /**
  * Thinking model from the environment: any OpenAI-compatible endpoint.
  * CHARACTERLIFE_THINK_BASE_URL, CHARACTERLIFE_THINK_MODEL and CHARACTERLIFE_THINK_API_KEY must all be set.
- * CHARACTERLIFE_THINK_REASONING=off asks the endpoint not to reason (`thinking: { type: 'disabled' }`,
- * honored by Volcengine Ark); leave it unset for endpoints that do not accept that field.
+ * CHARACTERLIFE_THINK_REASONING picks a reasoning mode (off = disabled | low | minimal | default, see reasoning.ts);
+ * unset sends no reasoning field, as before, for endpoints that do not accept one.
  */
 export function thinkProviderFromEnv(env: NodeJS.ProcessEnv = process.env): LLMProvider | null {
   const baseUrl = env.CHARACTERLIFE_THINK_BASE_URL?.trim()
   const model = env.CHARACTERLIFE_THINK_MODEL?.trim()
   const apiKey = env.CHARACTERLIFE_THINK_API_KEY?.trim()
   if (!baseUrl || !model || !apiKey) return null
-  const reasoningOff = env.CHARACTERLIFE_THINK_REASONING?.trim().toLowerCase() === 'off'
+  const reasoning = parseReasoningMode(env.CHARACTERLIFE_THINK_REASONING)
   return new DeepSeekProvider({ apiKey, baseUrl, model, timeoutMs: Number(env.CHARACTERLIFE_THINK_TIMEOUT_MS ?? 20000),
-    ...(reasoningOff ? { extraBody: { thinking: { type: 'disabled' } } } : {}) })
+    ...(reasoning ? { extraBody: reasoningBody(reasoning) } : {}) })
 }
 
 /** Completion cap for the thinker: 0 (default) sends none, so a reasoning model never truncates the JSON. */
