@@ -40,7 +40,7 @@ export { AuditLog } from './kernel/policy/audit.ts'
 export type { AuditEvent, AuditEventType } from './kernel/policy/audit.ts'
 
 /* Runtime */
-export { CharacterWorkspace, parseDueOffsetDays } from './runtime/workspace.ts'
+export { CharacterWorkspace, parseDueAtSim, parseDueOffsetDays } from './runtime/workspace.ts'
 export type {
   WorkspaceOptions,
   WorkspaceView,

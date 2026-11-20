@@ -6,9 +6,9 @@
  *     here on every sync and closed by the runtime when their source closes;
  *   - self: the Mind may add its own items, drop or re-sort them (a few ops per wake).
  *
- * Rules (M1 constraint C): an item is only "done" with world evidence. A self item is closed by a
- * linked world action that succeeded, or by a `done` op that cites a succeeded action created after
- * the item. Runtime-managed items close only when their source does (commitment settled, drive
+ * Rules (M1 constraint C): an item is only "done" with world evidence. A self item is closed only by
+ * an explicit `done` op that cites a succeeded action created after the item; a linked action that
+ * succeeded just leaves a note (agenda v2: the world confirms the action, not the item's content). Runtime-managed items close only when their source does (commitment settled, drive
  * relieved, goal finished). Urgency of a dated item is computed from its due time, never chosen by
  * the model; importance is the character's own judgement.
  *
@@ -245,7 +245,7 @@ export class Agenda {
         return changes
     }
 
-    /** Settle links to world actions: a succeeded link closes a self item; a failure leaves a note. */
+    /** Settle links to world actions: every settled link leaves a note; none closes an item. */
     reconcile(actions: readonly AgendaActionView[]): AgendaChange[] {
         const changes: AgendaChange[] = []
         const byId = new Map(actions.map((a) => [a.actionId, a]))
@@ -257,14 +257,11 @@ export class Agenda {
                 // Settled links are dropped (the note or evidenceRef keeps what matters), so links stay bounded.
                 item.links = item.links.filter((l) => l.actionId !== link.actionId)
                 if (item.status !== 'open') continue
-                if (action.status === 'succeeded' && item.source === 'self') {
-                    item.status = 'done'
-                    item.closedAtSim = action.createdAtSim
-                    item.evidenceRef = action.actionId
-                    changes.push({ kind: 'closed', id: item.id, source: item.source, detail: `done:${action.actionId}` })
-                    continue
-                }
-                const note = `${actionLabel(action)} ${STATUS_TEXT[action.status] ?? action.status}`
+                // A succeeded link is not completion: the world confirmed the action, not the item's
+                // content (agenda v1 review: "find food" was closed by talking to someone). It leaves a
+                // note with the action id; the Mind closes the item with an explicit `done` citing it.
+                const id = action.status === 'succeeded' ? ` [${action.actionId}]` : ''
+                const note = `${actionLabel(action)} ${STATUS_TEXT[action.status] ?? action.status}${id}`
                 item.notes = [...item.notes, note].slice(-NOTES_KEPT)
                 changes.push({ kind: 'noted', id: item.id, source: item.source, detail: note })
             }

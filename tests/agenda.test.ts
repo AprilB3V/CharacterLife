@@ -104,7 +104,7 @@ test('Mind ops: add with limits, runtime items cannot be dropped or completed, d
     assert.equal(agenda.open().length, AGENDA_MAX_OPEN)
 })
 
-test('links: a succeeded action closes a self item; a failure leaves a note on any item', () => {
+test('links: a settled action only leaves a note (with the id on success); nothing closes by link', () => {
     const agenda = new Agenda()
     agenda.sync({ nowSim: NOW, commitments: [], drives: [drive('hunger', true)], goals: [] })
     const self = agenda.apply([{ op: 'add', text: '买面包' }], { nowSim: NOW, actions: [] })[0]!.id!
@@ -113,8 +113,10 @@ test('links: a succeeded action closes a self item; a failure leaves a note on a
     assert.equal(agenda.link(hunger, 'act_2'), true)
     assert.equal(agenda.link('ag_404', 'act_3'), false)
     assert.deepEqual(agenda.reconcile([action('act_1', 'pending', NOW), action('act_2', 'pending', NOW)]), [])
-    agenda.reconcile([action('act_1', 'succeeded', NOW), action('act_2', 'failed', NOW)])
-    assert.equal(agenda.get(self)!.status, 'done')
+    agenda.reconcile([action('act_1', 'succeeded', NOW + 1), action('act_2', 'failed', NOW)])
+    assert.equal(agenda.get(self)!.status, 'open', 'the world confirmed the action, not the item')
+    assert.deepEqual(agenda.get(self)!.notes, ['buy(bread) 成功 [act_1]'])
+    assert.equal(agenda.apply([{ op: 'done', id: self, evidence: 'act_1' }], { nowSim: NOW + 2, actions: [action('act_1', 'succeeded', NOW + 1)] })[0]!.ok, true)
     assert.equal(agenda.get(hunger)!.status, 'open', 'a drive item is closed by the drive, not by the action')
     assert.deepEqual(agenda.get(hunger)!.notes, ['buy(bread) 失败'])
     assert.equal(agenda.reconcile([action('act_2', 'failed', NOW)]).length, 0, 'each link settles once')

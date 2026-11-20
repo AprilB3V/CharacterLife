@@ -54,7 +54,7 @@ export interface SceneOptions {
     startSim?: number
     breadStock?: number
     autonomyLog?: (record: AutonomyLogRecord) => void
-    /** Keep a four-quadrant agenda (Mind prompt `mind-agenda-v1`); off reproduces M1 stage 1 */
+    /** Keep a four-quadrant agenda (Mind prompt `mind-agenda-v2`); off reproduces M1 stage 1 */
     agenda?: boolean
 }
 

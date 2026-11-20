@@ -182,7 +182,7 @@ async function main(): Promise<void> {
         startedAt: new Date().toISOString(), mind: args.mind, chat: args.chat, model: needsModel ? MODEL : null,
         baseUrl: needsModel ? ARK_CODING_BASE_URL : null, seed: args.seed, maxCalls: args.maxCalls,
         scriptVersion: M1_SCRIPT_VERSION, scriptHash, character: 'shen-zhiwei', world: 'sandbox TextWorld',
-        agenda: args.agenda, mindPrompt: args.agenda ? 'mind-agenda-v1' : 'mind-v1',
+        agenda: args.agenda, mindPrompt: args.agenda ? 'mind-agenda-v2' : 'mind-v1',
         commit: git(['rev-parse', 'HEAD'], kernelRoot), dirty: git(['status', '--porcelain'], kernelRoot).length > 0,
     }, null, 4))
 

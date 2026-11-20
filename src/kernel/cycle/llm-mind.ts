@@ -59,7 +59,8 @@ const AGENDA_PROTOCOL = [
   ' {"op": "add", "text": "要做的事（20 字以内）", "important": true 或 false, "urgent": true 或 false, "due": "HH:MM" 或 null}',
   ' {"op": "move", "id": "待办编号", "important": true 或 false, "urgent": true 或 false, "reason": "..."}',
   ' {"op": "drop", "id": "待办编号", "reason": "为什么不做了"}',
-  ' {"op": "done", "id": "待办编号", "evidence": "最近做过的事里那个成功动作的编号"}',
+  ' {"op": "done", "id": "待办编号", "evidence": "成功动作的编号（见最近做过的事或待办备注）"}',
+  '动作成功只说明那个动作发生了；这条待办真的做完了，才用 done 标记。',
   '约定、身心需要、长期目标这几类待办由世界和时间来结算，你只能调整它们的轻重（move）。',
 ]
 

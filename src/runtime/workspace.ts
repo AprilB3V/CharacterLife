@@ -505,7 +505,7 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
     }
 
     if (signals.promiseText && !this.motivation.commitments().some(item => item.owner === 'user' && item.sourceRef === turnId)) {
-      const dueAtSim = now + parseDueOffsetDays(userText) * DAY
+      const dueAtSim = parseDueAtSim(userText, now) ?? now + parseDueOffsetDays(userText) * DAY
       const promise: TrackedPromise = {
         id: this.ids.next('prom'),
         text: userText,
@@ -816,6 +816,41 @@ export class CharacterWorkspace extends AgentCore implements SnapshotSection {
 }
 
 /** 从「明天 / 后天 / 周日 / 下次」里估计约定落在几天后。 */
+const CN_DIGITS: Record<string, number> = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
+
+function parseHourNumber(raw: string): number | null {
+  if (/^\d+$/.test(raw)) return Number(raw)
+  if (raw === '十') return 10
+  const m = /^([一二两三四五六七八九]?)十([一二三四五六七八九]?)$/.exec(raw)
+  if (m) return (m[1] ? CN_DIGITS[m[1]]! : 1) * 10 + (m[2] ? CN_DIGITS[m[2]]! : 0)
+  return raw.length === 1 && raw in CN_DIGITS ? CN_DIGITS[raw]! : null
+}
+
+/**
+ * Absolute due time from a clock time in the text ("晚上七点", "明天下午3点半"); null without one.
+ * Without an explicit day, a time already past today means tomorrow.
+ */
+export function parseDueAtSim(text: string, nowSim: number): number | null {
+  // Week-scale day words are left to parseDueOffsetDays (a clock time alone would land today).
+  if (/(周末|周[一二三四五六日天]|星期|礼拜|下周|下次)/.test(text) && !/(今天|今晚|明天|明早|明晚|后天)/.test(text)) return null
+  // (?<!第): "第三点" is an ordinal, not a clock time.
+  const m = /(早上|上午|中午|下午|傍晚|晚上|今晚|明早|明晚)?\s*(?<![第0-9零一二两三四五六七八九十])([0-9]{1,2}|[零一二两三四五六七八九十]{1,3})\s*(?:点|:|：)\s*(半|[0-9]{1,2})?/.exec(text)
+  if (!m) return null
+  let hour = parseHourNumber(m[2]!)
+  if (hour === null || hour > 23) return null
+  const part = m[1] ?? ''
+  // 晚上12点 / 今晚十二点半 is midnight, i.e. hour 24 of that day.
+  if (/(下午|傍晚|晚上|今晚|明晚)/.test(part) && hour <= 12) hour += 12
+  else if (part === '中午' && hour <= 2) hour += 12
+  const minute = m[3] === '半' ? 30 : m[3] ? Math.min(59, Number(m[3])) : 0
+  let dayOffset: number | null = null
+  if (/后天/.test(text)) dayOffset = 2
+  else if (/(明天|明早|明晚)/.test(text)) dayOffset = 1
+  else if (/(今天|今晚)/.test(text)) dayOffset = 0
+  const at = (Math.floor(nowSim / DAY) + (dayOffset ?? 0)) * DAY + hour * HOUR + minute * 60_000
+  return at <= nowSim && dayOffset === null ? at + DAY : at
+}
+
 export function parseDueOffsetDays(text: string): number {
   if (/(今天|今晚)/.test(text)) return 0.5
   if (/明天/.test(text)) return 1
