@@ -145,14 +145,19 @@ export class AutonomyRunner {
     this.#o.logger?.(record)
   }
 
-  /** 把驱力写成显式状态（之后的衰减都从这里算起）。只执行一次。 */
+  /**
+   * 把驱力写成显式状态（之后的衰减都从这里算起）。只执行一次。
+   * Drives already in the restored state are kept, so a character rebuilt from storage resumes them.
+   */
   start(): void {
     if (this.#started) return
     this.#started = true
     const profile = this.#o.agent.motivation.driveProfile
     if (profile) {
-      const proposals = initDriveProposals(profile, () => this.#o.ids.next('pr'))
-      this.#o.agent.submitProposals(proposals, RUNTIME_ACTOR, { source: 'autonomy_init' })
+      const existing = this.#o.agent.dynamicState.drives ?? {}
+      const missing = { ...profile, specs: profile.specs.filter((s) => !Object.hasOwn(existing, s.name)) }
+      const proposals = initDriveProposals(missing, () => this.#o.ids.next('pr'))
+      if (proposals.length > 0) this.#o.agent.submitProposals(proposals, RUNTIME_ACTOR, { source: 'autonomy_init' })
     }
     this.#log({
       type: 'start',

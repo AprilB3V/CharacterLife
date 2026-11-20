@@ -35,6 +35,24 @@ export class EntropyIdFactory implements IdFactory {
   }
 }
 
+/** Id prefixes a restored character workspace may already hold. */
+export const RESTORED_ID_PREFIXES = ['mem_ep', 'mem_us', 'ms', 'bnd', 'msg', 'prom', 'evt'] as const
+
+/**
+ * Continue numbering above every id already present in a restored state (any JSON-serialisable
+ * value). Counting live entries is not enough: settled promises, delivered messages, deleted or
+ * evicted memories keep their ids, and list() calls are capped.
+ */
+export function seedFromState(ids: SequentialIdFactory, state: unknown, prefixes: readonly string[] = RESTORED_ID_PREFIXES): void {
+  const text = JSON.stringify(state) ?? ''
+  for (const prefix of prefixes) {
+    const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    let max = 0
+    for (const m of text.matchAll(new RegExp(`"${escaped}_(\\d+)"`, 'g'))) max = Math.max(max, Number(m[1]))
+    ids.seed(prefix, max)
+  }
+}
+
 export function createId(prefix: string): string {
   return new EntropyIdFactory().next(prefix)
 }

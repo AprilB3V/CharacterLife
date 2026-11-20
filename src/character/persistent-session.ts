@@ -21,7 +21,7 @@ import type { ConversationConfig, ConversationWorldBinding } from '../conversati
 import type { ContextBudget } from '../context/manager.ts'
 import type { Clock } from '../kernel/util/clock.ts'
 import type { SequentialIdFactory } from '../kernel/util/ids.ts'
-import { createId } from '../kernel/util/ids.ts'
+import { createId, seedFromState } from '../kernel/util/ids.ts'
 import type { Rng } from '../kernel/util/rng.ts'
 import { SCHEMA_VERSION } from '../persistence/schema.ts'
 
@@ -94,18 +94,12 @@ export class PersistentSession {
     })
     const { workspace, report, context } = rehydrator.rehydrate()
 
-    // 关键：把 id 计数器抬到已有数量之上，否则新会话会生成与旧数据相同的 id。
-    const rel = workspace.relationship
-    opts.ids.seed('ms', rel.milestones.length)
-    opts.ids.seed('bnd', rel.boundaries.length)
-    opts.ids.seed('msg', workspace.pendingMessages().length)
-    opts.ids.seed('prom', workspace.openPromises().length)
+    // 关键：把 id 计数器抬到已有 id 之上，否则新会话会生成与旧数据相同的 id。
     // 时间线事件 id 也必须续号：否则新排的事件会与恢复出来的事件撞 id，
     // 导致 markFired 标记到错误的那一条，进而出现「事件永远触发不完」。
-    opts.ids.seed('evt', workspace.timeline.size)
-    const all = workspace.memory.list({ includeDeleted: true })
-    opts.ids.seed('mem_ep', all.filter((m) => m.kind === 'episodic').length)
-    opts.ids.seed('mem_us', all.filter((m) => m.kind === 'user').length)
+    // Seed from the highest id in the restored state, not from counts: settled promises, delivered
+    // messages and deleted memories keep their ids, and memory.list() is capped at 100 (M1 review).
+    seedFromState(opts.ids, workspace.dumpState())
 
     let session = report.resumedSession
     const service = new ConversationService({
