@@ -17,7 +17,7 @@ import { CharacterRehydrator } from './rehydration.ts'
 import type { RehydrationReport } from './rehydration.ts'
 import type { CharacterWorkspace } from '../runtime/workspace.ts'
 import { ConversationService } from '../conversation/service.ts'
-import type { ConversationConfig } from '../conversation/service.ts'
+import type { ConversationConfig, ConversationWorldBinding } from '../conversation/service.ts'
 import type { ContextBudget } from '../context/manager.ts'
 import type { Clock } from '../kernel/util/clock.ts'
 import type { SequentialIdFactory } from '../kernel/util/ids.ts'
@@ -36,6 +36,8 @@ export interface PersistentSessionOptions {
   budget?: Partial<ContextBudget>
   /** Conversation knobs (memory channels, sampling); kernel defaults when omitted */
   conversation?: Partial<ConversationConfig>
+  /** World binding for the conversation; omitted keeps the world-free protocol */
+  world?: ConversationWorldBinding | null
   auditFile?: string | null
   /** 恢复流程中的探针查询（第 7 步会用一次） */
   probeQuery?: string
@@ -113,6 +115,7 @@ export class PersistentSession {
       ids: opts.ids,
       context,
       config: opts.conversation,
+      world: opts.world ?? null,
       onContextUsage: (usage) => {
         opts.persistence.recordContextRequest({
           id: createId('ctx'),
@@ -154,9 +157,10 @@ export class PersistentSession {
   }
 
   /** 一轮对话：写库（状态事件/记忆/用量）由 sink 与 onContextUsage 完成。 */
-  async send(text: string): Promise<ConversationTurnResult> {
+  async send(text: string, onReplyDelta?: (text: string) => void): Promise<ConversationTurnResult> {
     if (this.#closed) throw new Error('会话已关闭，不能继续发送消息')
-    const result = await this.service.send(text)
+    // onReplyDelta turns on streaming; without it the call is non-streaming as before.
+    const result = await this.service.send(text, onReplyDelta)
     this.#turns++
     if (this.session) this.persistence.countTurns(this.session.id)
     this.persistence.appendEvent({
