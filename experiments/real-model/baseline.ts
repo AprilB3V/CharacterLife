@@ -23,6 +23,7 @@
  *   P3 --provider glm                                        a cheaper model tier on the same endpoint
  *   P4 --world on                                            world actions enabled, envelope gains worldActions
  * Character: --character shen (default) | jingjing (read at run time from the VideoCohost checkout, never copied here)
+ *   --persona-patch none | no-length-cap | no-silence   in-memory text edits for persona A/B; the source file is untouched
  *
  * Real providers read the key from the environment only and refuse to run without --max-calls.
  */
@@ -83,6 +84,32 @@ interface CharacterChoice {
     source: { file: string; sha256: string } | null
 }
 
+// Persona A/B (M0 P2 follow-up, 2026-11-20): exact substring edits; a patch that matches nothing is an error.
+const PERSONA_PATCHES: Record<string, Array<{ field: 'speechStyle' | 'shortPersona'; from: string; to: string }>> = {
+    none: [],
+    'no-length-cap': [
+        { field: 'speechStyle', from: '平淡简短，', to: '平淡，' },
+        { field: 'speechStyle', from: '每次最多两句、四十字以内，', to: '' },
+        { field: 'shortPersona', from: '说话平淡简短：每次最多两句、四十字以内，', to: '说话平淡，' },
+    ],
+    'no-silence': [
+        { field: 'speechStyle', from: '没依据就问一句或者不说', to: '没依据就问一句' },
+    ],
+}
+
+function applyPersonaPatch(choice: CharacterChoice, name: string): CharacterChoice {
+    const edits = PERSONA_PATCHES[name]
+    if (!edits) throw new Error(`--persona-patch must be one of ${Object.keys(PERSONA_PATCHES).join(' | ')}`)
+    if (edits.length === 0) return choice
+    const profile = { ...choice.profile }
+    for (const e of edits) {
+        const before = profile[e.field] ?? ''
+        if (!before.includes(e.from)) throw new Error(`persona patch ${name}: "${e.from}" not found in ${e.field}`)
+        profile[e.field] = before.replace(e.from, e.to)
+    }
+    return { ...choice, profile }
+}
+
 async function loadCharacter(name: string): Promise<CharacterChoice> {
     if (name === 'shen') return { profile: shenZhiweiProfile, voice: shenZhiweiVoice, source: null }
     if (name !== 'jingjing') throw new Error(`Unknown character "${name}" (shen | jingjing)`)
@@ -138,6 +165,7 @@ interface Args {
     /** P4 */
     world: boolean
     character: string
+    personaPatch: string
     sessions: number
     turns: number
     maxCalls: number
@@ -183,6 +211,7 @@ function parseArgs(argv: string[]): Args {
         brokenHistory: brokenCount(values.get('broken-history') ?? '0'),
         world: onOff(values.get('world') ?? 'off', 'world'),
         character: values.get('character') ?? 'shen',
+        personaPatch: values.get('persona-patch') ?? 'none',
         sessions: int('sessions', DEFAULT_SESSIONS),
         turns: Math.min(int('turns', lines.length), lines.length),
         maxCalls,
@@ -334,7 +363,7 @@ async function main(): Promise<void> {
     const script = Array.from({ length: args.repeat }, (_, c) => base.map((l) => ({ ...l, n: l.n + c * base.length }))).flat()
     const budget = args.budgetPromptTokens === null ? undefined : { maxPromptTokens: args.budgetPromptTokens }
     const restartsFile = join(outDir, 'restarts.jsonl')
-    const character = await loadCharacter(args.character)
+    const character = applyPersonaPatch(await loadCharacter(args.character), args.personaPatch)
     const position = { session: 0, line: 0, attempt: 0 }
     const provider = new RecordingProvider(buildProvider(args.provider, args.thinking, args.timeoutMs), args.maxCalls, eventsFile, () => ({ ...position }))
 
@@ -361,6 +390,8 @@ async function main(): Promise<void> {
         character: character.profile.name,
         characterVersion: character.profile.version ?? null,
         characterSource: character.source,
+        personaPatch: { name: args.personaPatch, edits: PERSONA_PATCHES[args.personaPatch],
+            speechStyle: character.profile.speechStyle, shortPersona: character.profile.shortPersona ?? null },
         world: args.world ? { worldId: WORLD_ID, allowedVerbs: ['use'], allowedTargets: ['desk_01'] } : null,
         scriptVersion: chosen.version,
         conversationConfig: conversation,
