@@ -17,6 +17,7 @@ import type { CharacterProfile, Usage } from '../types.ts'
 import type { DriveReading } from '../semantics/drives.ts'
 import type { Situation } from '../semantics/situation.ts'
 import type { WakeReason } from './waker.ts'
+import type { AgendaOp, AgendaView } from '../semantics/agenda.ts'
 
 export interface MindOption {
   verb: string
@@ -43,6 +44,8 @@ export interface MindRecentOutcome {
   status: string
   /** 结构性描述，例如「buy(bread) 失败」 */
   line: string
+  /** World action id; shown to the Mind only when it keeps an agenda (evidence for `done`) */
+  actionId?: string
 }
 
 /** 六类语义的一次快照。 */
@@ -65,6 +68,8 @@ export interface MindInput {
   options: MindOption[]
   /** 世界 id → 显示名（地点、人物、物品），由场景提供；只用于渲染 */
   names?: Readonly<Record<string, string>>
+  /** The character's four-quadrant to-do list; absent when the runner keeps none */
+  agenda?: AgendaView
 }
 
 export interface MindAction {
@@ -72,6 +77,8 @@ export interface MindAction {
   target: string | null
   reason: string
   expectation: string | null
+  /** Agenda item this action is for (model output, checked by the runner) */
+  forItem?: string | null
 }
 
 export interface MindDecision {
@@ -86,6 +93,8 @@ export interface MindDecision {
   error: string | null
   /** 模型原始输出（规则 Mind 没有）。启用完整性层时完整入账（宪法 K4） */
   raw?: { text: string; model: string; requestFingerprint: string }
+  /** Proposed agenda edits (model output, validated by Agenda.apply) */
+  agendaOps?: AgendaOp[]
 }
 
 export interface Mind {

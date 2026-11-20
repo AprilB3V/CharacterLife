@@ -118,6 +118,8 @@ function pretty(r: AutonomyLogRecord): string | null {
       const err = r.error ? `  ⚠ ${r.error}` : ''
       return `${r.clock}  ◆ 醒[${why}] ${d} @${where} → ${act}${adm}${err}${r.thought ? `  「${r.thought}」` : ''}`
     }
+    case 'agenda':
+      return null
   }
 }
 

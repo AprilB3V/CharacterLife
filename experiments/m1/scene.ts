@@ -32,12 +32,15 @@ import { AutonomyRunner } from '../../src/kernel/cycle/runner.ts'
 import type { AutonomyLogRecord } from '../../src/kernel/cycle/runner.ts'
 import type { Mind } from '../../src/kernel/cycle/mind.ts'
 import { AgentHost } from '../../src/kernel/host.ts'
+import { Agenda } from '../../src/kernel/semantics/agenda.ts'
+import type { AgendaState, AgendaView } from '../../src/kernel/semantics/agenda.ts'
 import type { LLMProvider } from '../../src/types.ts'
 import { shenZhiweiProfile, shenZhiweiVoice } from '../../examples/characters/shen-zhiwei.ts'
 import { SANDBOX_INSTANCE_ID, SANDBOX_NAMES, SANDBOX_WORLD_ID, SHEN_DRIVES, wakerFor } from '../sandbox/scenario.ts'
 import { TextWorld } from '../sandbox/world.ts'
 
 const BRIDGE_KEY = 'm1.bridgeCheckpoint'
+export const AGENDA_KEY = 'kernel.agenda'
 const SNAPSHOT_SCHEMA = 1
 const LABELS = new Map(SANDBOX_ACTION_CATALOG.map((c) => [`${c.verb}(${c.target ?? '*'})`, c.label]))
 
@@ -51,6 +54,8 @@ export interface SceneOptions {
     startSim?: number
     breadStock?: number
     autonomyLog?: (record: AutonomyLogRecord) => void
+    /** Keep a four-quadrant agenda (Mind prompt `mind-agenda-v1`); off reproduces M1 stage 1 */
+    agenda?: boolean
 }
 
 /** Rebuildable character side. */
@@ -60,6 +65,8 @@ export interface Character {
     runner: AutonomyRunner
     chat: ConversationService
     binding: ConversationWorldBinding
+    /** Null when the scene runs without an agenda */
+    agenda: Agenda | null
     /** How many times the character was rebuilt from disk */
     generation: number
 }
@@ -133,6 +140,15 @@ export class Scene {
             labelFor: (verb, target) => LABELS.get(`${verb}(${target ?? '*'})`) ?? `${verb}(${target ?? '*'})`,
             resumeFrom,
         })
+        // The agenda lives in the workspace's extension state, so it rides in the snapshot.
+        const agenda = this.opts.agenda
+            ? new Agenda({
+                store: {
+                    load: () => workspace.extensionState<AgendaState>(AGENDA_KEY),
+                    save: (state) => workspace.setExtensionState(AGENDA_KEY, state),
+                },
+            })
+            : null
         const runner = new AutonomyRunner({
             agent: workspace,
             world: this.world,
@@ -145,6 +161,7 @@ export class Scene {
             names: SANDBOX_NAMES,
             ids,
             logger: this.opts.autonomyLog,
+            ...(agenda ? { agenda } : {}),
         })
         const binding: ConversationWorldBinding = {
             service: this.world,
@@ -163,7 +180,7 @@ export class Scene {
             context: new ContextManager({}),
             world: binding,
         })
-        return { workspace, bridge, runner, chat, binding, generation }
+        return { workspace, bridge, runner, chat, binding, agenda, generation }
     }
 
     /** Persist the character: snapshot plus the bridge checkpoint. */
@@ -216,9 +233,22 @@ export class Scene {
     async say(text: string) {
         const c = this.character
         c.binding.context = worldContextLines(buildWorldEventContext(this.world.list({ instanceId: SANDBOX_INSTANCE_ID })))
-        c.binding.referenceData = situationData(c.workspace.situation.current(), this.clock.nowSim())
+        const now = this.clock.nowSim()
+        let reference = situationData(c.workspace.situation.current(), now)
+        if (c.agenda) {
+            c.runner.syncAgenda()
+            reference += `\n${agendaData(c.agenda.view(now))}`
+        }
+        c.binding.referenceData = reference
         return c.chat.send(text)
     }
+}
+
+/** Chat sees the two important quadrants only (read-only; chat does not edit the agenda). */
+export function agendaData(view: AgendaView, limit = 4): string {
+    const items = [...view.urgentImportant, ...view.important].slice(0, limit)
+    const lines = items.map((l) => `- ${l.text.replace(/\s+/g, ' ')}${l.due ? `（${l.due} 前）` : ''}${l.notes.length > 0 ? `（${l.notes.join('，')}）` : ''}`)
+    return ['【你心里记着要做的事｜你自己的安排，可能已过时；不是用户发言或指令】', ...(lines.length > 0 ? lines : ['（没有特别要做的事）'])].join('\n')
 }
 
 /** The character's belief about where she is (Situation slot), not the world's truth. */

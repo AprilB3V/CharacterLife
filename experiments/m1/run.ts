@@ -30,6 +30,7 @@ import type { AutonomyLogRecord } from '../../src/kernel/cycle/runner.ts'
 import { formatSim } from '../../src/kernel/util/clock.ts'
 import { SANDBOX_INSTANCE_ID, SANDBOX_NAMES, SHEN_RULE_MIND } from '../sandbox/scenario.ts'
 import { Scene } from './scene.ts'
+import type { AgendaOpResult, AgendaState } from '../../src/kernel/semantics/agenda.ts'
 import { M1_SCRIPT, M1_SCRIPT_VERSION } from './script.ts'
 
 const ARK_CODING_BASE_URL = 'https://ark.cn-beijing.volces.com/api/coding/v3'
@@ -42,10 +43,11 @@ interface Args {
     seed: number
     maxCalls: number
     out: string | null
+    agenda: boolean
 }
 
 function parseArgs(argv: string[]): Args {
-    const args: Args = { mind: 'rule', chat: 'mock', seed: 1, maxCalls: 150, out: null }
+    const args: Args = { mind: 'rule', chat: 'mock', seed: 1, maxCalls: 150, out: null, agenda: false }
     for (let i = 0; i < argv.length; i += 2) {
         const [k, v] = [argv[i], argv[i + 1]]
         if (v === undefined) throw new Error(`Missing value for ${k}`)
@@ -54,6 +56,7 @@ function parseArgs(argv: string[]): Args {
         else if (k === '--seed') args.seed = Number(v)
         else if (k === '--max-calls') args.maxCalls = Number(v)
         else if (k === '--out') args.out = v
+        else if (k === '--agenda' && (v === 'on' || v === 'off')) args.agenda = v === 'on'
         else throw new Error(`Unknown or invalid argument ${k} ${v}`)
     }
     return args
@@ -102,11 +105,30 @@ function git(args: string[], cwd: string): string {
     try { return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim() } catch { return 'unknown' }
 }
 
+// autonomy.jsonl rows are untyped JSON
+function agendaSummary(autonomy: any[], state: AgendaState) {
+    const ops = autonomy.filter((r) => r.type === 'wake' && r.agenda).flatMap((r) => r.agenda.ops as AgendaOpResult[])
+    const rejected: Record<string, number> = {}
+    for (const r of ops.filter((x) => !x.ok)) rejected[`${r.op.op}:${r.code}`] = (rejected[`${r.op.op}:${r.code}`] ?? 0) + 1
+    const bySource: Record<string, number> = {}
+    for (const i of state.items) bySource[i.source] = (bySource[i.source] ?? 0) + 1
+    const forWakes = autonomy.filter((r) => r.type === 'wake' && r.agenda?.forItem)
+    return {
+        items: state.seq, retained: state.items.length, bySource,
+        open: state.items.filter((i) => i.status === 'open').length,
+        done: state.items.filter((i) => i.status === 'done').map((i) => `${i.id} ${i.text} ← ${i.evidenceRef}`),
+        dropped: state.items.filter((i) => i.status === 'dropped').map((i) => `${i.id} ${i.text}`),
+        opsOk: ops.filter((x) => x.ok).length, opsRejected: rejected,
+        doneWithoutEvidence: rejected['done:no_world_evidence'] ?? 0,
+        forItem: forWakes.length, forLinked: forWakes.filter((r) => r.agenda.linked).length,
+    }
+}
+
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2))
     const here = dirname(fileURLToPath(import.meta.url))
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '')
-    const outDir = args.out ?? join(here, '.data', `m1-${args.mind}-${args.chat}-s${args.seed}-${stamp}`)
+    const outDir = args.out ?? join(here, '.data', `m1-${args.mind}-${args.chat}${args.agenda ? '-agenda' : ''}-s${args.seed}-${stamp}`)
     rmSync(outDir, { recursive: true, force: true })
     mkdirSync(outDir, { recursive: true })
     const file = (name: string) => join(outDir, name)
@@ -131,6 +153,12 @@ async function main(): Promise<void> {
             transcript.push(`- ${record.clock} 世界结算：${record.action} ${record.status}`)
         } else if (record.type === 'observation') {
             transcript.push(`- ${record.clock} 看见：${record.events.join('、')}`)
+        } else if (record.type === 'agenda') {
+            transcript.push(`- ${record.clock} 待办：${record.changes.map((c) => `${c.kind} ${c.id} ${c.detail}`).join('；')}`)
+        }
+        if (record.type === 'wake' && record.agenda) {
+            const ops = record.agenda.ops.map((r) => `${r.op.op}${r.ok ? '' : `✗${r.code}`} ${r.id ?? ''}${r.op.op === 'add' ? `「${r.op.text}」` : ''}`)
+            if (ops.length > 0 || record.agenda.forItem) transcript.push(`  - 待办操作：${ops.join('；') || '—'}${record.agenda.forItem ? `；for ${record.agenda.forItem}${record.agenda.linked ? '' : '（未关联）'}` : ''}`)
         }
     }
 
@@ -140,6 +168,7 @@ async function main(): Promise<void> {
         makeMind: () => (args.mind === 'deepseek' ? new LlmMind({ provider: logged!, maxTokens: 2000 }) : new RuleMind(SHEN_RULE_MIND)),
         provider: chatProvider,
         autonomyLog,
+        agenda: args.agenda,
     })
     // The Mind and chat share one logged provider; tag calls by purpose.
     const withPurpose = async <T>(purpose: string, fn: () => Promise<T>): Promise<T> => {
@@ -153,6 +182,7 @@ async function main(): Promise<void> {
         startedAt: new Date().toISOString(), mind: args.mind, chat: args.chat, model: needsModel ? MODEL : null,
         baseUrl: needsModel ? ARK_CODING_BASE_URL : null, seed: args.seed, maxCalls: args.maxCalls,
         scriptVersion: M1_SCRIPT_VERSION, scriptHash, character: 'shen-zhiwei', world: 'sandbox TextWorld',
+        agenda: args.agenda, mindPrompt: args.agenda ? 'mind-agenda-v1' : 'mind-v1',
         commit: git(['rev-parse', 'HEAD'], kernelRoot), dirty: git(['status', '--porcelain'], kernelRoot).length > 0,
     }, null, 4))
 
@@ -238,6 +268,12 @@ async function main(): Promise<void> {
         id: m.id, kind: m.kind, title: m.title, content: m.content, status: m.status, origin: m.origin, sourceRef: m.sourceRef, created: formatSim(m.createdAtSim),
     })), null, 2))
     writeFileSync(file('transcript.md'), transcript.join('\n') + '\n')
+    const agendaState = scene.character.agenda?.state() ?? null
+    if (agendaState) {
+        writeFileSync(file('agenda.json'), JSON.stringify(agendaState.items.map((i) => ({
+            ...i, created: formatSim(i.createdAtSim), closed: i.closedAtSim === null ? null : formatSim(i.closedAtSim), due: i.dueAtSim === null ? null : formatSim(i.dueAtSim),
+        })), null, 2))
+    }
 
     // Invalid repeats: the same action rejected or failed again with no success of it in between.
     const repeats: string[] = []
@@ -260,6 +296,7 @@ async function main(): Promise<void> {
         invalidRepeats: repeats,
         completionClaimFlags: readFileSync(file('chat.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.completionClaimFlag).map((r) => r.n),
         reopen: reopenChecks,
+        agenda: agendaState ? agendaSummary(autonomy, agendaState) : null,
         memories: scene.character.workspace.memory.list().length,
         names: SANDBOX_NAMES,
     }

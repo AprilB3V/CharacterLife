@@ -26,7 +26,7 @@ import { ContextManager } from '../context/manager.ts'
 import type { ContextBudget } from '../context/manager.ts'
 import type { Clock } from '../kernel/util/clock.ts'
 import type { SequentialIdFactory } from '../kernel/util/ids.ts'
-import { createId } from '../kernel/util/ids.ts'
+import { RESTORED_ID_PREFIXES, createId, seedFromState } from '../kernel/util/ids.ts'
 import type { Rng } from '../kernel/util/rng.ts'
 import { SCHEMA_VERSION } from '../persistence/schema.ts'
 import { AuditLog } from '../kernel/policy/audit.ts'
@@ -152,16 +152,9 @@ const MAX_UNANSWERED = 8
  * 与 PersistentSession.open 使用同一逻辑（这里导出复用，避免两份实现漂移）。
  */
 export function seedIdCounters(ids: SequentialIdFactory, workspace: CharacterWorkspace): void {
-  const rel = workspace.relationship
-  ids.seed('ms', rel.milestones.length)
-  ids.seed('bnd', rel.boundaries.length)
-  ids.seed('msg', workspace.pendingMessages().length)
-  ids.seed('prom', workspace.openPromises().length)
-  ids.seed('game_flag', workspace.motivation.commitments().filter(item => item.owner === 'user').length)
-  ids.seed('evt', workspace.timeline.size)
-  const all = workspace.memory.list({ includeDeleted: true })
-  ids.seed('mem_ep', all.filter((m) => m.kind === 'episodic').length)
-  ids.seed('mem_us', all.filter((m) => m.kind === 'user').length)
+  // Seed from the highest id in the restored state, not from counts: settled promises, delivered
+  // messages and deleted memories keep their ids, and memory.list() is capped (same fix as PersistentSession).
+  seedFromState(ids, workspace.dumpState(), [...RESTORED_ID_PREFIXES, 'game_flag'])
 }
 
 /** 把当前状态写成「最新状态 + 快照」，供崩溃/重启恢复。 */
