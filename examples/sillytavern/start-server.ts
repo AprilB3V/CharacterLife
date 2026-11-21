@@ -8,6 +8,7 @@
  *   CHARACTERLIFE_HOST        默认 127.0.0.1（只监听本机）
  *   CHARACTERLIFE_ST_IDENTITY SillyTavern 本地身份（默认 local-default）
  *   DEEPSEEK_API_KEY          可选；没有则用 MockProvider
+ *   TELEGRAM_BOT_TOKEN        可选；设置后在同一进程里启动 Telegram 机器人（见 .env.example）
  *
  * 运行：
  *   $env:CHARACTERLIFE_API_TOKEN = "local-dev-token-123"
@@ -16,6 +17,8 @@
 
 import { loadEnvConfig, assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { createApiServer } from '../../src/api/server.ts'
+import { bootTelegram } from '../telegram/boot.ts'
+import { bootConsole } from '../console-boot.ts'
 
 const env = loadEnvConfig()
 if (!env.token) {
@@ -28,6 +31,17 @@ const runtime = assembleRuntime({
   dbPath: env.dbPath,
   worldId: process.env.CHARACTERLIFE_WORLD ?? 'world_local',
   auditFile: null,
+  ...(env.telegram
+    ? {
+        telegram: {
+          token: env.telegram.token,
+          apiBase: env.telegram.apiBase,
+          proactive: env.telegram.proactive,
+          parse: env.telegram.parse,
+          splitParagraphs: env.telegram.splitParagraphs,
+        },
+      }
+    : {}),
 })
 
 const api = createApiServer({
@@ -50,8 +64,11 @@ console.log('  模型      : 从下拉列表里选 characterlife/shen-zhiwei')
 console.log('')
 console.log('健康检查： GET /healthz    模型列表： GET /v1/models（需要 Bearer Token）')
 
+const telegram = env.telegram ? await bootTelegram(runtime, env.telegram) : null
+const ownerConsole = await bootConsole(runtime)
+
 process.on('SIGINT', () => {
-  void api.close().finally(() => {
+  void Promise.allSettled([api.close(), telegram?.stop(), ownerConsole?.close()]).finally(() => {
     runtime.close()
     process.exit(0)
   })

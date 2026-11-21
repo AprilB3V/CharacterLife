@@ -16,6 +16,7 @@ import type {
   ConversationWorldActions,
   LLMMessage,
   LLMProvider,
+  LLMResponse,
   MessageSignals,
   PolicyCode,
   StateProposal,
@@ -34,6 +35,8 @@ import type { Clock } from '../kernel/util/clock.ts'
 import type { IdFactory } from '../kernel/util/ids.ts'
 import type { CharacterWorkspace } from '../runtime/workspace.ts'
 import { analyzeMessage } from '../runtime/signals.ts'
+import { capText } from '../runtime/trace.ts'
+import type { TraceMemoryRef, TurnTrace } from '../runtime/trace.ts'
 import { CONVERSATION_ACTOR } from '../kernel/policy/policy.ts'
 import { admitWorldIntents } from '../kernel/world/admission.ts'
 import type { WorldService } from '../kernel/world/service.ts'
@@ -121,7 +124,24 @@ export interface ConversationServiceOptions {
   onContextUsage?: (usage: ContextUsageInput) => void
   /** 世界交互绑定；不给 = 本部署没有世界，提示词与信封保持旧协议 */
   world?: ConversationWorldBinding | null
+  /** Receives a full trace of each turn (owner console); observing only, never changes the turn. */
+  onTrace?: (trace: TurnTraceDraft) => void
 }
+
+/** A turn trace before the runtime stamps its id and instance. */
+export type TurnTraceDraft = Omit<TurnTrace, 'kind' | 'id' | 'instanceId' | 'identityKey'>
+
+/** Mutable trace collected while a turn runs; fields stay null when a stage did not happen. */
+export interface TraceCollector {
+  draft: TurnTraceDraft
+  fallback: string | null
+  memories: NonNullable<TurnTrace['outcome']>['memories']
+  error: string | null
+}
+
+const memoryRef = (m: { id: string; title: string; kind?: string; status?: string }, detail?: string): TraceMemoryRef => ({
+  id: m.id, title: m.title, ...(m.kind ? { kind: m.kind } : {}), ...(m.status ? { status: m.status } : {}), ...(detail ? { detail } : {}),
+})
 
 export interface ContextUsageInput {
   turnId: string
@@ -169,6 +189,7 @@ export class ConversationService {
     #holdMemory: ConversationServiceOptions['holdMemory']
     #contextData: ConversationServiceOptions['contextData']
     #referenceData: ((query: string) => string) | null
+    #onTrace: ((trace: TurnTraceDraft) => void) | null
   #lastPlan: ContextPlan | null = null
   #history: LLMMessage[] = []
   #turnCount = 0
@@ -186,6 +207,7 @@ export class ConversationService {
     this.#holdMemory = opts.holdMemory
     this.#contextData = opts.contextData
     this.#referenceData = opts.referenceData ?? null
+    this.#onTrace = opts.onTrace ?? null
   }
 
   get config(): Readonly<ConversationConfig> {
@@ -213,6 +235,47 @@ export class ConversationService {
   async send(
     newText: string,
     onReplyDelta?: (text: string) => void,
+    options: Parameters<ConversationService['sendTurn']>[2] = {},
+  ): Promise<ConversationTurnResult> {
+    if (!this.#onTrace) return this.sendTurn(newText, onReplyDelta, options, null)
+    const userText = options.prior?.length ? [...options.prior, newText].join('\n') : newText
+    const trace: TraceCollector = {
+      draft: { turnId: '', atWall: this.#clock.nowWall().toISOString(), input: capText(userText), signals: null, decision: null,
+        recall: null, context: null, prompt: null, attempts: [], envelope: null, outcome: null },
+      fallback: null,
+      memories: [],
+      error: null,
+    }
+    let result: ConversationTurnResult | undefined
+    try {
+      result = await this.sendTurn(newText, onReplyDelta, options, trace)
+      return result
+    } catch (err) {
+      trace.error = err instanceof Error ? err.message : String(err)
+      throw err
+    } finally {
+      const d = trace.draft
+      d.outcome = {
+        reply: result?.reply ?? '',
+        fallback: trace.fallback,
+        provider: result?.provider ?? 'none',
+        model: result?.model ?? 'none',
+        latencyMs: result?.latencyMs ?? 0,
+        applied: (result?.appliedProposals ?? []).map((p) => ({ id: p.id, path: p.path, op: p.op, value: p.value, reason: p.reason })),
+        rejected: (result?.rejectedProposals ?? []).map((r) => ({ id: r.proposal.id, path: r.proposal.path, code: r.decision.code,
+          reason: r.decision.reasons.join('；') })),
+        memories: trace.memories,
+        blockedReasons: [...(result?.blockedReasons ?? [])],
+        error: trace.error,
+      }
+      try { this.#onTrace?.(d) } catch { /* a console sink must never break a turn */ }
+    }
+  }
+
+  /** @internal The turn itself; `send` wraps it to collect a trace when someone listens. */
+  async sendTurn(
+    newText: string,
+    onReplyDelta?: (text: string) => void,
     options: {
       /** Trusted decision guidance for the behavior rationale. */
       guidance?: string[]
@@ -224,6 +287,7 @@ export class ConversationService {
        */
       silentOnBudgetExceeded?: boolean
     } = {},
+    trace: TraceCollector | null = null,
   ): Promise<ConversationTurnResult> {
     const userText = options.prior?.length ? [...options.prior, newText].join('\n') : newText
     const turnId = this.#ids.next('turn')
@@ -245,6 +309,12 @@ export class ConversationService {
     const decided = this.#workspace.decide(signals)
     // Guidance from the thinking loop joins the rationale; it never changes permissions.
     const decision = options.guidance?.length ? { ...decided, rationale: [...decided.rationale, ...options.guidance] } : decided
+    if (trace) {
+      trace.draft.turnId = turnId
+      trace.draft.signals = { ...signals } as unknown as Record<string, unknown>
+      trace.draft.decision = { action: decision.action, responseStyle: decision.responseStyle, rationale: [...decision.rationale],
+        scores: { ...decision.scores } }
+    }
 
     // 世界交互：清单来自服务端（代码常量 ∩ 白名单），与用户文本无关。
     const world = this.#world
@@ -281,10 +351,21 @@ export class ConversationService {
       ? recalledMemories.filter((m) => this.#workspace.memory.tierOf(m, nowSim, curve) !== 'clear').map((m) => m.id)
       : [])
 
+    if (trace) {
+      trace.draft.recall = {
+        pinned: pinned.map((m) => memoryRef(m)),
+        retrieved: retrieved.map((r) => memoryRef(r.entry, `score ${r.score.toFixed(3)}`)),
+        cued: cued.map((r) => memoryRef(r.entry, r.keys.join('、'))),
+        fuzzy: [...fuzzyIds],
+        inPrompt: recalledIds,
+      }
+    }
+
     const blockedReasons: PolicyCode[] = []
 
     // 1) 内容边界：短路，不调用模型（省钱且确定性安全）
     if (signals.contentBoundaryRisk === 'adult') {
+      if (trace) trace.fallback = 'boundary_short_circuit'
       blockedReasons.push('BOUNDARY_CONFLICT')
       this.#workspace.audit.append('turn', 'conversation', '内容边界短路，未调用模型', {
         turnId,
@@ -352,7 +433,12 @@ export class ConversationService {
         nowSim,
       })
       this.#lastPlan = plan
+      if (trace) {
+        trace.draft.context = { budget: plan.budget, estPromptTokens: plan.estPromptTokens, degradation: plan.degradation,
+          droppedHistoryTurns: plan.droppedHistoryTurns, droppedMemoryIds: [...plan.droppedMemoryIds], digestedTurns: plan.digestedTurns }
+      }
       if (!plan.fits) {
+        if (trace) trace.fallback = 'context_budget_exceeded'
         // 明确的降级终点：不调用模型，给出可解释的安全失败。
         blockedReasons.push('CAPABILITY_MISSING')
         this.#workspace.audit.append('turn', 'conversation', '上下文预算不足，放弃本轮模型调用', {
@@ -402,6 +488,16 @@ export class ConversationService {
       })
     }
 
+    if (trace) {
+      trace.draft.prompt = { system: capText(system), messages: messages.map((m) => ({ ...m, content: capText(m.content) })) }
+      if (trace.draft.recall) trace.draft.recall.inPrompt = [...promptMemoryIds]
+    }
+    const record = (response: LLMResponse, parseError: string | null) => {
+      trace?.draft.attempts.push({ raw: capText(response.text), rawLength: response.text.length,
+        reasoning: response.reasoningText ? capText(response.reasoningText) : null, reasoningChars: response.reasoningChars ?? response.reasoningText?.length ?? 0,
+        finishReason: response.finishReason ?? null, usage: response.usage, latencyMs: response.latencyMs, parseError })
+    }
+
     const started = Date.now()
     let reply: string
     let provider = this.#provider.name
@@ -448,6 +544,7 @@ export class ConversationService {
       }
       let response = await callModel()
       let parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
+      record(response, parsed.error)
       if (!parsed.envelope && !shown && isBrokenEnvelope(response.text, response.finishReason)) {
         this.#workspace.audit.append('provider_error', 'conversation', '结构化输出缺少回复，自动重试一次', {
           turnId,
@@ -457,6 +554,7 @@ export class ConversationService {
         })
         response = await callModel()
         parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
+        record(response, parsed.error)
       }
       provider = response.provider
       model = response.model
@@ -478,10 +576,16 @@ export class ConversationService {
           reasoningChars: response.reasoningChars ?? 0,
         })
         reply = BROKEN_ENVELOPE_FALLBACK
+        if (trace) trace.fallback = 'broken_envelope'
       }
       if (parsed.envelope) {
+        if (trace) {
+          trace.draft.envelope = { reply: parsed.envelope.reply, proposals: structuredClone(parsed.envelope.proposals),
+            memoryWrites: structuredClone(parsed.envelope.memoryWrites), worldActions: structuredClone(parsed.envelope.worldActions ?? []) }
+        }
         if (signals.injectionMarkers.length > 0 && parsed.envelope.reply.length === 0) {
           reply = INJECTION_PUSHBACK_REPLY
+          if (trace) trace.fallback = 'injection_pushback'
         }
         parsedProposals = parsed.envelope.proposals.map((p, i) => ({
           id: `${turnId}_p${i + 1}`,
@@ -507,6 +611,7 @@ export class ConversationService {
           reasoningChars: response.reasoningChars ?? 0,
         })
         reply = EMPTY_REPLY_FALLBACK
+        if (trace) trace.fallback = 'empty_reply'
       }
     } catch (err) {
       // 安全失败：模型不可用时角色仍要能说话，且状态不变。
@@ -515,6 +620,12 @@ export class ConversationService {
         message: (err as Error).message,
       })
       reply = '我这边网好像有点飘，刚才那句没接上。你再说一次？'
+      if (trace) {
+        trace.fallback = 'provider_error'
+        trace.error = err instanceof Error ? err.message : String(err)
+        trace.draft.attempts.push({ raw: '', rawLength: 0, reasoning: null, reasoningChars: 0, finishReason: null, usage: null,
+          latencyMs: Date.now() - started, parseError: `调用失败：${trace.error}` })
+      }
       blockedReasons.push('CAPABILITY_MISSING')
       parseError = (err as Error).message
     }
@@ -550,8 +661,11 @@ export class ConversationService {
 
     // 5) 记忆写入（含不可信内容降级）
     for (const write of memoryWrites) {
+      const traceWrite = (result: 'written' | 'held' | 'skipped', status: string = write.status) => trace?.memories.push({ kind: write.kind,
+        title: write.title, content: capText(write.content, 2000), status, result })
       // Recall about recall ("no record of X") is not stored: it would outrank the real fact.
       if (isAbsenceClaim(write.title, write.content)) {
+        traceWrite('skipped')
         this.#workspace.audit.append('memory_skipped', 'conversation', '跳过元记忆写入', {
           turnId,
           kind: write.kind,
@@ -569,8 +683,16 @@ export class ConversationService {
         salience: write.salience,
         tags: write.tags,
       }
-      if (this.#holdMemory?.(input, turnId)) continue
-      this.#workspace.writeMemory(input, CONVERSATION_ACTOR, turnId)
+      if (this.#holdMemory?.(input, turnId)) {
+        traceWrite('held')
+        continue
+      }
+      const written = this.#workspace.writeMemory(input, CONVERSATION_ACTOR, turnId)
+      if (trace) {
+        // Policy may downgrade or refuse the write; trace what was stored, not what was asked.
+        const stored = written.entryId ? this.#workspace.memory.get(written.entryId) : null
+        traceWrite(written.written ? 'written' : 'skipped', stored?.status ?? (written.written ? write.status : `拒绝：${written.verdict}`))
+      }
     }
 
     // 6) 运行时观察：边界、约定、分歧修复（关系只能从这里变化）

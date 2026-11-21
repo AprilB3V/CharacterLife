@@ -15,7 +15,11 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { RuntimeBundle } from '../../api/runtime-factory.ts'
+import type { InboundOutcome } from '../../api/gateway.ts'
+import { identityKey } from '../../api/gateway.ts'
+import type { NormalizedMessage } from '../protocol.ts'
 import { verifyOneBotSignature } from './webhook.ts'
+import { isCommandText } from './events.ts'
 
 export interface OneBotReportServerOptions {
   runtime: RuntimeBundle
@@ -28,6 +32,22 @@ export interface OneBotReportServerOptions {
   allowNonLoopback?: boolean
   bodyLimitBytes?: number
   logger?: (line: string) => void
+  /**
+   * Wait a random time in this range after each message before replying; messages from the same
+   * chat that arrive meanwhile are merged into one turn and restart the wait. Null = reply at once.
+   * Commands (`/...`) never wait.
+   */
+  replyWait?: { minMs: number; maxMs: number } | null
+  /** Longest a merged turn may be held from its first message (default 15000) */
+  maxHoldMs?: number
+  random?: () => number
+}
+
+interface PendingBatch {
+  messages: NormalizedMessage[]
+  firstAt: number
+  timer: ReturnType<typeof setTimeout> | null
+  done: () => void
 }
 
 export interface OneBotReportServerHandle {
@@ -64,6 +84,10 @@ export function createOneBotReportServer(opts: OneBotReportServerOptions): OneBo
   const secret = opts.secret && opts.secret.length > 0 ? opts.secret : null
   const inflight = new Set<Promise<unknown>>()
   let url: string | null = null
+  const replyWait = opts.replyWait && opts.replyWait.maxMs > 0 ? opts.replyWait : null
+  const maxHoldMs = opts.maxHoldMs ?? 15_000
+  const random = opts.random ?? Math.random
+  const batches = new Map<string, PendingBatch>()
 
   const log = (payload: Record<string, unknown>): void => {
     logger(JSON.stringify({ t: new Date().toISOString(), ...payload }))
@@ -76,6 +100,84 @@ export function createOneBotReportServer(opts: OneBotReportServerOptions): OneBo
   const track = (promise: Promise<unknown>): void => {
     inflight.add(promise)
     void promise.finally(() => inflight.delete(promise)).catch(() => {})
+  }
+
+  const logOutcome = (kind: string, outcome: InboundOutcome, started: number, merged = 1): void => {
+    // Event type and result only, never the message text
+    log({
+      level: 'info',
+      kind,
+      status: outcome.status,
+      instance: outcome.instanceId ?? null,
+      reason: outcome.reason ?? null,
+      ...(merged > 1 ? { merged } : {}),
+      ms: Date.now() - started,
+    })
+  }
+
+  const batchKey = (message: NormalizedMessage): string => `${identityKey(message.identity)}|${message.replyTarget}`
+
+  /** Run one held turn: all its messages go to the model as one input, in arrival order. */
+  async function flush(key: string): Promise<void> {
+    const batch = batches.get(key)
+    if (!batch) return
+    batches.delete(key)
+    if (batch.timer) clearTimeout(batch.timer)
+    const last = batch.messages[batch.messages.length - 1]!
+    const merged: NormalizedMessage = { ...last, text: batch.messages.map((m) => m.text).join('\n') }
+    try {
+      const outcome = await runtime.gateway.handleMessage(adapter!, merged, [], undefined, { preAdmitted: true })
+      // The gateway settles the last message id; settle the earlier ones the same way.
+      for (const m of batch.messages.slice(0, -1)) {
+        runtime.platformStore.updateProcessedStatus(m.platform, m.platformMessageId, outcome.status)
+      }
+      logOutcome(`message/${last.scene}`, outcome, batch.firstAt, batch.messages.length)
+    } catch (err) {
+      log({ level: 'error', msg: '事件处理失败', error: (err as Error).message })
+    } finally {
+      batch.done()
+    }
+  }
+
+  function hold(message: NormalizedMessage): void {
+    const key = batchKey(message)
+    let batch = batches.get(key)
+    if (!batch) {
+      let done!: () => void
+      track(new Promise<void>((resolve) => { done = resolve }))
+      batch = { messages: [], firstAt: Date.now(), timer: null, done }
+      batches.set(key, batch)
+    }
+    batch.messages.push(message)
+    if (batch.timer) clearTimeout(batch.timer)
+    const wait = replyWait!.minMs + random() * (replyWait!.maxMs - replyWait!.minMs)
+    const delay = Math.max(0, Math.min(wait, batch.firstAt + maxHoldMs - Date.now()))
+    batch.timer = setTimeout(() => void flush(key), delay)
+  }
+
+  /** Held path: admit now (dedupe and rate limit per message), reply after the wait. */
+  async function receive(payload: unknown, started: number): Promise<void> {
+    let message: NormalizedMessage | null
+    try {
+      message = adapter!.parseInbound(payload)
+    } catch (err) {
+      log({ level: 'info', kind: 'parse', status: 'rejected', reason: `PARSE_ERROR: ${(err as Error).message}`, ms: Date.now() - started })
+      return
+    }
+    if (!message) return
+    const kind = `message/${message.scene}`
+    if (isCommandText(message.text.trim())) {
+      // Commands answer at once; anything held for this chat goes first to keep the order.
+      await flush(batchKey(message))
+      logOutcome(kind, await runtime.gateway.handleMessage(adapter!, message), started)
+      return
+    }
+    const admitted = runtime.gateway.admit(message)
+    if (!admitted.ok) {
+      log({ level: 'info', kind, status: admitted.status, instance: null, reason: admitted.reason, ms: Date.now() - started })
+      return
+    }
+    hold(message)
   }
 
   async function readBody(req: IncomingMessage): Promise<string> {
@@ -165,6 +267,13 @@ export function createOneBotReportServer(opts: OneBotReportServerOptions): OneBo
         // 先应答：网关不等我们调完模型
         res.writeHead(204).end()
 
+        if (replyWait) {
+          track(receive(payload, started).catch((err: unknown) => {
+            log({ level: 'error', msg: '事件处理失败', error: (err as Error).message })
+          }))
+          return
+        }
+
         track(
           runtime.gateway
             .handleRaw('onebot', payload)
@@ -224,6 +333,8 @@ export function createOneBotReportServer(opts: OneBotReportServerOptions): OneBo
       return true
     },
     async close() {
+      // Held turns are answered now instead of waiting out their timers.
+      await Promise.allSettled([...batches.keys()].map((key) => flush(key)))
       // 先等在途事件处理完（否则正在调模型的这一轮会被直接掐断）
       await handle.waitIdle()
       await new Promise<void>((resolve) => {

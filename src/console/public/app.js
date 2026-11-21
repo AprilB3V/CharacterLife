@@ -267,13 +267,14 @@ async function buildTabs() {
     const tab = (id, label, badge) => el('button', { role: 'tab', 'data-tab': id, 'aria-selected': String(state.tab === id),
         onclick: () => { location.hash = id } }, [label, el('span', { class: 'badge', hidden: !badge, text: String(badge ?? 0) })])
     $('tabs').replaceChildren(
-        tab('semantics', '六语义'), tab('memories', '记忆'), tab('review', '待审记忆', semantics.review.memories), tab('audit', '审计'),
+        tab('semantics', '六语义'), tab('traces', '思维链'), tab('memories', '记忆'), tab('review', '待审记忆', semantics.review.memories), tab('audit', '审计'),
+        tab('config', '配置'),
         ...plugins.flatMap(plugin => [el('span', { class: 'group', text: `插件 · ${plugin.title}` }),
             ...plugin.panels.map(panel => tab(`plugin:${plugin.id}:${panel.id}`, panel.title, panel.badge))]),
     )
 }
 
-async function render() {
+async function render(force = true) {
     if (!state.instance) return
     state.tab = (location.hash.slice(1).split('?')[0]) || 'semantics'
     for (const node of document.querySelectorAll('[data-tab]')) node.setAttribute('aria-selected', String(node.dataset.tab === state.tab))
@@ -283,12 +284,19 @@ async function render() {
         else if (state.tab === 'memories') view = await viewMemories()
         else if (state.tab === 'review') view = await viewReview()
         else if (state.tab === 'audit') view = await viewAudit()
+        else if (state.tab === 'traces') view = await viewTraces(force)
+        else if (state.tab === 'config') {
+            // Static per process: auto-refresh would only reset scroll and folds.
+            if (!force) return await refreshBadges()
+            view = await viewConfig()
+        }
         else if (state.tab.startsWith('plugin:')) {
             const [, pluginId, panelId] = state.tab.split(':')
             view = await viewPlugin(pluginId, panelId)
         } else view = el('p', { class: 'hint', text: '未知页面' })
         // Keep the open dialog and focus stable during auto-refresh.
-        if (!$('dialog').open) $('view').replaceChildren(view)
+        // null: nothing changed since the last render (keeps folds and scroll).
+        if (view && !$('dialog').open) $('view').replaceChildren(view)
         await refreshBadges()
     } catch (error) {
         show(error.message, 'error')
@@ -317,7 +325,7 @@ function schedule() {
     if ($('auto').checked) state.timer = setInterval(async () => {
         if (state.busy || document.hidden || $('dialog').open) return
         if (document.activeElement?.closest?.('.toolbar')) return
-        await render()
+        await render(false)
     }, 3000)
 }
 
@@ -331,5 +339,5 @@ $('login').addEventListener('submit', event => {
 $('instance').addEventListener('change', async event => { state.instance = event.target.value; await buildTabs(); await render() })
 $('refresh').addEventListener('click', async () => { if (state.instance) { await buildTabs(); await render() } })
 $('auto').addEventListener('change', schedule)
-window.addEventListener('hashchange', render)
+window.addEventListener('hashchange', () => render())
 if (state.token) connect()

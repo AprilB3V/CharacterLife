@@ -442,10 +442,14 @@ export interface LLMResponse {
   finishReason?: string | null
   /** 思考型模型可能把内容放在 reasoning_content 里；这里记录其长度，便于诊断空回复 */
   reasoningChars?: number
+  /** Reasoning text itself (capped), for the owner console's thought trace; never sent back to the model */
+  reasoningText?: string
 }
 
 export interface LLMProvider {
   readonly name: string
   readonly model: string
   complete(request: LLMRequest): Promise<LLMResponse>
+  /** Optional non-secret settings (endpoint, request options) shown by the owner console. */
+  describe?(): Record<string, unknown>
 }

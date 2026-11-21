@@ -4,6 +4,10 @@
  * 服务器与示例脚本共用这一份装配逻辑，避免「示例能跑、服务器跑不起来」。
  */
 
+import { TraceStore } from '../runtime/trace.ts'
+import { DEFAULT_CONVERSATION_CONFIG } from '../conversation/service.ts'
+import { DEFAULT_CONTEXT_BUDGET } from '../context/manager.ts'
+import { DEFAULT_WILLINGNESS } from '../kernel/thinking/willingness.ts'
 import { join } from 'node:path'
 import type { CharacterTemplate } from '../character/template.ts'
 import { defineTemplate } from '../character/template.ts'
@@ -24,6 +28,10 @@ import { OneBotApiClient, FetchTransport as OneBotFetchTransport } from '../adap
 import type { OneBotTransport } from '../adapters/onebot/api-client.ts'
 import type { OneBotParseOptions } from '../adapters/onebot/events.ts'
 import { SillyTavernAdapter } from '../adapters/sillytavern/adapter.ts'
+import { TelegramAdapter } from '../adapters/telegram/adapter.ts'
+import { TelegramApiClient, FetchTransport as TelegramFetchTransport } from '../adapters/telegram/api-client.ts'
+import type { TelegramTransport } from '../adapters/telegram/api-client.ts'
+import type { TelegramParseOptions } from '../adapters/telegram/events.ts'
 import { ManualClock, SystemClock } from '../kernel/util/clock.ts'
 import type { Clock } from '../kernel/util/clock.ts'
 import { SeededRng } from '../kernel/util/rng.ts'
@@ -111,8 +119,78 @@ export interface RuntimeConfig {
     transport?: OneBotTransport
     proactive?: boolean
     parse?: OneBotParseOptions
+    /** Send each line of a reply as its own QQ message (default false) */
+    splitReplies?: boolean
+  }
+  /** Telegram 机器人（Bot API 长轮询）。没有则完全不挂 Telegram 适配器。 */
+  telegram?: {
+    /** bot token；只在内存里使用，不落盘、不进日志 */
+    token: string
+    /** 自建反代或中转地址，默认 https://api.telegram.org */
+    apiBase?: string
+    transport?: TelegramTransport
+    proactive?: boolean
+    parse?: TelegramParseOptions
+    splitParagraphs?: boolean
+    /** 气泡间「正在输入」停顿的每字毫秒数；0 关闭（测试用） */
+    typingMsPerChar?: number
   }
   bindTargetPlatform?: string
+  /** Owner-console thought traces kept per instance in memory; 0 turns tracing off (default 100). */
+  tracesPerInstance?: number
+}
+
+const SECRET_KEY = /key|token|secret|password|passwd|auth|credential|cookie|signature/i
+
+/** Drop user info and secret-looking query values from a URL shown in the console. */
+export function redactUrl(raw: string): string {
+  try {
+    const url = new URL(raw)
+    if (url.username || url.password) { url.username = 'redacted'; url.password = '' }
+    for (const key of [...url.searchParams.keys()]) if (SECRET_KEY.test(key)) url.searchParams.set(key, 'redacted')
+    return url.toString()
+  } catch {
+    return raw
+  }
+}
+
+/** Secret-free, JSON-safe copy of provider-reported settings: secret-looking keys hidden, URLs redacted. */
+export function redactSettings(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? redactUrl(value) : value
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value === 'bigint') return value.toString()
+  if (typeof value !== 'object' || depth > 6) return `［${typeof value}］`
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => redactSettings(item, depth + 1))
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, SECRET_KEY.test(key) && !/tokens$/i.test(key) ? 'set' : redactSettings(item, depth + 1)]))
+}
+
+/**
+ * What this process runs with, for the owner console. Built once at assembly from the resolved
+ * config; secrets (API keys, tokens, app secrets) are reported only as present or absent.
+ */
+export interface RuntimeDescription {
+  dbPath: string
+  worldId: string
+  provider: { name: string; model: string; note: string; settings: Record<string, unknown> }
+  thinking: { name: string; model: string; maxTokens: number; settings: Record<string, unknown> } | null
+  conversation: Record<string, unknown>
+  contextBudget: Record<string, unknown>
+  memoryReview: string
+  willingness: Record<string, unknown>
+  thinkingLoop: Record<string, unknown>
+  world: Record<string, unknown> | null
+  adapters: Record<string, Record<string, unknown>>
+  bindTargetPlatform: string
+  traces: { perInstance: number } | null
+  template: {
+    id: string
+    version: number
+    contentHash: string
+    timelineEvents: number
+    profile: unknown
+    voice: unknown
+  }
 }
 
 export interface RuntimeBundle {
@@ -127,12 +205,17 @@ export interface RuntimeBundle {
   qqAdapter: QQAdapter | null
   onebotAdapter: OneBotAdapter | null
   onebotClient: OneBotApiClient | null
+  telegramAdapter: TelegramAdapter | null
   sillyTavernAdapter: SillyTavernAdapter
   template: CharacterTemplate
   clock: Clock
   provider: LLMProvider
   /** Thinking loop model; null when thinking is off. */
   thinkProvider: LLMProvider | null
+  /** Owner-console thought traces; null when tracing is off. */
+  traces: TraceStore | null
+  /** Resolved, secret-free configuration of this process. */
+  describe(): RuntimeDescription
   close(): void
 }
 
@@ -193,6 +276,14 @@ export function thinkMaxTokensFromEnv(env: NodeJS.ProcessEnv = process.env): num
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
+function describeProvider(provider: LLMProvider): Record<string, unknown> {
+  try {
+    return redactSettings(provider.describe?.() ?? {}) as Record<string, unknown>
+  } catch {
+    return { error: 'describe() failed' }
+  }
+}
+
 export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
   const clock = config.clock ?? new SystemClock()
   const db = new CharacterDatabase(config.dbPath)
@@ -202,6 +293,9 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
   const { provider, note } = chooseProvider(config.provider)
   const thinkProvider = config.thinkProvider === undefined ? thinkProviderFromEnv() : config.thinkProvider
   const template = config.template ?? defaultTemplate()
+  const tracesPerInstance = config.tracesPerInstance ?? 100
+  const traces = tracesPerInstance > 0 ? new TraceStore({ perInstance: tracesPerInstance }) : null
+  const thinkMaxTokens = config.thinkMaxTokens ?? thinkMaxTokensFromEnv()
 
   // 模板入库（同 id+version 幂等），保证恢复时能校验哈希
   persistence.putTemplate(template)
@@ -252,7 +346,8 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     memoryReview: config.memoryReview,
     probeQuery: '那本被水泡过的书',
     world,
-    ...(thinkProvider ? { thinker: new LlmThinker({ provider: thinkProvider, maxTokens: config.thinkMaxTokens ?? thinkMaxTokensFromEnv() }) } : {}),
+    ...(thinkProvider ? { thinker: new LlmThinker({ provider: thinkProvider, maxTokens: thinkMaxTokens }) } : {}),
+    ...(traces ? { traces } : {}),
     willingness: config.willingness,
     thinkingLoop: config.thinkingLoop,
   })
@@ -293,8 +388,61 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
       client: onebotClient,
       capabilities: config.onebot.proactive === false ? { proactive: false } : { proactive: true },
       parse: config.onebot.parse,
+      splitReplies: config.onebot.splitReplies === true,
     })
     gateway.registerAdapter(onebotAdapter)
+  }
+
+  let telegramAdapter: TelegramAdapter | null = null
+  if (config.telegram) {
+    const client = new TelegramApiClient({
+      transport:
+        config.telegram.transport ??
+        new TelegramFetchTransport({ token: config.telegram.token, apiBase: config.telegram.apiBase }),
+    })
+    telegramAdapter = new TelegramAdapter({
+      client,
+      capabilities: { proactive: config.telegram.proactive !== false },
+      parse: config.telegram.parse,
+      splitParagraphs: config.telegram.splitParagraphs,
+      typingMsPerChar: config.telegram.typingMsPerChar,
+    })
+    gateway.registerAdapter(telegramAdapter)
+  }
+
+  const description: RuntimeDescription = {
+    dbPath: config.dbPath,
+    worldId: config.worldId,
+    provider: { name: provider.name, model: provider.model, note, settings: describeProvider(provider) },
+    thinking: thinkProvider
+      ? { name: thinkProvider.name, model: thinkProvider.model, maxTokens: thinkMaxTokens, settings: describeProvider(thinkProvider) }
+      : null,
+    conversation: structuredClone({ ...DEFAULT_CONVERSATION_CONFIG, ...config.conversation }) as unknown as Record<string, unknown>,
+    contextBudget: { ...DEFAULT_CONTEXT_BUDGET, ...config.budget },
+    memoryReview: config.memoryReview ?? 'off',
+    willingness: { ...DEFAULT_WILLINGNESS, ...config.willingness },
+    thinkingLoop: { maxChain: config.thinkingLoop?.maxChain ?? 3, holdMs: config.thinkingLoop?.holdMs ?? 1500 },
+    world: world ? redactSettings({ ...config.world }) as Record<string, unknown> : null,
+    adapters: {
+      sillytavern: { enabled: true },
+      ...(config.qq ? { qq: { appId: config.qq.appId, appSecret: 'set', proactive: config.qq.proactive === true } } : {}),
+      ...(config.onebot ? { onebot: { baseUrl: redactUrl(config.onebot.baseUrl), accessToken: config.onebot.accessToken ? 'set' : 'none',
+        proactive: config.onebot.proactive !== false, splitReplies: config.onebot.splitReplies === true,
+        parse: structuredClone(config.onebot.parse ?? {}) } } : {}),
+      ...(config.telegram ? { telegram: { token: 'set', apiBase: redactUrl(config.telegram.apiBase ?? 'https://api.telegram.org'),
+        proactive: config.telegram.proactive !== false, parse: structuredClone(config.telegram.parse ?? {}),
+        splitParagraphs: config.telegram.splitParagraphs ?? true } } : {}),
+    },
+    bindTargetPlatform: config.bindTargetPlatform ?? 'sillytavern',
+    traces: traces ? { perInstance: traces.perInstance } : null,
+    template: {
+      id: template.id,
+      version: template.version,
+      contentHash: template.contentHash,
+      timelineEvents: template.timeline.length,
+      profile: structuredClone(template.profile),
+      voice: structuredClone(template.voice),
+    },
   }
 
   return {
@@ -308,11 +456,14 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     qqAdapter,
     onebotAdapter,
     onebotClient,
+    telegramAdapter,
     sillyTavernAdapter,
     template,
     clock,
     provider,
     thinkProvider,
+    traces,
+    describe: () => structuredClone(description),
     close: () => db.close(),
     // 便于日志说明当前用的是哪个 provider
     ...({ providerNote: note } as Record<string, unknown>),
@@ -340,7 +491,29 @@ export interface EnvConfig {
     allowNonLoopback: boolean
     proactive: boolean
     parse: OneBotParseOptions
+    /** Send each line of a reply as its own message (ONEBOT_SPLIT_REPLIES, default true) */
+    splitReplies: boolean
+    /** Wait this long (random in range) for follow-up messages before replying; null = reply at once */
+    replyWait: { minMs: number; maxMs: number } | null
   } | null
+  telegram: {
+    token: string
+    apiBase: string | undefined
+    /** 原始 Telegram 用户 id 白名单；null 表示任何人（必须显式 TELEGRAM_ALLOW_ANYONE=true） */
+    allowedUserIds: Set<string> | null
+    proactive: boolean
+    splitParagraphs: boolean
+    parse: TelegramParseOptions
+  } | null
+}
+
+/** "3000-5000" or "4000" in ms; "0" or invalid means reply at once (null). */
+export function parseWaitRange(raw: string): { minMs: number; maxMs: number } | null {
+  const [a, b] = raw.split('-').map((s) => Number(s.trim()))
+  const minMs = a ?? NaN
+  const maxMs = b ?? minMs
+  if (!Number.isFinite(minMs) || !Number.isFinite(maxMs) || minMs < 0 || maxMs <= 0) return null
+  return { minMs: Math.min(minMs, maxMs), maxMs: Math.max(minMs, maxMs) }
 }
 
 export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -394,12 +567,35 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
           path: env.ONEBOT_PATH ?? '/onebot/event',
           allowNonLoopback: env.ONEBOT_ALLOW_PUBLIC === 'true',
           proactive: env.ONEBOT_PROACTIVE !== 'false',
+          splitReplies: env.ONEBOT_SPLIT_REPLIES !== 'false',
+          replyWait: parseWaitRange(env.ONEBOT_REPLY_WAIT_MS ?? '3000-5000'),
           parse: {
             selfId: env.ONEBOT_SELF_ID ?? null,
             groupMentionOnly: env.ONEBOT_GROUP_MENTION_ONLY !== 'false',
             allowGroupCommands: env.ONEBOT_ALLOW_GROUP_COMMANDS !== 'false',
             anonymizeUserIds: env.ONEBOT_ANONYMIZE !== 'false',
             captureNickname: env.ONEBOT_CAPTURE_NICKNAME === 'true',
+          },
+        }
+      : null,
+    telegram: env.TELEGRAM_BOT_TOKEN
+      ? {
+          token: env.TELEGRAM_BOT_TOKEN,
+          apiBase: env.TELEGRAM_API_BASE || undefined,
+          allowedUserIds:
+            env.TELEGRAM_ALLOW_ANYONE === 'true'
+              ? null
+              : new Set(
+                  (env.TELEGRAM_ALLOWED_USER_IDS ?? '')
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter((s) => /^\d+$/.test(s)),
+                ),
+          proactive: env.TELEGRAM_PROACTIVE !== 'false',
+          splitParagraphs: env.TELEGRAM_SPLIT_PARAGRAPHS !== 'false',
+          parse: {
+            anonymizeUserIds: env.TELEGRAM_ANONYMIZE !== 'false',
+            captureName: env.TELEGRAM_CAPTURE_NAME === 'true',
           },
         }
       : null,

@@ -21,7 +21,7 @@ import { buildWorldEventContext, worldContextLines } from '../kernel/world/obser
 import type { RehydrationReport } from '../character/rehydration.ts'
 import { CharacterRehydrator } from '../character/rehydration.ts'
 import { ConversationService } from '../conversation/service.ts'
-import type { ConversationConfig } from '../conversation/service.ts'
+import type { ConversationConfig, TurnTraceDraft } from '../conversation/service.ts'
 import { ContextManager } from '../context/manager.ts'
 import type { ContextBudget } from '../context/manager.ts'
 import type { Clock } from '../kernel/util/clock.ts'
@@ -33,6 +33,7 @@ import { AuditLog } from '../kernel/policy/audit.ts'
 import { MemoryReviewQueue } from './memory-review.ts'
 import type { ConsolePlugin } from '../console/plugin.ts'
 import type { MemoryReviewMode } from './memory-review.ts'
+import type { TraceStore } from './trace.ts'
 import { DEFAULT_VOCABULARY, ThinkingLoop, Willingness, decideThought } from '../kernel/thinking/index.ts'
 import type { ThinkInput, Thinker, ThinkingLoopOptions, ThinkingPolicy, ThinkingVocabulary, ThoughtDraft, ThoughtResult, WillingnessConfig } from '../kernel/thinking/index.ts'
 
@@ -54,6 +55,8 @@ export interface InstanceRuntimeDeps {
   world?: WorldService | null
   /** Thinking loop model (cheap and fast); absent disables `think`. */
   thinker?: Thinker
+  /** Owner-console thought traces (in memory only); absent records nothing. */
+  traces?: TraceStore
   willingness?: Partial<WillingnessConfig>
   /** Thinking loop timing; replays inject a sleep that advances a virtual clock. */
   thinkingLoop?: Pick<ThinkingLoopOptions, 'maxChain' | 'holdMs' | 'sleep'>
@@ -286,7 +289,10 @@ export class InstanceRuntimeManager {
     const history = runtime.histories.get(opts.identityKey) ?? []
     const worldService = this.#deps.world ?? null
 
+    const traces = this.#deps.traces
     const service = new ConversationService({
+        ...(traces ? { onTrace: (draft: TurnTraceDraft) => traces.record({ ...draft, kind: 'turn', id: traces.nextId('trc'),
+            instanceId: runtime.instanceId, identityKey: opts.identityKey }) } : {}),
         referenceData: query => [this.#deps.referenceData?.(query), runtime.extension?.referenceData?.(query)].filter(Boolean).join('\n\n'),
         onUserPercept: percept => runtime.extension?.onUserPercept?.(percept),
         holdMemory: this.#deps.memoryReview === 'model' ? (input, sourceRef) => { runtime.memoryReview.hold(input, sourceRef); return true } : undefined,
@@ -420,6 +426,10 @@ export class InstanceRuntimeManager {
       decision: thought.decision, proposed: thought.proposed, ruling: thought.ruling, chainDepth: thought.chainDepth,
       meantConf: thought.meantConf, turn: thought.turn, willingness: thought.willingness,
     })
+    // record() takes a bounded detached copy and never throws, so tracing cannot change this call.
+    this.#deps.traces?.record({ kind: 'think', id: this.#deps.traces.nextId('trc'), instanceId: runtime.instanceId,
+      atWall: this.#deps.clock.nowWall().toISOString(), identityKey: opts.identityKey, inputs: run.inputs,
+      steps: run.steps, thought, silent })
     runtime.extension?.onThought?.(thought, run.inputs)
     return { thought, inputs: run.inputs, text, silent, steps: run.steps.map(({ chainDepth, latencyMs }) => ({ chainDepth, latencyMs })) }
   }
