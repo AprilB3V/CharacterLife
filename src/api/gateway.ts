@@ -91,6 +91,11 @@ class FixedWindowLimiter {
   }
 }
 
+/** Scenes other people can read: group chats and guild channels. */
+export function isSharedScene(scene: NormalizedMessage['scene']): boolean {
+  return scene === 'group' || scene === 'guild'
+}
+
 export function identityKey(identity: PlatformIdentity): string {
   return `${identity.platform}:${identity.platformUserId}`
 }
@@ -272,8 +277,10 @@ export class MessageGateway {
       }
 
       // 4.2 未能发出的主动消息：可用则主动推送一条，否则并入本轮作为资料
+      // Pending messages are written for the person alone (private chat). In a shared scene they
+      // would be pushed to the whole group or leak in as reply material, so they stay queued.
       const notices: string[] = []
-      if (!quiet) {
+      if (!quiet && !isSharedScene(message.scene)) {
         const pending = runtime.workspace.pendingMessages()
         if (pending.length > 0) {
           if (adapter.capabilities.proactive) {
