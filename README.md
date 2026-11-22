@@ -328,14 +328,19 @@ QQ 事件 / OneBot 上报 / 酒馆 HTTP
 
 ## 13. 接入真实模型（可选）
 
+任意 OpenAI 兼容接口都能用：DeepSeek、OpenAI、OpenRouter、火山方舟，以及本机的 Ollama、LM Studio。
+各家的配置示例和本地模型实测结果见 [`docs/MODELS.md`](docs/MODELS.md)。
+
 ```powershell
 # PowerShell
-$env:DEEPSEEK_API_KEY = "sk-..."
-$env:DEEPSEEK_MODEL    = "deepseek-chat"                 # 可选
-$env:DEEPSEEK_BASE_URL = "https://api.deepseek.com"      # 可选
+$env:CHARACTERLIFE_MODEL_API_KEY  = "sk-..."                  # 本机地址可省略
+$env:CHARACTERLIFE_MODEL_MODEL    = "deepseek-chat"           # 可选
+$env:CHARACTERLIFE_MODEL_BASE_URL = "https://api.deepseek.com" # 可选
 ```
 
-`DeepSeekProvider` 走官方 `POST /chat/completions`，用 `response_format: {type:'json_object'}`
+旧变量名 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` 仍然有效，新名优先。
+
+`DeepSeekProvider`（别名 `OpenAICompatibleProvider`）走 `POST /chat/completions`，用 `response_format: {type:'json_object'}`
 拿结构化信封。**仓库内不含任何真实 Key**，`.env*` 已在 `.gitignore` 中。
 
 已在真实密钥下验证过（18 次调用，详见 [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)）：

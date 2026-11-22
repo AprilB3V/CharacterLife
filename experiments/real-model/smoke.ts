@@ -11,18 +11,18 @@
  *   node experiments/real-model/smoke.ts
  */
 
-import { DeepSeekProvider, deepSeekConfigFromEnv } from '../../src/index.ts'
+import { DeepSeekProvider, deepSeekConfigFromEnv, reasoningBody } from '../../src/index.ts'
 
 const cfg = deepSeekConfigFromEnv()
 if (!cfg) {
-  console.error('❌ 环境里没有 DEEPSEEK_API_KEY；未执行任何真实调用。')
+  console.error('❌ 没有配置模型（CHARACTERLIFE_MODEL_API_KEY，或本机 CHARACTERLIFE_MODEL_BASE_URL）；未执行任何真实调用。')
   process.exit(2)
 }
 
 console.log(`路由：${cfg.baseUrl}/chat/completions`)
-console.log(`请求模型：${cfg.model}`)
+console.log(`请求模型：${cfg.model}（reasoning ${cfg.reasoning}）`)
 
-const provider = new DeepSeekProvider({ apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model })
+const provider = new DeepSeekProvider({ apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, extraBody: reasoningBody(cfg.reasoning) })
 try {
   const res = await provider.complete({
     system: '你是一个测试端点。只输出 JSON：{"reply":"..."}，reply 用一句中文确认收到。',

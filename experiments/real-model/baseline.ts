@@ -25,6 +25,7 @@
  * Character: --character shen (default) | jingjing (read at run time from the VideoCohost checkout, never copied here)
  *   --persona-patch none | no-length-cap | no-silence   in-memory text edits for persona A/B; the source file is untouched
  *
+ *   node experiments/real-model/baseline.ts --provider env --max-calls 200   any endpoint from CHARACTERLIFE_MODEL_* (e.g. Ollama)
  * Real providers read the key from the environment only and refuse to run without --max-calls.
  */
 
@@ -34,7 +35,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../src/types.ts'
-import { DeepSeekProvider } from '../../src/conversation/providers/deepseek.ts'
+import { DeepSeekProvider, deepSeekConfigFromEnv } from '../../src/conversation/providers/deepseek.ts'
 import { MockProvider } from '../../src/conversation/providers/mock.ts'
 import { REASONING_MODES, reasoningBody } from '../../src/conversation/providers/reasoning.ts'
 import type { ReasoningMode } from '../../src/conversation/providers/reasoning.ts'
@@ -133,7 +134,14 @@ const BROKEN_HISTORY: Array<{ user: string; assistant: string }> = [
     { user: '那你在做什么？', assistant: '作为一个 AI 语言模型，我没有真实的日常活动，但我可以陪你聊天。' },
 ]
 
-type ProviderName = 'mock' | keyof typeof REAL_PROFILES
+type ProviderName = 'mock' | 'env' | keyof typeof REAL_PROFILES
+
+/** --provider env: whatever CHARACTERLIFE_MODEL_* (or DEEPSEEK_*) points at; local servers need no key. */
+function envProfile(): { baseUrl: string; model: string; apiKey: string } {
+    const cfg = deepSeekConfigFromEnv()
+    if (!cfg) throw new Error('Set CHARACTERLIFE_MODEL_BASE_URL (and an API key for remote endpoints); no real call was made.')
+    return cfg
+}
 
 // Probe 2026-11-19 on the Ark coding endpoint: both models honour thinking.type=disabled; only doubao
 // honours reasoning_effort (deepseek ignores it). Neither exposes a separate thinking-token budget.
@@ -182,8 +190,8 @@ function parseArgs(argv: string[]): Args {
         values.set(key.slice(2), value)
     }
     const provider = (values.get('provider') ?? 'mock') as ProviderName
-    if (provider !== 'mock' && !(provider in REAL_PROFILES)) {
-        throw new Error(`Unknown provider "${provider}" (mock | ${Object.keys(REAL_PROFILES).join(' | ')})`)
+    if (provider !== 'mock' && provider !== 'env' && !(provider in REAL_PROFILES)) {
+        throw new Error(`Unknown provider "${provider}" (mock | env | ${Object.keys(REAL_PROFILES).join(' | ')})`)
     }
     const int = (name: string, fallback: number): number => {
         const raw = values.get(name)
@@ -244,6 +252,16 @@ function onOff(raw: string, name: string): boolean {
 
 function buildProvider(name: ProviderName, thinking: ThinkingMode, timeoutMs: number | null): LLMProvider {
     if (name === 'mock') return new MockProvider()
+    if (name === 'env') {
+        const profile = envProfile()
+        return new DeepSeekProvider({
+            apiKey: profile.apiKey,
+            baseUrl: profile.baseUrl,
+            model: profile.model,
+            extraBody: THINKING_BODIES[thinking],
+            ...(timeoutMs !== null ? { timeoutMs } : {}),
+        })
+    }
     const profile = REAL_PROFILES[name]
     const apiKey = process.env[profile.apiKeyEnv]?.trim()
     if (!apiKey) throw new Error(`Missing ${profile.apiKeyEnv}; no real call was made.`)
@@ -371,7 +389,7 @@ async function main(): Promise<void> {
         startedAt: new Date().toISOString(),
         provider: args.provider,
         model: provider.model,
-        baseUrl: args.provider === 'mock' ? null : REAL_PROFILES[args.provider].baseUrl,
+        baseUrl: args.provider === 'mock' ? null : args.provider === 'env' ? envProfile().baseUrl : REAL_PROFILES[args.provider].baseUrl,
         sessions: args.sessions,
         turns: args.turns,
         maxCalls: args.provider === 'mock' ? null : args.maxCalls,
