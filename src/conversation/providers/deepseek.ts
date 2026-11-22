@@ -34,6 +34,9 @@ export class ProviderError extends Error {
   }
 }
 
+/** Reasoning text kept per call for the console trace; the full length is still counted. */
+const REASONING_TEXT_CAP = 20_000
+
 export class DeepSeekProvider implements LLMProvider {
   readonly name = 'deepseek'
   readonly model: string
@@ -53,6 +56,19 @@ export class DeepSeekProvider implements LLMProvider {
     this.#timeoutMs = opts.timeoutMs ?? 60_000
     this.#fetch = opts.fetchImpl ?? fetch
     this.#extraBody = opts.extraBody ?? {}
+  }
+
+  /** Non-secret settings for the owner console (never the key). */
+  describe(): Record<string, unknown> {
+    // Only known, non-secret request options are shown; anything else in the body is listed by name.
+    const { thinking, reasoning_effort: reasoningEffort, ...rest } = this.#extraBody
+    return {
+      baseUrl: this.#baseUrl,
+      timeoutMs: this.#timeoutMs,
+      ...(thinking !== undefined ? { thinking: JSON.stringify(thinking) } : {}),
+      ...(reasoningEffort !== undefined ? { reasoningEffort: String(reasoningEffort) } : {}),
+      ...(Object.keys(rest).length ? { otherBodyFields: Object.keys(rest).join(', ') } : {}),
+    }
   }
 
   async complete(request: LLMRequest): Promise<LLMResponse> {
@@ -135,7 +151,9 @@ export class DeepSeekProvider implements LLMProvider {
         : null,
       latencyMs: Date.now() - started,
       finishReason: choice?.finish_reason ?? null,
-      reasoningChars: choice?.message?.reasoning_content?.length ?? 0,
+      reasoningChars: typeof choice?.message?.reasoning_content === 'string' ? choice.message.reasoning_content.length : 0,
+      ...(typeof choice?.message?.reasoning_content === 'string' && choice.message.reasoning_content
+        ? { reasoningText: choice.message.reasoning_content.slice(0, REASONING_TEXT_CAP) } : {}),
     }
     } finally { clearTimeout(timer) }
   }
@@ -149,6 +167,7 @@ export class DeepSeekProvider implements LLMProvider {
     let usage: LLMResponse['usage'] = null
     let finishReason: string | null = null
     let reasoningChars = 0
+    let reasoningText = ''
     let completed = false
     const handleLine = (line: string) => {
         if (!line.startsWith('data:')) return
@@ -164,7 +183,11 @@ export class DeepSeekProvider implements LLMProvider {
             text += content
             request.onTextDelta?.(content)
         }
-        reasoningChars += choice?.delta?.reasoning_content?.length ?? 0
+        const reasoning = choice?.delta?.reasoning_content
+        if (typeof reasoning === 'string' && reasoning) {
+            reasoningChars += reasoning.length
+            if (reasoningText.length < REASONING_TEXT_CAP) reasoningText += reasoning.slice(0, REASONING_TEXT_CAP - reasoningText.length)
+        }
         if (choice?.finish_reason) finishReason = choice.finish_reason
         if (event.usage) usage = { promptTokens: event.usage.prompt_tokens ?? 0, completionTokens: event.usage.completion_tokens ?? 0 }
     }
@@ -179,7 +202,8 @@ export class DeepSeekProvider implements LLMProvider {
     buffer += decoder.decode()
     if (buffer.trim()) handleLine(buffer.trim())
     if (!completed && !finishReason) throw new ProviderError('Model stream ended before completion')
-    return { text, provider: this.name, model, usage, finishReason, reasoningChars, latencyMs: Date.now() - started }
+    return { text, provider: this.name, model, usage, finishReason, reasoningChars,
+        ...(reasoningText ? { reasoningText } : {}), latencyMs: Date.now() - started }
   }
 }
 

@@ -190,6 +190,29 @@ describe('OneBot · 端到端（Gateway + MockTransport）', () => {
     assert.equal((req.body as Record<string, unknown>).group_id, GROUP_ID)
   })
 
+  it('同一个人的私聊和群聊各用一份对话历史，记忆仍是同一个实例', async () => {
+    const rig = makeOneBotRig()
+    const dm = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 46, userId: RAW_QQ_ID, text: '私聊里说的一句' }))
+    const group = await rig.runtime.gateway.handleRaw('onebot', oneBotGroupEvent({ id: 47, userId: RAW_QQ_ID, groupId: GROUP_ID, text: '群里说的一句', atSelf: true }))
+    assert.equal(dm.instanceId, group.instanceId, 'one person, one instance')
+    assert.notEqual(dm.sessionId, group.sessionId, 'each scene has its own session')
+    const runtime = rig.runtime.runtimeManager.get(dm.instanceId!)
+    const texts = [...runtime.histories.values()].map((h) => h.filter((m) => m.role === 'user').map((m) => m.content))
+    assert.equal(texts.length, 2)
+    assert.ok(texts.some((t) => t.length === 1 && t[0]!.includes('私聊里说的一句')))
+    assert.ok(texts.some((t) => t.length === 1 && t[0]!.includes('群里说的一句')), 'the group turn does not see the private history')
+  })
+
+  it('/newsession 返回新会话 id', async () => {
+    const rig = makeOneBotRig()
+    const first = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 48, userId: RAW_QQ_ID, text: '先聊一句' }))
+    const rotated = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 49, userId: RAW_QQ_ID, text: '/newsession' }))
+    assert.equal(rotated.status, 'command')
+    assert.notEqual(rotated.sessionId, first.sessionId)
+    const next = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 50, userId: RAW_QQ_ID, text: '再聊一句' }))
+    assert.equal(next.sessionId, rotated.sessionId)
+  })
+
   it('群里的普通消息完全不会触发模型调用', async () => {
     const rig = makeOneBotRig()
     const ignored = await rig.runtime.gateway.handleRaw('onebot', oneBotGroupEvent({ id: 44, userId: RAW_QQ_ID, groupId: GROUP_ID, text: '闲聊', atSelf: false }))
@@ -364,5 +387,44 @@ describe('OneBot · 隐私与人格保护', () => {
     const rt = rig.runtime.runtimeManager.get(outcome.instanceId!)
     assert.deepEqual([...rt.workspace.profile.traits], traitsBefore)
     assert.ok(rt.workspace.audit.count('injection_detected') >= 1)
+  })
+})
+
+describe('OneBot · 私聊待发送消息不进群（X01）', () => {
+  const PRIVATE_LINE = '[只给你一个人看：上次说的体检结果怎么样了]'
+
+  const queueFor = async (rig: ReturnType<typeof makeOneBotRig>, id: number) => {
+    const first = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id, userId: RAW_QQ_ID, text: '先打个招呼' }))
+    const rt = rig.runtime.runtimeManager.get(first.instanceId!)
+    rt.workspace.queueProactive('life_update', PRIVATE_LINE)
+    return rt
+  }
+
+  it('有主动能力：群里 @ 不会把私聊队列推进群，队列保留到下次私聊', async () => {
+    const rig = makeOneBotRig({ proactive: true })
+    const rt = await queueFor(rig, 71)
+    const before = rig.transport.requests.length
+    const group = await rig.runtime.gateway.handleRaw('onebot', oneBotGroupEvent({ id: 72, userId: RAW_QQ_ID, groupId: GROUP_ID, text: '在吗', atSelf: true }))
+    assert.equal(group.status, 'replied')
+    const groupSends = rig.transport.requests.slice(before)
+    assert.equal(groupSends.length, 1, '群里只有本轮回复')
+    assert.ok(groupSends.every((r) => !JSON.stringify(r.body).includes(PRIVATE_LINE)))
+    assert.equal(rt.workspace.pendingMessages().length, 1, '没有被丢弃')
+
+    const mark = rig.transport.requests.length
+    await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 73, userId: RAW_QQ_ID, text: '我回来了' }))
+    const pushed = rig.transport.requests.slice(mark).find((r) => JSON.stringify(r.body).includes(PRIVATE_LINE))
+    assert.ok(pushed, '回到私聊后照常推出')
+    assert.match(pushed.url, /\/send_private_msg$/)
+    assert.equal(rt.workspace.pendingMessages().length, 0)
+  })
+
+  it('无主动能力：群里那一轮不把私聊队列并入回复资料', async () => {
+    const rig = makeOneBotRig({ proactive: false })
+    const rt = await queueFor(rig, 74)
+    await rig.runtime.gateway.handleRaw('onebot', oneBotGroupEvent({ id: 75, userId: RAW_QQ_ID, groupId: GROUP_ID, text: '在吗', atSelf: true }))
+    assert.equal(rt.workspace.pendingMessages().length, 1, '群聊轮次不消耗私聊队列')
+    await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 76, userId: RAW_QQ_ID, text: '我回来了' }))
+    assert.equal(rt.workspace.pendingMessages().length, 0, '私聊轮次照旧并入资料')
   })
 })

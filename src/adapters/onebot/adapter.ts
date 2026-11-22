@@ -26,6 +26,7 @@ import { InboundParseError } from '../protocol.ts'
 import type { OneBotApiClient, OneBotResponse } from './api-client.ts'
 import type { OneBotParseOptions } from './events.ts'
 import { decodeReplyTarget, parseOneBotEvent } from './events.ts'
+import { splitReply } from './split.ts'
 
 export interface OneBotAdapterOptions {
   client: OneBotApiClient
@@ -36,6 +37,14 @@ export interface OneBotAdapterOptions {
   now?: () => number
   /** 单条文本上限（超过截断，避免网关拒收超大消息） */
   maxTextLength?: number
+  /** Send each line of a reply as its own message and drop trailing full stops (default false) */
+  splitReplies?: boolean
+  /** Most messages one reply becomes when splitting (default 4) */
+  maxParts?: number
+  /** Pause before each further message: ms per char and cap (default 120ms/char, 2500ms; 0 = none) */
+  typingMsPerChar?: number
+  typingMaxMs?: number
+  sleep?: (ms: number) => Promise<void>
 }
 
 export const ONEBOT_DEFAULT_CAPABILITIES: PlatformCapabilities = {
@@ -57,6 +66,11 @@ export class OneBotAdapter implements PlatformAdapter {
   #maxTextLength: number
   #autoEscape: boolean
   #parseOptions: OneBotParseOptions
+  #splitReplies: boolean
+  #maxParts: number
+  #typingMsPerChar: number
+  #typingMaxMs: number
+  #sleep: (ms: number) => Promise<void>
   /** 最近一次发送结果，便于测试与审计 */
   lastResult: MessageDeliveryResult | null = null
 
@@ -67,6 +81,11 @@ export class OneBotAdapter implements PlatformAdapter {
     this.#maxTextLength = opts.maxTextLength ?? 1500
     this.#autoEscape = true
     this.#parseOptions = { ...(opts.parse ?? {}) }
+    this.#splitReplies = opts.splitReplies === true
+    this.#maxParts = opts.maxParts ?? 4
+    this.#typingMsPerChar = opts.typingMsPerChar ?? 120
+    this.#typingMaxMs = opts.typingMaxMs ?? 2500
+    this.#sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
   }
 
   parseInbound(raw: unknown): NormalizedMessage | null {
@@ -154,23 +173,37 @@ export class OneBotAdapter implements PlatformAdapter {
       })
     }
 
-    const content = this.#truncate(text)
-    let response: OneBotResponse<{ message_id?: number | string }>
-    try {
-      response =
-        target.scene === 'group'
-          ? await this.#client.sendGroup({ groupId: target.target, text: content, autoEscape: this.#autoEscape })
-          : await this.#client.sendPrivate({ userId: target.target, text: content, autoEscape: this.#autoEscape })
-    } catch (err) {
-      return finish({
-        ok: false,
-        platformMessageId: null,
-        queued: false,
-        error: { code: 'PLATFORM_ERROR', message: (err as Error).message, retryable: true },
-      })
+    const parts = this.#splitReplies ? splitReply(text, { maxParts: this.#maxParts }) : [text]
+    if (parts.length === 0) parts.push(text)
+    let last: MessageDeliveryResult | null = null
+    for (let i = 0; i < parts.length; i++) {
+      const content = this.#truncate(parts[i]!)
+      if (i > 0) {
+        const pause = Math.min(this.#typingMaxMs, content.length * this.#typingMsPerChar)
+        if (pause > 0) await this.#sleep(pause)
+      }
+      let response: OneBotResponse<{ message_id?: number | string }>
+      try {
+        response =
+          target.scene === 'group'
+            ? await this.#client.sendGroup({ groupId: target.target, text: content, autoEscape: this.#autoEscape })
+            : await this.#client.sendPrivate({ userId: target.target, text: content, autoEscape: this.#autoEscape })
+      } catch (err) {
+        return finish({
+          ok: false,
+          platformMessageId: last?.platformMessageId ?? null,
+          queued: false,
+          // Only retry when nothing went out yet, otherwise the gateway would resend the earlier parts.
+          error: { code: 'PLATFORM_ERROR', message: (err as Error).message, retryable: i === 0 },
+        })
+      }
+      last = this.#mapResponse(response, finish)
+      if (!last.ok) {
+        if (i === 0 || !last.error) return last
+        return finish({ ...last, error: { ...last.error, retryable: false } })
+      }
     }
-
-    return this.#mapResponse(response, finish)
+    return last!
   }
 
   #mapResponse(

@@ -160,6 +160,14 @@ npm run onebot:start                  # 等价别名
 # OneBot 11：不用脚本时（自己注入环境变量后启动上报服务）
 npm run onebot:server
 
+# OneBot 11：按配置档后台运行与调试（配置档在 data/profiles/<名>.env，样例见 scripts/profiles.example/）
+scripts\cl.cmd start jingjing        # 后台启动，等 /healthz 就绪；--inspect 开调试器
+scripts\cl.cmd status                # 所有配置档的运行状态与最近错误
+scripts\cl.cmd logs jingjing -f      # 跟随日志（--errors 只看错误）
+scripts\cl.cmd console jingjing      # 令牌复制到剪贴板并打开主人后台
+scripts\cl.cmd restart jingjing      # 等在途对话处理完再重启
+scripts\cl.cmd say dev 你好 在吗     # dev 配置档连假网关：模拟 QQ 发消息并打印回复
+
 # SillyTavern：启动 OpenAI 兼容 API
 $env:CHARACTERLIFE_API_TOKEN = "local-dev-token-123"
 npm run st:server          # 输出里直接给出酒馆要填的 Base URL 与 Key
@@ -380,6 +388,8 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 ├── scripts/
 │   ├── start-onebot.ps1             # OneBot 启动脚本：读 .env + 体检 + 启动（PowerShell 5.1 兼容）
 │   ├── start-onebot.cmd             # 双击/免执行策略包装
+│   ├── cl.ts / cl.cmd               # 按配置档启停、状态、日志、后台、模拟消息（scripts\cl.cmd 看帮助）
+│   ├── profiles.example/            # 配置档样例（真实配置档放 data/profiles/，不入库）
 │   └── fake-onebot-gateway.mjs      # 假网关（测试替身）：先证明本服务是好的，再怀疑网关
 ├── tests/
 │   ├── *.test.ts                    # 四模块 + 人格 + 安全（78 项）
