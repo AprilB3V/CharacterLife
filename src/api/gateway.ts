@@ -95,6 +95,15 @@ export function identityKey(identity: PlatformIdentity): string {
   return `${identity.platform}:${identity.platformUserId}`
 }
 
+/**
+ * Conversation thread of a message: one per person in private chat, one per person and group/guild.
+ * History, sessions and unanswered lines follow the thread; long-term memory stays per person.
+ */
+export function threadKey(message: Pick<NormalizedMessage, 'identity' | 'scene' | 'sceneId'>): string {
+  const key = identityKey(message.identity)
+  return (message.scene === 'group' || message.scene === 'guild') && message.sceneId ? `${key}#${message.scene}:${message.sceneId}` : key
+}
+
 export class MessageGateway {
   #adapters = new Map<string, PlatformAdapter>()
   #opts: GatewayOptions
@@ -177,11 +186,14 @@ export class MessageGateway {
       preAdmitted?: boolean
       /** Over the context budget: reply nothing (empty reply, no delivery) instead of the fixed safe reply. */
       silentOnBudgetExceeded?: boolean
+      /** False when the text is not the person's own words (e.g. event-only thinking turns). */
+      learnStyle?: boolean
     } = {},
   ): Promise<InboundOutcome> {
     const { platformStore, identityService, runtimeManager, clock } = this.#opts
     const nowIso = (this.#opts.nowIso ?? (() => clock.nowWall().toISOString()))()
     const key = identityKey(message.identity)
+    const thread = threadKey(message)
 
     if (!options.preAdmitted) {
     // 1) 幂等：同一条平台消息只处理一次
@@ -236,7 +248,7 @@ export class MessageGateway {
 
     // 4) 每实例互斥：同一实例的多平台消息串行化
     const outcome = await runtimeManager.withLock(instanceId, async () => {
-      const sessionId = runtimeManager.ensureSession(runtime, key)
+      const sessionId = runtimeManager.ensureSession(runtime, thread)
       const quiet = platformStore.isQuiet(message.platform, message.identity.platformUserId)
 
       // 4.1 指令
@@ -244,7 +256,7 @@ export class MessageGateway {
         runtime,
         instanceId,
         identity: message.identity,
-        identityKey: key,
+        identityKey: thread,
         sessionId,
         runtimeManager,
         platformStore,
@@ -256,7 +268,7 @@ export class MessageGateway {
         const outbound = this.#outbound(message, command.text)
         const delivery = await this.#deliver(adapter, outbound)
         runtimeManager.saveSnapshot(runtime)
-        return { reply: command.text, sessionId, delivery, status: 'command' as InboundStatus }
+        return { reply: command.text, sessionId: runtime.sessionIds.get(thread) ?? sessionId, delivery, status: 'command' as InboundStatus }
       }
 
       // 4.2 未能发出的主动消息：可用则主动推送一条，否则并入本轮作为资料
@@ -289,12 +301,14 @@ export class MessageGateway {
       // 4.3 调角色引擎
       const result = await runtimeManager.send(runtime, {
         onReplyDelta,
-        identityKey: key,
+        identityKey: thread,
         text: message.text,
         notices: [...extraNotices, ...notices],
         ...(options.guidance?.length ? { guidance: options.guidance } : {}),
         ...(options.thoughtData?.length ? { thoughtData: options.thoughtData } : {}),
         ...(options.silentOnBudgetExceeded ? { silentOnBudgetExceeded: true } : {}),
+        ...(options.learnStyle === false ? { learnStyle: false } : {}),
+        ...(message.scene === 'group' || message.scene === 'guild' ? { sharedScene: true } : {}),
       })
       runtimeManager.saveSnapshot(runtime)
       if (options.silentOnBudgetExceeded && !result.reply) {

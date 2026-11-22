@@ -81,6 +81,8 @@ export interface RuntimeConfig {
     conversation?: Partial<ConversationConfig>
     /** Hold chat-model memory proposals for owner review ('model'); default writes immediately. */
     memoryReview?: MemoryReviewMode
+    /** Learn the other person's writing style and rhythm (counting only); default off */
+    conversationStyle?: boolean
   dbPath: string
   worldId: string
   /** 角色模板；不传则使用原创角色沈知微 */
@@ -177,6 +179,7 @@ export interface RuntimeDescription {
   conversation: Record<string, unknown>
   contextBudget: Record<string, unknown>
   memoryReview: string
+  conversationStyle: boolean
   willingness: Record<string, unknown>
   thinkingLoop: Record<string, unknown>
   world: Record<string, unknown> | null
@@ -344,6 +347,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     budget: config.budget,
     conversation: config.conversation,
     memoryReview: config.memoryReview,
+    conversationStyle: config.conversationStyle === true,
     probeQuery: '那本被水泡过的书',
     world,
     ...(thinkProvider ? { thinker: new LlmThinker({ provider: thinkProvider, maxTokens: thinkMaxTokens }) } : {}),
@@ -420,6 +424,7 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     conversation: structuredClone({ ...DEFAULT_CONVERSATION_CONFIG, ...config.conversation }) as unknown as Record<string, unknown>,
     contextBudget: { ...DEFAULT_CONTEXT_BUDGET, ...config.budget },
     memoryReview: config.memoryReview ?? 'off',
+    conversationStyle: config.conversationStyle === true,
     willingness: { ...DEFAULT_WILLINGNESS, ...config.willingness },
     thinkingLoop: { maxChain: config.thinkingLoop?.maxChain ?? 3, holdMs: config.thinkingLoop?.holdMs ?? 1500 },
     world: world ? redactSettings({ ...config.world }) as Record<string, unknown> : null,

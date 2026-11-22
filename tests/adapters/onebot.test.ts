@@ -190,6 +190,29 @@ describe('OneBot · 端到端（Gateway + MockTransport）', () => {
     assert.equal((req.body as Record<string, unknown>).group_id, GROUP_ID)
   })
 
+  it('同一个人的私聊和群聊各用一份对话历史，记忆仍是同一个实例', async () => {
+    const rig = makeOneBotRig()
+    const dm = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 46, userId: RAW_QQ_ID, text: '私聊里说的一句' }))
+    const group = await rig.runtime.gateway.handleRaw('onebot', oneBotGroupEvent({ id: 47, userId: RAW_QQ_ID, groupId: GROUP_ID, text: '群里说的一句', atSelf: true }))
+    assert.equal(dm.instanceId, group.instanceId, 'one person, one instance')
+    assert.notEqual(dm.sessionId, group.sessionId, 'each scene has its own session')
+    const runtime = rig.runtime.runtimeManager.get(dm.instanceId!)
+    const texts = [...runtime.histories.values()].map((h) => h.filter((m) => m.role === 'user').map((m) => m.content))
+    assert.equal(texts.length, 2)
+    assert.ok(texts.some((t) => t.length === 1 && t[0]!.includes('私聊里说的一句')))
+    assert.ok(texts.some((t) => t.length === 1 && t[0]!.includes('群里说的一句')), 'the group turn does not see the private history')
+  })
+
+  it('/newsession 返回新会话 id', async () => {
+    const rig = makeOneBotRig()
+    const first = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 48, userId: RAW_QQ_ID, text: '先聊一句' }))
+    const rotated = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 49, userId: RAW_QQ_ID, text: '/newsession' }))
+    assert.equal(rotated.status, 'command')
+    assert.notEqual(rotated.sessionId, first.sessionId)
+    const next = await rig.runtime.gateway.handleRaw('onebot', oneBotPrivateEvent({ id: 50, userId: RAW_QQ_ID, text: '再聊一句' }))
+    assert.equal(next.sessionId, rotated.sessionId)
+  })
+
   it('群里的普通消息完全不会触发模型调用', async () => {
     const rig = makeOneBotRig()
     const ignored = await rig.runtime.gateway.handleRaw('onebot', oneBotGroupEvent({ id: 44, userId: RAW_QQ_ID, groupId: GROUP_ID, text: '闲聊', atSelf: false }))

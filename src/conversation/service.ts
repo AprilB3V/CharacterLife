@@ -168,6 +168,16 @@ const EMPTY_REPLY_FALLBACK = '嗯……刚才那句我没接住。你再说一�
 const BROKEN_ENVELOPE_FALLBACK = '刚才的回复没有完整生成，你再说一次？'
 
 /**
+ * Retries for a broken envelope. Live traces (2026-11-21, deepseek-v4-1-flash, json_object mode):
+ * ~15% of first calls answered `{}` after drafting the reply in their reasoning, and a plain
+ * resend failed again about one time in four. Retries therefore add a format reminder.
+ */
+const MAX_ENVELOPE_RETRIES = 2
+const ENVELOPE_RETRY_REMINDER =
+  '\n\n【格式提醒】上一次输出缺少 reply 字段（例如只输出了 {}）。这次必须输出一个完整的 JSON 对象，' +
+  'reply 字段必填，写你对用户最新一条消息的回复；proposals 和 memoryWrites 没有就给空数组。'
+
+/**
  * True when an unparsable output is a structured envelope gone wrong rather than plain prose:
  * it starts like JSON or a code fence, or it was cut at the length limit.
  */
@@ -492,17 +502,22 @@ export class ConversationService {
       trace.draft.prompt = { system: capText(system), messages: messages.map((m) => ({ ...m, content: capText(m.content) })) }
       if (trace.draft.recall) trace.draft.recall.inPrompt = [...promptMemoryIds]
     }
-    const record = (response: LLMResponse, parseError: string | null) => {
+    const record = (response: LLMResponse, parseError: string | null, formatReminder = false) => {
+      // Every attempt counts toward the turn's token usage, not only the last one.
+      if (response.usage) {
+        usage = { promptTokens: (usage?.promptTokens ?? 0) + response.usage.promptTokens,
+          completionTokens: (usage?.completionTokens ?? 0) + response.usage.completionTokens }
+      }
       trace?.draft.attempts.push({ raw: capText(response.text), rawLength: response.text.length,
         reasoning: response.reasoningText ? capText(response.reasoningText) : null, reasoningChars: response.reasoningChars ?? response.reasoningText?.length ?? 0,
-        finishReason: response.finishReason ?? null, usage: response.usage, latencyMs: response.latencyMs, parseError })
+        finishReason: response.finishReason ?? null, usage: response.usage, latencyMs: response.latencyMs, parseError, ...(formatReminder ? { formatReminder } : {}) })
     }
+    let usage: ConversationTurnResult['usage'] = null
 
     const started = Date.now()
     let reply: string
     let provider = this.#provider.name
     let model = this.#provider.model
-    let usage: ConversationTurnResult['usage'] = null
     let parsedProposals: StateProposal[] = []
     let memoryWrites: Array<{
       kind: 'episodic' | 'user'
@@ -520,11 +535,13 @@ export class ConversationService {
       // nothing has been shown yet (observed intermittently, e.g. `{"type":"json_object"}`).
       let shown = false
       const showDelta = onReplyDelta ? (text: string) => { shown = true; onReplyDelta(text) } : undefined
-      const callModel = () => {
+      // The reminder is only added when it still fits the planned budget; otherwise retries resend as is.
+      const reminderFits = !plan || plan.estPromptTokens + estimateTokens(ENVELOPE_RETRY_REMINDER) <= plan.budget
+      const callModel = (retry = false) => {
         const replyStream = showDelta ? new ReplyStreamDecoder(showDelta) : null
         return this.#provider.complete({
         onTextDelta: replyStream ? text => replyStream.push(text) : undefined,
-        system,
+        system: retry && reminderFits ? system + ENVELOPE_RETRY_REMINDER : system,
         messages,
         temperature: this.#config.temperature,
         maxTokens: this.#config.maxTokens,
@@ -545,20 +562,21 @@ export class ConversationService {
       let response = await callModel()
       let parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
       record(response, parsed.error)
-      if (!parsed.envelope && !shown && isBrokenEnvelope(response.text, response.finishReason)) {
-        this.#workspace.audit.append('provider_error', 'conversation', '结构化输出缺少回复，自动重试一次', {
+      for (let retry = 1; retry <= MAX_ENVELOPE_RETRIES; retry++) {
+        if (parsed.envelope || shown || !isBrokenEnvelope(response.text, response.finishReason)) break
+        this.#workspace.audit.append('provider_error', 'conversation', `结构化输出缺少回复，自动重试（第 ${retry} 次）`, {
           turnId,
+          retry,
           error: parsed.error,
           raw: response.text.slice(0, 500),
           finishReason: response.finishReason ?? null,
         })
-        response = await callModel()
+        response = await callModel(true)
         parsed = parseEnvelope(response.text, { worldEnabled: world !== null })
-        record(response, parsed.error)
+        record(response, parsed.error, reminderFits)
       }
       provider = response.provider
       model = response.model
-      usage = response.usage
 
       parseError = parsed.error
       reply = parsed.fallbackText

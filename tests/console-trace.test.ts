@@ -55,14 +55,14 @@ test('a turn leaves a full trace: input, decision, prompt, attempt with reasonin
     } finally { runtime.close() }
 })
 
-test('a broken envelope shows both attempts and the fallback reason', async () => {
-    const { runtime, instanceId, result } = await oneTurn([{ text: '{"type":"json_object"}' }, { text: '{"reply": "不认', finishReason: 'length' }])
+test('a broken envelope shows every attempt and the fallback reason', async () => {
+    const { runtime, instanceId, result } = await oneTurn([{ text: '{"type":"json_object"}' }, { text: '{}' }, { text: '{"reply": "不认', finishReason: 'length' }])
     try {
         const trace = runtime.traces!.list(instanceId)[0] as TurnTrace
         assert.equal(result.reply, '刚才的回复没有完整生成，你再说一次？')
-        assert.equal(trace.attempts.length, 2)
+        assert.equal(trace.attempts.length, 3)
         assert.equal(trace.attempts[0]!.raw, '{"type":"json_object"}')
-        assert.ok(trace.attempts[1]!.parseError)
+        assert.ok(trace.attempts[2]!.parseError)
         assert.equal(trace.envelope, null)
         assert.equal(trace.outcome?.fallback, 'broken_envelope')
     } finally { runtime.close() }

@@ -23,7 +23,7 @@ describe('OneBot · reply splitting', () => {
   it('one message per line, trailing full stops dropped, ? ! and … kept', () => {
     assert.deepEqual(splitReply('行吧。\n\n你先说清楚是哪本书？\n我看看…'), ['行吧', '你先说清楚是哪本书？', '我看看…'])
     assert.deepEqual(splitReply('就这样。。'), ['就这样'])
-    assert.deepEqual(splitReply('a\nb\nc\nd\ne', { maxParts: 3 }), ['a', 'b', 'c d e'])
+    assert.deepEqual(splitReply('a\nb\nc\nd\ne', { maxParts: 3 }), ['a', 'b', 'c\nd\ne'])
     assert.deepEqual(splitReply(' \n '), [])
   })
 

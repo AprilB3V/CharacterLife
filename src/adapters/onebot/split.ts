@@ -4,7 +4,7 @@
  */
 
 export interface SplitReplyOptions {
-  /** Most messages one reply becomes; the rest is joined into the last one (default 4) */
+  /** Most messages one reply becomes; the rest stays line by line in the last one (default 4) */
   maxParts?: number
 }
 
@@ -21,5 +21,6 @@ export function splitReply(text: string, opts: SplitReplyOptions = {}): string[]
     .filter((line) => line.length > 0)
   const max = Math.max(1, opts.maxParts ?? 4)
   if (lines.length <= max) return lines
-  return [...lines.slice(0, max - 1), lines.slice(max - 1).join(' ')]
+  // Extra lines keep their line breaks, so a poem or a list is not squashed into one line.
+  return [...lines.slice(0, max - 1), lines.slice(max - 1).join('\n')]
 }

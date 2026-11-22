@@ -63,6 +63,8 @@ export interface TurnTraceAttempt {
   latencyMs: number
   /** null when the envelope parsed */
   parseError: string | null
+  /** True on retries, which append a format reminder to the system prompt */
+  formatReminder?: boolean
 }
 
 export interface TurnTraceMemoryWrite {

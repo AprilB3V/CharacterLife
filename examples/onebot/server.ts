@@ -24,6 +24,7 @@
  *   ONEBOT_PROACTIVE           是否声明主动消息能力（默认 true）
  *   ONEBOT_REPLY_WAIT_MS       回复前等待期，期间补充的消息并进同一轮（默认 3000-5000；0 关闭）
  *   ONEBOT_SPLIT_REPLIES       回复按行拆成多条发送、去掉句尾句号（默认 true）
+ *   ONEBOT_CONVERSATION_STYLE  学习对方的说话方式与发送节奏，作为资料给回复模型（默认 true）
  *   CHARACTERLIFE_CHARACTER_MODULE 可选：角色模块路径（导出 profile / voice），不填用默认角色沈知微
  *   CHARACTERLIFE_DB / CHARACTERLIFE_WORLD / DEEPSEEK_API_KEY 同其他入口
  *
@@ -48,10 +49,12 @@ if (!env.onebot) {
 
 const cfg = env.onebot
 const template = await loadCharacterModule(process.env.CHARACTERLIFE_CHARACTER_MODULE)
+const conversationStyle = process.env.ONEBOT_CONVERSATION_STYLE?.trim().toLowerCase() !== 'false'
 const runtime = assembleRuntime({
   dbPath: env.dbPath,
   ...(template ? { template } : {}),
   worldId: process.env.CHARACTERLIFE_WORLD ?? 'world_onebot',
+  conversationStyle: conversationStyle,
   onebot: {
     baseUrl: cfg.baseUrl,
     accessToken: cfg.accessToken,
@@ -76,6 +79,7 @@ console.log(`OneBot 上报监听 ${url}${cfg.path}`)
 console.log(`网关 API：${runtime.onebotAdapter!.describe()}`)
 console.log(`数据库：${env.dbPath}`)
 console.log(`角色：${runtime.template.profile.name}（${runtime.template.id} v${runtime.template.version}）`)
+console.log(`对话格式：${conversationStyle ? '学习对方说话方式与节奏' : '关闭'}`)
 console.log(`回复节奏：${cfg.replyWait ? `等待 ${cfg.replyWait.minMs}~${cfg.replyWait.maxMs}ms 合并补充消息` : '立即回复'}，${cfg.splitReplies ? '按行拆条发送' : '整条发送'}`)
 console.log(`群聊策略：${cfg.parse.groupMentionOnly === false ? '每条消息都回应（慎用）' : '仅被 @ 或 /指令时回应'}`)
 console.log(`隐私：${cfg.parse.anonymizeUserIds === false ? '⚠ 直接存 QQ 号' : 'QQ 号哈希为假名后落库'}`)
