@@ -1,0 +1,93 @@
+/* README artwork: CL paper-lab style. Colours copied from CL design tokens (design/tokens.css). */
+:root {
+    --cl-paper: #fbf4e4;
+    --cl-paper-dot: #e3d6b8;
+    --cl-card: #fffef8;
+    --cl-ink: #2b2d42;
+    --cl-ink-soft: #5c5f78;
+    --cl-tag: #9a917c;
+    --cl-orange: #f28c38;
+    --cl-tape: #ffd23f;
+    --cl-sky: #8cd3f5;
+    --cl-thought: #8a63c9;
+    --cl-mint: #b7e4c7;
+    --cl-glass: #ddf2fb;
+    --cl-glass-grid: #bfe3f3;
+    --cl-board: #1e2233;
+    --cl-wood: #d9a066;
+    --cl-ok: #2f9e6a;
+    --line: 4px;
+    --radius: 16px;
+    --shadow: 6px 6px 0 var(--cl-ink);
+    --font: "HarmonyOS Sans SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    --font-display: "Segoe UI Black", "Arial Black", var(--font);
+    --font-hand: "LXGW WenKai", "Comic Sans MS", cursive;
+    --font-mono: Consolas, ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { width: 1600px; overflow: hidden; }
+
+body {
+    position: relative;
+    background-color: var(--cl-paper);
+    background-image: radial-gradient(var(--cl-paper-dot) 2px, transparent 2.5px);
+    background-size: 28px 28px;
+    color: var(--cl-ink);
+    font-family: var(--font);
+}
+
+.card {
+    position: absolute;
+    background: var(--cl-card);
+    border: var(--line) solid var(--cl-ink);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.glass {
+    background-color: var(--cl-glass);
+    background-image:
+        linear-gradient(var(--cl-glass-grid) 2px, transparent 2px),
+        linear-gradient(90deg, var(--cl-glass-grid) 2px, transparent 2px);
+    background-size: 32px 32px;
+}
+
+.tape {
+    position: absolute;
+    width: 120px;
+    height: 34px;
+    background: var(--cl-tape);
+    opacity: 0.9;
+    border-left: 3px dashed rgba(43, 45, 66, 0.15);
+    border-right: 3px dashed rgba(43, 45, 66, 0.15);
+}
+
+.pill {
+    display: inline-block;
+    padding: 8px 26px;
+    background: var(--cl-orange);
+    color: var(--cl-card);
+    border: var(--line) solid var(--cl-ink);
+    border-radius: 999px;
+    box-shadow: 4px 4px 0 var(--cl-ink);
+    font-weight: 800;
+    font-size: 26px;
+    letter-spacing: 0.5px;
+}
+
+.hand { font-family: var(--font-hand); }
+.mono { font-family: var(--font-mono); }
+
+.art { position: absolute; display: block; }
+
+.chip {
+    display: inline-block;
+    padding: 6px 16px;
+    border: 3px solid var(--cl-ink);
+    border-radius: 999px;
+    background: var(--cl-card);
+    font-weight: 700;
+    font-size: 22px;
+}

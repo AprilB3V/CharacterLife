@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<style>
+    html, body { height: 960px; }
+
+    .title { position: absolute; left: 70px; top: 50px; }
+    .title h2 { font-family: var(--font-display); font-size: 64px; line-height: 1; }
+    .title p { margin-top: 14px; font-size: 27px; color: var(--cl-ink-soft); font-weight: 600; }
+
+    .layer { left: 70px; width: 1130px; padding: 26px 26px 26px 215px; }
+    .layer .name {
+        position: absolute; left: 28px; top: 50%; transform: translateY(-50%);
+        width: 180px; font-weight: 900; font-size: 30px; line-height: 1.1;
+    }
+    .layer .name small { display: block; margin-top: 8px; font-size: 18px; font-weight: 600; color: var(--cl-ink-soft); }
+    .layer .tape { left: 40px; top: -18px; transform: rotate(-4deg); width: 100px; }
+
+    .apps { top: 210px; height: 150px; }
+    .apps .row { display: flex; gap: 18px; }
+    .app { flex: 1; padding: 14px 18px; border: 3px solid var(--cl-ink); border-radius: 12px; background: var(--cl-card); }
+    .app b { display: block; font-size: 24px; }
+    .app span { font-size: 18px; color: var(--cl-ink-soft); }
+
+    .mind { top: 395px; height: 180px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+    .chips .chip { font-size: 19px; padding: 5px 13px; }
+    .chip.s { background: #efe7fb; }
+    .loop { margin-top: 26px; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 19px; }
+    .loop .step { padding: 7px 11px; border: 3px dashed var(--cl-ink); border-radius: 10px; background: var(--cl-card); }
+    .loop .step.llm { border-style: solid; background: var(--cl-tape); }
+    .loop .arrow { color: var(--cl-orange); font-weight: 900; font-size: 22px; }
+
+    .integrity { top: 615px; height: 200px; background: #fff7e3; }
+    .integrity .chips .chip { background: var(--cl-mint); }
+    .integrity p { margin-top: 18px; font-size: 21px; color: var(--cl-ink-soft); font-weight: 600; }
+
+    /* arbitration rail */
+    .rail {
+        left: 1240px; top: 210px; width: 290px; height: 605px;
+        padding: 26px 24px;
+        background: var(--cl-orange); color: var(--cl-card);
+    }
+    .rail h3 { font-family: var(--font-display); font-size: 34px; line-height: 1.05; }
+    .rail ol { margin-top: 20px; padding-left: 0; list-style: none; counter-reset: s; }
+    .rail li { counter-increment: s; margin-bottom: 18px; font-size: 21px; font-weight: 700; line-height: 1.25; }
+    .rail li::before {
+        content: counter(s); display: inline-block; width: 30px; height: 30px; margin-right: 10px;
+        border-radius: 50%; background: var(--cl-card); color: var(--cl-ink); text-align: center; line-height: 30px; font-weight: 900;
+    }
+
+    .note { position: absolute; font-size: 30px; color: var(--cl-thought); line-height: 1.2; }
+    .note.n1 { left: 760px; top: 70px; transform: rotate(-3deg); width: 480px; }
+    .doctor { left: 1300px; top: 4px; width: 210px; }
+    .footer { position: absolute; left: 70px; top: 875px; font-size: 22px; color: var(--cl-tag); }
+</style>
+</head>
+<body>
+    <div class="title">
+        <h2>How it works</h2>
+        <p>The character lives in a kernel, not in a prompt.</p>
+    </div>
+
+    <p class="note n1 hand">the model may only <b>propose</b> —<br>the world decides what happened.</p>
+    <img class="art doctor" src="art/doctor-think.png" alt="">
+
+    <div class="card layer apps glass">
+        <div class="tape"></div>
+        <div class="name">Apps<small>built on the kernel</small></div>
+        <div class="row">
+            <div class="app"><b>Companion</b><span>same self across QQ, Telegram, SillyTavern</span></div>
+            <div class="app"><b>Sandbox life</b><span>lives on its own when nobody is talking</span></div>
+            <div class="app"><b>Shows &amp; games</b><span>every round comes with a checkable ledger</span></div>
+        </div>
+    </div>
+
+    <div class="card layer mind">
+        <div class="tape"></div>
+        <div class="name">Cognition<small>six semantics</small></div>
+        <div class="chips">
+            <span class="chip s">Self</span>
+            <span class="chip s">Situation</span>
+            <span class="chip s">Observation</span>
+            <span class="chip s">Memory</span>
+            <span class="chip s">Motivation</span>
+            <span class="chip s">Affordance</span>
+        </div>
+        <div class="loop">
+            <span class="step">drives</span><span class="arrow">→</span>
+            <span class="step">wake</span><span class="arrow">→</span>
+            <span class="step llm">mind (rules / any LLM)</span><span class="arrow">→</span>
+            <span class="step">admission</span><span class="arrow">→</span>
+            <span class="step">world</span><span class="arrow">→</span>
+            <span class="step">settle</span>
+        </div>
+    </div>
+
+    <div class="card layer integrity">
+        <div class="tape"></div>
+        <div class="name">Integrity<small>the constitution</small></div>
+        <div class="chips">
+            <span class="chip">identity fingerprint</span>
+            <span class="chip">intent ≠ fact</span>
+            <span class="chip">hash-chain ledger</span>
+            <span class="chip">seed streams</span>
+            <span class="chip">commit–reveal</span>
+            <span class="chip">pre-registration</span>
+        </div>
+        <p>Anyone can re-check what the character went through — no need to trust the author.</p>
+    </div>
+
+    <div class="card rail">
+        <h3>Every change is a proposal</h3>
+        <ol>
+            <li>chat or model suggests a change</li>
+            <li>policy checks who may write it</li>
+            <li>only a registered authority can sign a fact</li>
+            <li>accepted or refused — both are recorded</li>
+        </ol>
+    </div>
+
+    <p class="footer mono">Node ≥ 22.6 · TypeScript · node:sqlite · no runtime dependencies</p>
+</body>
+</html>

@@ -2,6 +2,7 @@
   "name": "characterlife",
   "version": "0.7.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CharacterLife · 可信 AI 角色的心智内核：六语义认知层 + 宪法完整性层（V0.6）",
   "type": "module",
   "exports": {
