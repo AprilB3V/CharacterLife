@@ -155,6 +155,12 @@ The test character is Shen Zhiwei, a 27-year-old book restorer with clear bounda
 through recorded milestones, such as keeping or breaking a promise, so a hundred compliments change
 nothing but showing up when you said you would does.
 
+## Contributing
+
+Model reports, bug reports, English translations of the docs and new platform adapters are all
+welcome, in English or Chinese. See [CONTRIBUTING.md](CONTRIBUTING.md) for the setup and ground rules,
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+
 ## License
 
 [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).

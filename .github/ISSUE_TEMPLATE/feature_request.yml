@@ -1,0 +1,20 @@
+name: Idea or feature request
+description: Suggest a feature or a change in direction.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: The situation you ran into, or the kind of character you want to build.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+  - type: textarea
+    id: kernel
+    attributes:
+      label: Does it touch the kernel's rules?
+      description: Proposals, policy, facts from an authority, the ledger. If so, how would the rule still hold? See docs/KERNEL.md and docs/CONSTITUTION.md.
