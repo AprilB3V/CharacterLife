@@ -6,7 +6,7 @@
  * better envelope stability under the kernel's 2000-token output cap, not better model quality.
  */
 
-export const REASONING_MODES = ['default', 'disabled', 'low', 'minimal'] as const
+export const REASONING_MODES = ['default', 'disabled', 'none', 'low', 'minimal'] as const
 export type ReasoningMode = typeof REASONING_MODES[number]
 
 // Probe 2026-11-19, Ark coding endpoint: doubao and deepseek honour thinking.type=disabled; only doubao
@@ -16,6 +16,8 @@ const REASONING_BODIES: Record<ReasoningMode, Record<string, unknown>> = {
     disabled: { thinking: { type: 'disabled' } },
     low: { reasoning_effort: 'low' },
     minimal: { reasoning_effort: 'minimal' },
+    // Ollama ignores thinking.type but honours reasoning_effort=none (probe 2026-11-23, qwen3:8b, Ollama 0.40.16).
+    none: { reasoning_effort: 'none' },
 }
 
 /**
@@ -27,6 +29,9 @@ const VERIFIED_DEFAULTS: Array<{ prefix: string; mode: ReasoningMode }> = [
     { prefix: 'doubao-seed-2-1', mode: 'disabled' },
     { prefix: 'glm-5-3', mode: 'low' },
     { prefix: 'deepseek-v4-1', mode: 'default' },
+    // Ollama tag names only ("qwen3:8b"), 2026-11-23: none 3.3% invalid first attempts over 60 turns, p50 4.7 s;
+    // thinking on was valid in a 5-turn check but p50 10.7 s, too slow for conversation.
+    { prefix: 'qwen3:', mode: 'none' },
 ]
 
 export function parseReasoningMode(raw: string | undefined | null): ReasoningMode | null {

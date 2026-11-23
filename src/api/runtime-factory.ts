@@ -37,7 +37,7 @@ import type { Clock } from '../kernel/util/clock.ts'
 import { SeededRng } from '../kernel/util/rng.ts'
 import { SequentialIdFactory } from '../kernel/util/ids.ts'
 import { MockProvider } from '../conversation/providers/mock.ts'
-import { DeepSeekProvider, deepSeekConfigFromEnv } from '../conversation/providers/deepseek.ts'
+import { DeepSeekProvider, deepSeekConfigFromEnv, isLocalBaseUrl } from '../conversation/providers/deepseek.ts'
 import { parseReasoningMode, reasoningBody } from '../conversation/providers/reasoning.ts'
 import type { LLMProvider } from '../types.ts'
 import { LlmThinker } from '../kernel/thinking/thinker.ts'
@@ -251,15 +251,16 @@ export function chooseProvider(config?: LLMProvider): { provider: LLMProvider; n
         model: deepseek.model,
         extraBody: reasoningBody(deepseek.reasoning),
       }),
-      note: `DeepSeek（请求 ${deepseek.model}，reasoning ${deepseek.reasoning}）`,
+      note: `OpenAI-compatible ${deepseek.baseUrl}（请求 ${deepseek.model}，reasoning ${deepseek.reasoning}）`,
     }
   }
-  return { provider: new MockProvider({ mode: 'in-character' }), note: 'MockProvider（未检测到 DEEPSEEK_API_KEY）' }
+  return { provider: new MockProvider({ mode: 'in-character' }), note: 'MockProvider（未配置 CHARACTERLIFE_MODEL_API_KEY 或本地 CHARACTERLIFE_MODEL_BASE_URL）' }
 }
 
 /**
  * Thinking model from the environment: any OpenAI-compatible endpoint.
- * CHARACTERLIFE_THINK_BASE_URL, CHARACTERLIFE_THINK_MODEL and CHARACTERLIFE_THINK_API_KEY must all be set.
+ * CHARACTERLIFE_THINK_BASE_URL and CHARACTERLIFE_THINK_MODEL must be set; CHARACTERLIFE_THINK_API_KEY too,
+ * unless the base URL is a local server (Ollama, LM Studio).
  * CHARACTERLIFE_THINK_REASONING picks a reasoning mode (off = disabled | low | minimal | default, see reasoning.ts);
  * unset sends no reasoning field, as before, for endpoints that do not accept one.
  */
@@ -267,7 +268,7 @@ export function thinkProviderFromEnv(env: NodeJS.ProcessEnv = process.env): LLMP
   const baseUrl = env.CHARACTERLIFE_THINK_BASE_URL?.trim()
   const model = env.CHARACTERLIFE_THINK_MODEL?.trim()
   const apiKey = env.CHARACTERLIFE_THINK_API_KEY?.trim()
-  if (!baseUrl || !model || !apiKey) return null
+  if (!baseUrl || !model || (!apiKey && !isLocalBaseUrl(baseUrl))) return null
   const reasoning = parseReasoningMode(env.CHARACTERLIFE_THINK_REASONING)
   return new DeepSeekProvider({ apiKey, baseUrl, model, timeoutMs: Number(env.CHARACTERLIFE_THINK_TIMEOUT_MS ?? 20000),
     ...(reasoning ? { extraBody: reasoningBody(reasoning) } : {}) })
@@ -529,7 +530,7 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
     host: env.CHARACTERLIFE_HOST ?? '127.0.0.1',
     port: Number(env.CHARACTERLIFE_PORT ?? 8787),
     stIdentity: env.CHARACTERLIFE_ST_IDENTITY ?? 'local-default',
-    deepseekModel: env.DEEPSEEK_MODEL ?? 'deepseek-chat',
+    deepseekModel: env.CHARACTERLIFE_MODEL_MODEL ?? env.DEEPSEEK_MODEL ?? 'deepseek-chat',
     // 世界交互默认关闭：不设 CLWORLD_ENABLED=true 时整条链路不存在。
     world:
       env.CLWORLD_ENABLED === 'true'

@@ -76,6 +76,10 @@ export {
   DeepSeekProvider,
   ProviderError,
   hasDeepSeekCredentials,
+  isLocalBaseUrl,
+  OpenAICompatibleProvider,
+  hasModelConfig,
+  modelConfigFromEnv,
   deepSeekConfigFromEnv,
 } from './conversation/providers/deepseek.ts'
 export type { DeepSeekProviderOptions } from './conversation/providers/deepseek.ts'
