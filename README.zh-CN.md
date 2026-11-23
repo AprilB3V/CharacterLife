@@ -197,7 +197,8 @@ npm run st:probe
 > **OneBot 真实网关联调未执行**：没有 QQ 小号，网关在本环境不可达；上报服务用真实 HTTP
 > 端口 + 假网关做了端到端测试，协议行为按 OneBot 11 规范实现，见
 > [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md) §8。
-> **酒馆 UI 级联调未执行**：只验证到「酒馆服务端构造请求并解析响应」这一层。
+> **酒馆 UI 级联调已执行**（2026-11-23，SillyTavern 1.19.0 网页界面 + 本机 Ollama），见
+> [`docs/SILLYTAVERN_SETUP.zh-CN.md`](docs/SILLYTAVERN_SETUP.zh-CN.md) §5。
 
 演示会打印：每轮的行为决策与理由、被拒绝的提议、关系数值变化、事件触发顺序、
 待发送的主动消息（默认**不**推送到任何外部平台），以及审计日志尾部。
@@ -436,7 +437,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/QQ_CAPABILITIES.md`](docs/QQ_CAPABILITIES.md)：QQ 官方能力核查（含「未验证」清单）
 - [`docs/QQ_SETUP.md`](docs/QQ_SETUP.md)：QQ Webhook 接入步骤与排错
 - [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md)：OneBot 11 网关接入（NapCat / Lagrange / SnowLuma）、**启动脚本用法**、群聊策略、隐私与风险
-- [`docs/SILLYTAVERN_SETUP.md`](docs/SILLYTAVERN_SETUP.md)：酒馆配置、记忆边界、已验证/未验证
+- [`docs/SILLYTAVERN_SETUP.zh-CN.md`](docs/SILLYTAVERN_SETUP.zh-CN.md)：酒馆配置、记忆边界、已验证/未验证
 - [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
 
 **世界交互（CL-World）**
@@ -457,8 +458,8 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - 角色与剧情均为虚构；本项目不宣称模型具有意识或真实情感。
 - 不生成、不存储露骨内容；内容边界的处理方式是**拒绝 + 转移话题**。
 - 仓库中不含真实 API Key、真实用户隐私或任何外部平台凭据。
-- **QQ 真实联调未执行**（无凭证）；**OneBot 真实网关联调未执行**（无 QQ 小号，网关不可达）；
-  **酒馆只到服务端转发层**（本环境无浏览器）。这三点在所有相关文档里都有明确标注，
+- **QQ 真实联调未执行**（无凭证）；**OneBot 真实网关联调未执行**（无 QQ 小号，网关不可达）。
+  这两点在所有相关文档里都有明确标注，
   不用模拟结果冒充真实平台测试。
 - OneBot 走的是社区协议，**不是腾讯官方授权方式**，存在账号风险；项目只提供适配器，
   不提供任何风控绕过手段，使用与否、用哪个号，由部署者自行决定并承担后果。

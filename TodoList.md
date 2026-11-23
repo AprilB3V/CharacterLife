@@ -77,3 +77,5 @@
 - **2026-11-04 · 协作入口 / Claude**：新增 `AGENTS.md`（开工顺序、三类文件分工、硬约束、仓库边界、收尾规则）和 `CLAUDE.md`（引用 AGENTS.md，供 Claude Code 自动加载）；`docs/DECISIONS.md` 开头补追加规则；README 文档索引加协作入口。只改文档，未运行测试、未改实现。分支：`claude/agent-entry`。
 
 - **2026-11-04 · CL-015 / CL-016 提案 / Claude（网页对话）**：把与主导者在网页对话中讨论的两份设计写回仓库：`docs/proposals/SELF_MAINTAINED_MEMORY.md`（自维护记忆：两层真值、记忆系统调用与内核检查、三种节律、`gate`→`audit`、评测指标）与 `docs/proposals/MOTIVATION_V2.md`（动机模型 v2：饱和驱力、趋近/回避、期望与价值学习、约束与塑形分离、气质参数默认退化为 V0.4）；DECISIONS 追加 §20；TodoList 新增 CL-015、CL-016（均为待决策，分别依赖 CL-001/002 与 CL-004）；README 文档索引加提案入口。**只改文档，未改实现。** 本地 Node 22.23.4 不识别 `--test-isolation=none`（DECISIONS §16.1 第 5 条），改用 `node --test --experimental-strip-types "tests/**/*.test.ts"`：391/391 通过；`npm run typecheck` 通过。分支：`claude/memory-motivation-proposals`。
+
+- **2026-11-23 · 酒馆英文文档与 UI 实测 / Claude**：新增英文 `docs/SILLYTAVERN_SETUP.md`（原中文版改名为 `SILLYTAVERN_SETUP.zh-CN.md`），配三张截图（`docs/images/sillytavern/`）。首次在浏览器里做了酒馆 UI 全链路：SillyTavern 1.19.0（临时数据目录与配置，未动本机酒馆数据）+ `st:server` + 本机 Ollama qwen3:8b；API 面板连接显示 Valid，流式聊天正常，新开聊天并删除旧聊天文件后仍准确复述约定。只改文档，未改代码，未跑 `npm test`。未测：酒馆群聊、多用户共用一个 API。
