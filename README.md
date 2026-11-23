@@ -114,6 +114,18 @@ One character keeps one identity, one relationship and one memory across platfor
 Each platform also has an offline demo (`npm run st:demo`, `npm run onebot:demo`, `npm run qq:demo`)
 that uses the real event formats with a mock transport.
 
+### Bring your own character
+
+A character pack is a folder with a `character.json`: persona, boundaries, the lines she opens
+conversations with, and events in her own life. Packs are plain data, so sharing one is safe.
+
+```bash
+npm run pack:check -- characters/shen-zhiwei
+CHARACTERLIFE_CHARACTER_PACK=path/to/your-character npm run st:server
+```
+
+The format, limits and versioning rules are in [docs/CHARACTER_PACK.md](docs/CHARACTER_PACK.md).
+
 ## What's inside
 
 | Area | Where | What it does |
@@ -140,6 +152,7 @@ Docs marked 中文 are currently in Chinese only. English translations are on th
 | Doc | Topic |
 |---|---|
 | [MODELS.md](docs/MODELS.md) | Connecting models, reasoning settings, measured results |
+| [CHARACTER_PACK.md](docs/CHARACTER_PACK.md) | Character pack format: write and share your own character |
 | [KERNEL.md](docs/KERNEL.md) 中文 | Six-semantics kernel, ownership rules, autonomy loop |
 | [CONSTITUTION.md](docs/CONSTITUTION.md) 中文 | Integrity layer K1–K6 |
 | [AUTONOMY.md](docs/AUTONOMY.md) 中文 | Drives, wake-ups, minds, the E0 results |

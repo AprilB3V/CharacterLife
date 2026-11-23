@@ -430,6 +430,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md)：OneBot 11 网关接入（NapCat / Lagrange / SnowLuma）、**启动脚本用法**、群聊策略、隐私与风险
 - [`docs/SILLYTAVERN_SETUP.md`](docs/SILLYTAVERN_SETUP.md)：酒馆配置、记忆边界、已验证/未验证
 - [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
+- [`docs/CHARACTER_PACK.zh-CN.md`](docs/CHARACTER_PACK.zh-CN.md)：角色包格式（纯数据、可分享），`npm run pack:check` 校验，`CHARACTERLIFE_CHARACTER_PACK` 加载
 
 **世界交互（CL-World）**
 

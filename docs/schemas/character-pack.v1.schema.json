@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AprilB3V/CharacterLife/blob/main/docs/schemas/character-pack.v1.schema.json",
+  "title": "CharacterLife character pack (packFormat 1)",
+  "description": "character.json of a CharacterLife character pack. Editor help only: the authoritative check is `npm run pack:check`, which also enforces file existence and a few rules JSON Schema cannot express. See docs/CHARACTER_PACK.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packFormat", "id", "version", "name", "language", "summary", "license", "authors", "profile", "voice"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "packFormat": { "const": 1 },
+    "id": {
+      "description": "Stable pack id. Lowercase letters, digits and single hyphens. Becomes the model id characterlife/<id>.",
+      "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 48
+    },
+    "version": {
+      "description": "Template version. Bump it whenever profile, voice or timeline change; existing instances refuse to restore against changed content with the same version.",
+      "type": "integer", "minimum": 1
+    },
+    "name": { "description": "Display name for listings.", "type": "string", "minLength": 1, "maxLength": 80 },
+    "language": { "description": "BCP 47 tag of the language the character speaks, e.g. en, zh-CN, ja.", "type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+    "summary": { "description": "One or two sentences for listings.", "type": "string", "minLength": 1, "maxLength": 280 },
+    "license": { "description": "SPDX license expression for the pack's text, e.g. CC-BY-4.0. Use LicenseRef-Proprietary for all rights reserved.", "type": "string", "pattern": "^[A-Za-z0-9.+() -]{2,64}$" },
+    "authors": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "url": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+    "homepage": { "type": "string", "maxLength": 200 },
+    "templateId": {
+      "description": "Advanced: kernel template id. Defaults to char_<id with - replaced by _>. Never change it once instances exist.",
+      "type": "string", "pattern": "^[A-Za-z0-9_]{1,64}$"
+    },
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "age", "occupation", "background", "traits", "values", "interests", "dislikes", "speechStyle", "goals", "contentBoundaries", "relationshipNotes"],
+      "properties": {
+        "name": { "description": "The name the character uses for herself or himself.", "type": "string", "minLength": 1, "maxLength": 80 },
+        "age": { "description": "Apparent age for ageless beings.", "type": "number", "minimum": 0 },
+        "occupation": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "background": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "traits": { "description": "Core personality. Read-only at runtime: no chat can change it.", "$ref": "#/$defs/lines", "minItems": 1, "maxItems": 12 },
+        "values": { "$ref": "#/$defs/lines", "minItems": 1, "maxItems": 12 },
+        "interests": { "$ref": "#/$defs/lines", "minItems": 1, "maxItems": 16 },
+        "dislikes": { "$ref": "#/$defs/lines", "maxItems": 16 },
+        "speechStyle": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "goals": { "description": "The character's own goals, not the user's.", "$ref": "#/$defs/lines", "maxItems": 8 },
+        "contentBoundaries": { "description": "Lines the character holds regardless of what users ask.", "$ref": "#/$defs/lines", "minItems": 1, "maxItems": 12 },
+        "relationshipNotes": { "description": "How trust and closeness grow or shrink.", "type": "string", "minLength": 1, "maxLength": 1000 },
+        "shortPersona": { "description": "Optional compact persona used when generating replies.", "type": "string", "maxLength": 600 }
+      }
+    },
+    "voice": {
+      "type": "object", "additionalProperties": false, "required": ["proactive"],
+      "properties": {
+        "proactive": {
+          "description": "Fallback lines for messages the character starts herself; at least one per intent.",
+          "type": "object", "additionalProperties": false,
+          "required": ["idle_check_in", "promise_reminder", "life_update", "story_followup", "boundary_pushback"],
+          "properties": {
+            "idle_check_in": { "$ref": "#/$defs/voiceLines" },
+            "promise_reminder": { "$ref": "#/$defs/voiceLines" },
+            "life_update": { "$ref": "#/$defs/voiceLines" },
+            "story_followup": { "$ref": "#/$defs/voiceLines" },
+            "boundary_pushback": { "$ref": "#/$defs/voiceLines" }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "description": "Events in the character's own fictional life.",
+      "type": "array", "maxItems": 200,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "kind", "at", "title", "description"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" },
+          "kind": { "enum": ["plot", "life", "reminder", "consequence"] },
+          "at": { "description": "Fictional time since the story starts: 0, 9h, 2d, 1d2h30m.", "type": "string", "pattern": "^(0|(\\d+d)?(\\d+h)?(\\d+m)?)$" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "payload": { "description": "Effects when the event fires: activity, moodLabel, moodValence, energy, milestone, memory.", "type": "object" }
+        }
+      }
+    },
+    "assets": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "portrait": { "$ref": "#/$defs/image" },
+        "expressions": { "type": "object", "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" }, "additionalProperties": { "$ref": "#/$defs/image" } },
+        "license": { "description": "SPDX expression for the art if it differs from the pack license.", "type": "string" }
+      }
+    },
+    "knowledge": {
+      "description": "Reference files for apps (world notes, glossaries). The kernel does not read them.",
+      "type": "array", "items": { "type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!\\.\\.)[^\\\\]+\\.(md|txt|json)$" }
+    }
+  },
+  "$defs": {
+    "lines": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
+    "voiceLines": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "image": { "type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!\\.\\.)[^\\\\]+\\.(png|webp|jpe?g|PNG|WEBP|JPE?G)$" }
+  }
+}

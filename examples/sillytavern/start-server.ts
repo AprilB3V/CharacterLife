@@ -9,6 +9,7 @@
  *   CHARACTERLIFE_ST_IDENTITY SillyTavern 本地身份（默认 local-default）
  *   DEEPSEEK_API_KEY          可选；没有则用 MockProvider
  *   TELEGRAM_BOT_TOKEN        可选；设置后在同一进程里启动 Telegram 机器人（见 .env.example）
+ *   CHARACTERLIFE_CHARACTER_PACK 可选；角色包目录（docs/CHARACTER_PACK.md），不填用内置测试角色沈知微
  *
  * 运行：
  *   $env:CHARACTERLIFE_API_TOKEN = "local-dev-token-123"
@@ -19,6 +20,7 @@ import { loadEnvConfig, assembleRuntime } from '../../src/api/runtime-factory.ts
 import { createApiServer } from '../../src/api/server.ts'
 import { bootTelegram } from '../telegram/boot.ts'
 import { bootConsole } from '../console-boot.ts'
+import { describeTemplateMismatch, loadCharacterFromEnv } from '../character-module.ts'
 
 const env = loadEnvConfig()
 if (!env.token) {
@@ -27,8 +29,11 @@ if (!env.token) {
   process.exit(2)
 }
 
+const character = await loadCharacterFromEnv()
+const modelId = character.modelId ?? 'characterlife/shen-zhiwei'
 const runtime = assembleRuntime({
   dbPath: env.dbPath,
+  ...(character.template ? { template: character.template } : {}),
   worldId: process.env.CHARACTERLIFE_WORLD ?? 'world_local',
   auditFile: null,
   ...(env.telegram
@@ -44,23 +49,32 @@ const runtime = assembleRuntime({
     : {}),
 })
 
+const mismatch = describeTemplateMismatch(runtime.persistence, runtime.template, env.dbPath)
+if (mismatch) {
+  console.error(`❌ ${mismatch}`)
+  runtime.close()
+  process.exit(2)
+}
+
 const api = createApiServer({
   runtime,
   token: env.token,
   host: env.host,
   port: env.port,
   stIdentityUserId: env.stIdentity,
+  modelId,
   allowNonLoopback: process.env.CHARACTERLIFE_ALLOW_PUBLIC === 'true',
 })
 
 const { url } = await api.listen()
 console.log(`CharacterLife API 已启动：${url}`)
 console.log(`数据库：${env.dbPath}`)
+if (character.label) console.log(`角色：${character.label}`)
 console.log('')
 console.log('SillyTavern 配置（Chat Completion → Custom (OpenAI-compatible)）：')
 console.log(`  Base URL : ${url}/v1`)
 console.log('  API Key  : 使用已配置的 CHARACTERLIFE_API_TOKEN（不在日志中显示）')
-console.log('  模型      : 从下拉列表里选 characterlife/shen-zhiwei')
+console.log(`  模型      : 从下拉列表里选 ${modelId}`)
 console.log('')
 console.log('健康检查： GET /healthz    模型列表： GET /v1/models（需要 Bearer Token）')
 
