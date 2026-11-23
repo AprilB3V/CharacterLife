@@ -84,6 +84,16 @@ npm test            # 601 offline tests
 The demos print each decision and its reason, refused proposals, relationship changes and the tail
 of the audit log. Results are reproducible.
 
+### Run with Docker
+
+```bash
+cp .env.docker.example .env    # set CHARACTERLIFE_API_TOKEN, optionally a model
+docker compose up -d           # API on http://127.0.0.1:8787/v1, data in a named volume
+```
+
+[docs/DOCKER.md](docs/DOCKER.md) covers models (including Ollama on the host or in a container),
+Telegram, backups and security.
+
 ### Use a real model
 
 Set three environment variables. For a local model with Ollama:
@@ -153,6 +163,7 @@ Docs marked 中文 are currently in Chinese only. English translations are on th
 |---|---|
 | [MODELS.md](docs/MODELS.md) | Connecting models, reasoning settings, measured results |
 | [CHARACTER_PACK.md](docs/CHARACTER_PACK.md) | Character pack format: write and share your own character |
+| [DOCKER.md](docs/DOCKER.md) | Running with Docker and Docker Compose |
 | [KERNEL.md](docs/KERNEL.md) 中文 | Six-semantics kernel, ownership rules, autonomy loop |
 | [CONSTITUTION.md](docs/CONSTITUTION.md) 中文 | Integrity layer K1–K6 |
 | [AUTONOMY.md](docs/AUTONOMY.md) 中文 | Drives, wake-ups, minds, the E0 results |
@@ -167,6 +178,12 @@ The test character is Shen Zhiwei, a 27-year-old book restorer with clear bounda
 (`examples/characters/shen-zhiwei.ts`). Relationships don't grow from chatting a lot. They only change
 through recorded milestones, such as keeping or breaking a promise, so a hundred compliments change
 nothing but showing up when you said you would does.
+
+## Contributing
+
+Model reports, bug reports, English translations of the docs and new platform adapters are all
+welcome, in English or Chinese. See [CONTRIBUTING.md](CONTRIBUTING.md) for the setup and ground rules,
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## License
 

@@ -359,8 +359,8 @@ src/conversation/service.ts      一轮对话：解析 worldActions → 准入 �
 | 仓库 | 放什么 |
 |---|---|
 | CharacterLife | kernel、runtime（计划新增事件流与话轮）、api、console、通用平台适配（SillyTavern、OneBot、QQ） |
-| [CharacterLife-VideoCohost](https://github.com/AprilB3V/CharacterLife-VideoCohost) | 当铺 adapter、第一季剧本、鲸鲸模板与知识库、console 插件、语音 adapter（先放这里） |
-| Free-Roam | 竞技场规则、角色、解说 |
+| CharacterLife-VideoCohost（暂未公开） | 当铺 adapter、第一季剧本、鲸鲸模板与知识库、console 插件、语音 adapter（先放这里） |
+| Free-Roam（暂未公开） | 竞技场规则、角色、解说 |
 
 扩展的接缝是 `InstanceExtension`（同步世界观察、注入上下文、结算承诺、贡献后台插件），扩展只从 `exports` 列出的入口 import，
 入口清单与接入方式见 [`KERNEL.md` §5](KERNEL.md)。语音链路改为双向事件流，草案见 [`EVENT_STREAM_PROTOCOL.md`](EVENT_STREAM_PROTOCOL.md)。

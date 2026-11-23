@@ -20,6 +20,7 @@ st-startup.log
 .env
 .env.*
 !.env.example
+!.env.docker.example
 *.local.json
 
 # Security baseline: generated output may contain credentials or conversations.

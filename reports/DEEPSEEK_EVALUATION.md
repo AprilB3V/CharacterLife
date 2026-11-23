@@ -11,7 +11,7 @@
 | 项 | 值 | 核实方式 |
 |---|---|---|
 | DSH 版本 | **0.2.0-rc.2** | `dsh --version` 与 `@deepseek-ai/dsh` 的 `package.json` 一致 |
-| DSH 安装路径 | `C:\Users\86509\AppData\Roaming\npm\node_modules\@deepseek-ai\dsh` | 文件系统 |
+| DSH 安装路径 | `%APPDATA%\npm\node_modules\@deepseek-ai\dsh` | 文件系统 |
 | 会话运行模型 | **`deepseek-v4-flash`** | DSH 运行时上下文自述（`You are powered by the deepseek-v4-flash model`） |
 | 引擎调用模型（实测） | 请求 `deepseek-chat` → **服务端返回 `deepseek-flash`** | 真实响应体的 `model` 字段（18 次调用全部一致） |
 | 接口形态 | DeepSeek Harness Web GUI（`http://127.0.0.1:3080`） | 运行时上下文 |
