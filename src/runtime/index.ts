@@ -13,6 +13,9 @@ export type {
     InstanceExtension,
     InstanceExtensionContext,
     SendOptions,
+    ThinkOptions,
+    ThinkOutcome,
+    ThoughtBrief,
 } from './instance-runtime.ts'
 export { MemoryReviewQueue } from './memory-review.ts'
 export type { MemoryReviewMode, PendingMemory } from './memory-review.ts'

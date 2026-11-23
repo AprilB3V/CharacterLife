@@ -16,7 +16,7 @@
 
 ### 1.1 Open-LLM-VTuber 现状核对（2026-11-02，仅读代码，未运行）
 
-本机副本 `应用分析/Open-LLM-VTuber`（提交 `992309c`）：
+本机副本 `ApplicationAnalysis/Open-LLM-VTuber`（提交 `992309c`）：
 
 - **没有中间识别**：`asr/asr_interface.py` 只有 `transcribe_np(audio) -> str`，所有后端（faster-whisper、sherpa-onnx、FunASR、Azure 等）都是整段识别。
 - **不暴露停顿时长**：`vad/silero.py` 用固定阈值判定说完（`required_misses=24`，约 0.8 秒），结果只体现为一整段音频进入 ASR。

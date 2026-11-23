@@ -19,6 +19,8 @@ export interface DeepSeekProviderOptions {
   timeoutMs?: number
   /** 允许注入 fetch，便于测试时替换成假网络层 */
   fetchImpl?: typeof fetch
+  /** Extra request-body fields for compatible endpoints (e.g. `{ thinking: { type: 'disabled' } }`). */
+  extraBody?: Record<string, unknown>
 }
 
 export class ProviderError extends Error {
@@ -37,6 +39,7 @@ export class DeepSeekProvider implements LLMProvider {
   #baseUrl: string
   #timeoutMs: number
   #fetch: typeof fetch
+  #extraBody: Record<string, unknown>
 
   constructor(opts: DeepSeekProviderOptions) {
     if (!opts.apiKey || opts.apiKey.trim().length === 0) {
@@ -47,6 +50,7 @@ export class DeepSeekProvider implements LLMProvider {
     this.model = opts.model ?? 'deepseek-chat'
     this.#timeoutMs = opts.timeoutMs ?? 60_000
     this.#fetch = opts.fetchImpl ?? fetch
+    this.#extraBody = opts.extraBody ?? {}
   }
 
   async complete(request: LLMRequest): Promise<LLMResponse> {
@@ -55,6 +59,7 @@ export class DeepSeekProvider implements LLMProvider {
       ...request.messages,
     ]
     const body: Record<string, unknown> = {
+      ...this.#extraBody,
       model: this.model,
       messages,
       temperature: request.temperature,

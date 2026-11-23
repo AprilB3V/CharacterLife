@@ -529,21 +529,43 @@ export class CharacterPersistence {
 
   saveSnapshot(instanceId: string, state: PersistedState): SnapshotRecord {
     this.requireInstance(instanceId)
-    const info = this.#db
-      .prepare(
-        `INSERT INTO snapshots (instance_id, schema_version, saved_at_sim, saved_at_wall, last_event_seq, payload_json)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        instanceId,
-        state.schemaVersion,
-        state.savedAtSim,
-        state.savedAtWall,
-        state.lastEventSeq,
-        JSON.stringify(state),
-      )
+    const SNAPSHOT_LIMIT = 32
+    const CHECKPOINT_INTERVAL_MS = 5 * 60 * 1000
+    const payload = JSON.stringify(state)
+    const id = this.#db.transaction(() => {
+        const latest = this.#db.prepare(
+            'SELECT id, saved_at_wall FROM snapshots WHERE instance_id = ? ORDER BY id DESC LIMIT 1',
+        ).get(instanceId) as { id: number; saved_at_wall: string } | undefined
+        const bucket = Math.floor(Date.parse(state.savedAtWall) / CHECKPOINT_INTERVAL_MS)
+        const sameBucket = latest && Number.isFinite(bucket)
+            && Math.floor(Date.parse(latest.saved_at_wall) / CHECKPOINT_INTERVAL_MS) === bucket
+        let snapshotId: number
+        if (sameBucket) {
+            // Keep the latest recovery state inside a fixed wall-clock checkpoint bucket.
+            this.#db.prepare(
+                `UPDATE snapshots SET schema_version = ?, saved_at_sim = ?, saved_at_wall = ?,
+                 last_event_seq = ?, payload_json = ? WHERE instance_id = ? AND id = ?
+                 AND payload_json <> ?`,
+            ).run(state.schemaVersion, state.savedAtSim, state.savedAtWall,
+                state.lastEventSeq, payload, instanceId, latest.id, payload)
+            snapshotId = latest.id
+        } else {
+            const info = this.#db.prepare(
+                `INSERT INTO snapshots (instance_id, schema_version, saved_at_sim, saved_at_wall, last_event_seq, payload_json)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+            ).run(instanceId, state.schemaVersion, state.savedAtSim, state.savedAtWall, state.lastEventSeq, payload)
+            snapshotId = Number(info.lastInsertRowid)
+        }
+        // Retention is per instance; current state, memories, events and ledger stay intact.
+        this.#db.prepare(
+            `DELETE FROM snapshots WHERE instance_id = ? AND id <= (
+                SELECT id FROM snapshots WHERE instance_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?
+            )`,
+        ).run(instanceId, instanceId, SNAPSHOT_LIMIT)
+        return snapshotId
+    })
     return {
-      id: Number(info.lastInsertRowid),
+      id,
       instanceId,
       schemaVersion: state.schemaVersion,
       savedAtSim: state.savedAtSim,

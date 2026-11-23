@@ -92,6 +92,11 @@ export interface CharacterProfile {
   contentBoundaries: string[]
   /** 关系升温的必要条件说明，供策略层与提示词共同使用 */
   relationshipNotes: string
+  /**
+   * 短人设（可选）：生成回复时代替完整设定注入，让角色说话更像本人而不是在念设定。
+   * 说话风格与内容边界始终照常注入；完整设定仍用于状态管理、自主循环与审计。
+   */
+  shortPersona?: string
   version: number
   /** 标记字段：运行时用 Object.freeze 深冻结，防止意外改写 */
   immutable: true
