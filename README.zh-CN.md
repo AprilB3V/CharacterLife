@@ -53,7 +53,7 @@ CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**�
 |---|---|---|
 | **陪伴角色** | 跨 QQ / OneBot / SillyTavern 保持同一个人格、关系与长期记忆；会拒绝、会协商、会沉默 | 已实现（`src/runtime`、`src/conversation`、`src/adapters`） |
 | **自主箱庭** | 无人输入时自己生活：饿了去找吃的、想说话了去找人，只能看见自己所在的地方 | 文字箱庭已实现（`npm run sandbox`）；2.5D 观察箱庭 CharacterLife-World（Godot）为独立实验仓库 |
-| **节目与游戏** | 神话神兽在罐中博弈，心声分级、封存、到期揭晓，每局一本可核对的账本 | [Free Roam《罐中斗》](https://github.com/AprilB3V/Free-Roam) 第一期引擎已接入内核 |
+| **节目与游戏** | 神话神兽在罐中博弈，心声分级、封存、到期揭晓，每局一本可核对的账本 | Free Roam《罐中斗》（独立仓库，暂未公开） 第一期引擎已接入内核 |
 
 ## 4. 现在走到哪一步（如实标注）
 
@@ -417,8 +417,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 ├── docs/                        # ARCHITECTURE / MEMORY_ARCHITECTURE / DECISIONS
 │                                # + QQ_CAPABILITIES / QQ_SETUP / ONEBOT_SETUP
 │                                # + SILLYTAVERN_SETUP / ADAPTER_PROTOCOL / openapi.yaml
-├── reports/                     # 测试报告、真实日志、评估、A/B、V02 报告
-└── media/                       # BILIBILI_NOTES / V02_VIDEO_NOTES
+└── reports/                     # 测试报告、真实日志、评估、A/B、V02 报告
 ```
 
 ## 15. 文档索引
@@ -445,14 +444,13 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/WORLD_PROTOCOL.md`](docs/WORLD_PROTOCOL.md)：动作/回执契约、状态机与叙述许可、
   去重规则、独立 world token、Godot 拉取模型、第一阶段限制与第二阶段崩溃一致性要求
 
-**报告与素材**
+**报告**
 
 - [`reports/V02_TEST_REPORT.md`](reports/V02_TEST_REPORT.md)：V0.2 测试结果（Mock / 真实 API / 真实客户端三层分开）
 - [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)：V0.1/V0.1.1 测试结果与真实失败案例
 - [`reports/DEEPSEEK_EVALUATION.md`](reports/DEEPSEEK_EVALUATION.md)：DeepSeek 工程表现与局限
 - [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)：真实 DeepSeek 调用记录（18 次）
 - [`reports/AB_RESULTS.md`](reports/AB_RESULTS.md)、[`reports/PERSONA_CONTINUITY.md`](reports/PERSONA_CONTINUITY.md)：两组对照实验
-- [`media/BILIBILI_NOTES.md`](media/BILIBILI_NOTES.md)、[`media/V02_VIDEO_NOTES.md`](media/V02_VIDEO_NOTES.md)：视频素材
 
 ## 16. 声明
 

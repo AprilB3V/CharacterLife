@@ -13,7 +13,7 @@
 - [docs/MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md)：Template / Instance / Session、记忆来源与状态、上下文预算和恢复。
 - [docs/CONSTITUTION.md](docs/CONSTITUTION.md)：身份指纹、意图与世界事实的分离、可核对账本。
 - [docs/WORLD_PROTOCOL.md](docs/WORLD_PROTOCOL.md)：动作、回执和幂等协议。
-- 外部演示/世界：[CharacterLife-World](https://github.com/AprilB3V/CharacterLife-World)；游戏/实验：[Free-Roam](https://github.com/AprilB3V/Free-Roam)。这两个仓库的具体进度**不能**仅据 CL 文档推断。
+- 外部演示/世界：CharacterLife-World；游戏/实验：Free-Roam（两者暂未公开）。这两个仓库的具体进度**不能**仅据 CL 文档推断。
 
 **当前定位**：CL 是可在持续世界中运行、可检验行为因果与记录可信性的 AI 角色心智内核；不是以全面替代 MaiBot、DSH 或聊天桥接生态为目标。优先复用已有工具，不为“看起来完整”而扩张功能。
 
