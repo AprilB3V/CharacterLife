@@ -17,7 +17,7 @@ import type { LLMProvider } from '../types.ts'
 import { sanitizeForMemory } from '../util/text.ts'
 import type { Mind, MindDecision, MindInput } from './mind.ts'
 import { actionKey } from './mind.ts'
-import { ReplayMismatchError } from './replay.ts'
+import { ReplayMismatchError, fingerprintRequest } from './replay.ts'
 
 export interface LlmMindOptions {
   provider: LLMProvider
@@ -173,14 +173,15 @@ export class LlmMind implements Mind {
   async decide(input: MindInput): Promise<MindDecision> {
     const started = Date.now()
     try {
-      const response = await this.#provider.complete({
+      const request = {
         system: buildSystemPrompt(input),
-        messages: [{ role: 'user', content: buildDataBlock(input) }],
+        messages: [{ role: 'user' as const, content: buildDataBlock(input) }],
         temperature: this.#temperature,
         maxTokens: this.#maxTokens,
         jsonMode: true,
         meta: { scene: 'autonomy', atSim: input.nowSim },
-      })
+      }
+      const response = await this.#provider.complete(request)
       const parsed = parseMindOutput(response.text)
       return {
         action: parsed.action,
@@ -190,6 +191,7 @@ export class LlmMind implements Mind {
         usage: response.usage,
         latencyMs: response.latencyMs,
         error: parsed.error,
+        raw: { text: response.text, model: response.model, requestFingerprint: fingerprintRequest(request) },
       }
     } catch (err) {
       // 回放不一致不是"模型出错"，是实验不可复现：必须让运行停下来

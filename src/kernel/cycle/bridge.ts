@@ -36,6 +36,7 @@ import { narrationFor } from '../world/state.ts'
 import type { IdFactory } from '../util/ids.ts'
 import { satisfactionProposals } from '../semantics/drives.ts'
 import type { Situation } from '../semantics/situation.ts'
+import type { AuthorityToken } from '../integrity/index.ts'
 
 export interface SettledOutcome {
   actionId: string
@@ -72,6 +73,11 @@ export interface WorldBridgeOptions {
   ids: IdFactory
   /** 动作的中文标签（来自服务端目录），只用于记忆标题的可读性 */
   labelFor?: (verb: string, target: string | null) => string
+  /**
+   * 世界的权威凭据（宪法 K2）。角色启用了完整性层时，桥用它把世界回执与观察签发为事实；
+   * 凭据只能由持有 policy:write 的系统配置登记得到。
+   */
+  authority?: AuthorityToken | null
 }
 
 const RESULT_TEXT: Record<string, string> = {
@@ -89,6 +95,7 @@ export class WorldBridge {
   #world: WorldService
   #instanceId: string
   #ids: IdFactory
+  #authority: AuthorityToken | null
   #labelFor: (verb: string, target: string | null) => string
   #seen = new Set<string>()
   #cursor = 0
@@ -98,6 +105,7 @@ export class WorldBridge {
     this.#world = opts.world
     this.#instanceId = opts.instanceId
     this.#ids = opts.ids
+    this.#authority = opts.authority ?? null
     this.#labelFor = opts.labelFor ?? ((verb, target) => `${verb}(${target ?? '*'})`)
   }
 
@@ -141,6 +149,8 @@ export class WorldBridge {
         ref: obs.eventId,
       })
       this.#ws.situation.apply(percept)
+      // K2：世界观察是世界权威签发的事实
+      this.#issue('world.observation', null, { eventId: obs.eventId, facts: obs.facts, events, summary: obs.summary })
       if (events.length === 0) continue
       const written = this.#ws.writeMemory(
         {
@@ -161,7 +171,30 @@ export class WorldBridge {
     return { outcomes, salient, observationsApplied: observations.length, situation: this.situation }
   }
 
+  /** 以世界权威签发事实（未启用完整性层或没有凭据时什么都不做）。 */
+  #issue(scope: string, intentRef: string | null, content: unknown): void {
+    const integrity = this.#ws.integrity
+    if (!integrity || !this.#authority) return
+    integrity.issueFact(this.#authority, { scope, intentRef, content })
+  }
+
   #settle(action: WorldActionView): SettledOutcome {
+    // K2：先确立事实，再推导后果（记忆、驱力）。过期不是世界给出的结果，只记一条运行时记录。
+    if (action.status === 'expired') {
+      this.#ws.integrity?.record('intent_expired', 'runtime', {
+        ref: action.actionId,
+        dispatched: action.firstDispatchedAtSim !== null,
+      })
+    } else {
+      this.#issue('world.action', action.actionId, {
+        actionId: action.actionId,
+        verb: action.verb,
+        target: action.target,
+        result: action.status,
+        eventId: action.outcome?.eventId ?? null,
+        summary: action.outcome?.summary ?? '',
+      })
+    }
     const label = this.#labelFor(action.verb, action.target)
     const now = this.#world.nowSim()
     const narration = narrationFor({

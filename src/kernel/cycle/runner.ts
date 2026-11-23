@@ -234,6 +234,16 @@ export class AutonomyRunner {
 
     const input = this.#buildInput(now, drives, wake)
     const decision = await o.mind.decide(input)
+    // K4：模型原始输出完整入账（复现 = 依据账本重放，而不是重新生成）
+    if (decision.raw && o.agent.integrity) {
+      o.agent.integrity.recordModelOutput(o.agent.id, {
+        provider: decision.provider,
+        model: decision.raw.model,
+        requestFingerprint: decision.raw.requestFingerprint,
+        text: decision.raw.text,
+        usage: decision.usage,
+      })
+    }
 
     let admission: Extract<AutonomyLogRecord, { type: 'wake' }>['admission'] = null
     if (decision.action) {
@@ -290,6 +300,14 @@ export class AutonomyRunner {
     }
     const result = o.world.admit({ worldId: o.worldId, instanceId: o.instanceId, spec })
     if (!result.ok) return { ok: false, code: result.code, reasons: result.reasons }
+    // K2：登记意图（以世界动作 id 为引用键）；它只能被世界权威的一条事实结算
+    o.agent.integrity?.intent(o.agent.id, result.action.actionId, {
+      verb: spec.verb,
+      target: spec.target,
+      reason: spec.reason,
+      expectation: spec.expectation,
+      turnId,
+    })
     o.agent.audit.append('world_action', 'autonomy', `自主轮次登记世界动作 ${actionKey(spec.verb, spec.target)}`, {
       actionId: result.action.actionId,
       turnId,

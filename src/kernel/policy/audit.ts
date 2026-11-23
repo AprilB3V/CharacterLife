@@ -41,6 +41,7 @@ export class AuditLog {
   #seq = 0
   #filePath: string | null
   #clock: Clock
+  #listeners: Array<(event: AuditEvent) => void> = []
 
   constructor(clock: Clock, filePath: string | null = null) {
     this.#clock = clock
@@ -63,7 +64,19 @@ export class AuditLog {
       // 审计日志是 append-only JSONL：崩在中间最多丢最后一行，不会破坏已有记录。
       appendFileSync(this.#filePath, `${JSON.stringify(event)}\n`, 'utf8')
     }
+    for (const listener of this.#listeners) listener(event)
     return event
+  }
+
+  /**
+   * 订阅每一条审计事件（V0.6：完整性层用它把审计镜像进哈希链账本）。
+   * 返回取消订阅函数。
+   */
+  onAppend(listener: (event: AuditEvent) => void): () => void {
+    this.#listeners.push(listener)
+    return () => {
+      this.#listeners = this.#listeners.filter((l) => l !== listener)
+    }
   }
 
   /** 最近 n 条（默认全部），用于演示与测试断言。 */

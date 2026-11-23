@@ -84,6 +84,8 @@ export interface MindDecision {
   latencyMs: number
   /** 解析失败等异常（不抛出，降级为不行动） */
   error: string | null
+  /** 模型原始输出（规则 Mind 没有）。启用完整性层时完整入账（宪法 K4） */
+  raw?: { text: string; model: string; requestFingerprint: string }
 }
 
 export interface Mind {

@@ -64,6 +64,16 @@ AgentHost.tick()
 胜负、回合、谁能听见谁 —— 都是**世界规则**，由 `WorldDriver` 实现，不进内核。
 Free Roam 的斗场「宪法」会作为一个 WorldDriver 接进来。
 
+## 3.5 完整性层（V0.6 · 宪法 K1–K6）
+
+认知层回答"角色怎么想、怎么做"，完整性层回答"它经历过的事，事后能不能被信任"。
+两层都在 `src/kernel/`，完整性层在 `src/kernel/integrity/`，条文见 [`CONSTITUTION.md`](CONSTITUTION.md)。
+
+- `AgentCore({ integrity })`：每条审计事件镜像进哈希链账本，带身份指纹；人设替换写身份修订；
+- 自主循环：准入的动作登记为**意图**；世界回执与观察由世界**权威**签发为**事实**；LLM 原始输出入账；
+- 陪伴角色：恢复流程从 SQLite 的 `ledger` 表恢复账本并核对，断链写进恢复报告；
+- 世界层（Free Roam）：用 K4 种子流、K5 封存、K6 预先登记实现心声分级与挑局。
+
 ## 4. 边界（有测试断言）
 
 - `src/kernel/**` 只 import 自己和 `node:` 内置模块；

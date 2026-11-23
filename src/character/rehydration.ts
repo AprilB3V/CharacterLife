@@ -37,6 +37,10 @@ import { ContextManager } from '../context/manager.ts'
 import type { ContextBudget, ContextPlan } from '../context/manager.ts'
 import { buildSystemPrompt, CAPABILITY_NOTE } from '../conversation/context.ts'
 import type { BehaviorDecision } from '../types.ts'
+import { Integrity } from '../kernel/integrity/index.ts'
+import { Ledger } from '../kernel/integrity/ledger.ts'
+import type { LedgerVerification } from '../kernel/integrity/ledger.ts'
+import { SqliteLedgerSink } from '../persistence/ledger-sink.ts'
 
 export interface RehydrationStep {
   index: number
@@ -66,6 +70,8 @@ export interface RehydrationReport {
   relationship: RelationshipState
   contextPlan: Pick<ContextPlan, 'budget' | 'estPromptTokens' | 'degradation' | 'fits' | 'droppedHistoryTurns' | 'droppedMemoryIds' | 'protectedTokens'> | null
   resumedSession: SessionRecord | null
+  /** 完整性账本的核对结果（V0.6）；未启用为 null */
+  ledger: { records: number; restored: boolean; verification: LedgerVerification } | null
   warnings: string[]
 }
 
@@ -83,6 +89,10 @@ export interface RehydrationOptions {
   maxReplayEvents?: number
   /** 是否在最后开一个新会话（第 8 步） */
   resumeSession?: boolean
+  /** 是否启用完整性账本（V0.6 · 宪法 K3），默认启用 */
+  integrity?: boolean
+  /** 宪法文本的哈希（写进新账本的创世记录） */
+  constitutionHash?: string | null
 }
 
 export interface RehydratedWorkspace {
@@ -241,11 +251,42 @@ export class CharacterRehydrator {
         }
       }
     }
+    // 完整性账本（宪法 K3）：恢复并逐条核对哈希链；断链如实报告，不静默修复
+    let integrity: Integrity | null = null
+    let ledgerReport: RehydrationReport['ledger'] = null
+    if (this.#opts.integrity !== false) {
+      const sink = new SqliteLedgerSink(persistence, instanceId)
+      const stored = persistence.loadLedger(instanceId)
+      let ledger: Ledger
+      let verification: LedgerVerification
+      if (stored.records.length > 0) {
+        const restored = Ledger.restore({ clock, sink }, stored.records, stored.contents)
+        ledger = restored.ledger
+        verification = restored.verification
+      } else {
+        ledger = new Ledger({ clock, sink })
+        verification = { ok: true, records: 0, erased: 0 }
+      }
+      integrity = new Integrity({
+        clock,
+        ledger,
+        constitutionHash: this.#opts.constitutionHash ?? null,
+        subject: { id: template.profile.id, persona: template.profile },
+      })
+      ledgerReport = { records: ledger.size, restored: stored.records.length > 0, verification }
+      if (!verification.ok) warnings.push(`完整性账本在 #${verification.brokenAt} 断开：${verification.reason}`)
+    }
+    const ledgerDetail = ledgerReport
+      ? ledgerReport.verification.ok
+        ? `；账本 ${ledgerReport.records} 条，哈希链完好`
+        : `；账本在 #${ledgerReport.verification.brokenAt} 断开（${ledgerReport.verification.reason}）`
+      : ''
     push(
       'Replay Valid Events',
-      !truncated && invalidEvents === 0,
+      !truncated && invalidEvents === 0 && (ledgerReport?.verification.ok ?? true),
       `重放 ${replayedEvents} 个事件（补丁 ${replayedPatches}），跳过非法 ${invalidEvents} 个` +
-        (truncated ? `；已达上限 ${maxReplay}，剩余事件未重放` : ''),
+        (truncated ? `；已达上限 ${maxReplay}，剩余事件未重放` : '') +
+        ledgerDetail,
     )
 
     // ---------- 5. Restore Relationship State ----------
@@ -273,6 +314,7 @@ export class CharacterRehydrator {
       rng,
       snapshot: snapshotStore,
       audit: new AuditLog(clock, this.#opts.auditFile ?? null),
+      integrity,
     })
     workspace.restoreState(dump)
     push(
@@ -374,6 +416,7 @@ export class CharacterRehydrator {
           protectedTokens: plan.protectedTokens,
         },
         resumedSession: session,
+        ledger: ledgerReport,
         warnings,
       },
       sink,

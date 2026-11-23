@@ -11,7 +11,7 @@
  * - `snapshots` 保存状态快照 + 对应的最后事件序号，恢复时只需重放其后的补丁。
  */
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /**
  * V0.2 新增：平台接入层需要的表。
@@ -216,3 +216,29 @@ export function splitStatements(sql: string): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
 }
+
+/**
+ * V0.6 新增：完整性账本（宪法 K3）。
+ *
+ * - 与 `events` 表分开：`events` 是可重放的状态补丁流，`ledger` 是只增不改的哈希链；
+ *   旧表结构与旧数据完全不动，迁移是纯新增。
+ * - 记录头（seq、哈希、前序哈希、指纹）永不修改；内容本体单独一列，
+ *   用户要求删除时只把 `content_json` 置空并追加墓碑记录，链条仍可校验。
+ */
+export const LEDGER_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS ledger (
+  instance_id   TEXT NOT NULL REFERENCES instances(id),
+  seq           INTEGER NOT NULL,
+  kind          TEXT NOT NULL,
+  actor         TEXT NOT NULL,
+  at_sim        INTEGER NOT NULL,
+  fingerprint   TEXT,
+  content_hash  TEXT NOT NULL,
+  prev_hash     TEXT NOT NULL,
+  hash          TEXT NOT NULL,
+  content_json  TEXT,
+  PRIMARY KEY (instance_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_kind ON ledger(instance_id, kind)
+`
+

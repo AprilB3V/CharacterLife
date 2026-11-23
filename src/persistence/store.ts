@@ -6,6 +6,8 @@
  * 结构性的，不依赖调用方自觉。
  */
 
+import type { LedgerRecord } from '../kernel/integrity/ledger.ts'
+import { canonicalJson } from '../kernel/integrity/canonical.ts'
 import type { CharacterDatabase } from './database.ts'
 import type {
   CharacterDynamicState,
@@ -573,6 +575,65 @@ export class CharacterPersistence {
       lastEventSeq: row.last_event_seq,
       state,
     }
+  }
+
+  /* ----------------------------------------------------------------- ledger */
+
+  /** 追加一条完整性账本记录（宪法 K3）。记录头一经写入不再修改。 */
+  appendLedger(instanceId: string, record: LedgerRecord, content: unknown): void {
+    this.#db
+      .prepare(
+        `INSERT INTO ledger (instance_id, seq, kind, actor, at_sim, fingerprint, content_hash, prev_hash, hash, content_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        instanceId,
+        record.seq,
+        record.kind,
+        record.actor,
+        record.atSim,
+        record.fingerprint,
+        record.contentHash,
+        record.prevHash,
+        record.hash,
+        // 用规范化 JSON 落库：读回来再算内容哈希，与写入时逐位一致
+        canonicalJson(content ?? null),
+      )
+  }
+
+  /** 擦除内容本体（被遗忘的权利）。只清空 content_json，记录头与链不动。 */
+  eraseLedgerContent(instanceId: string, seq: number): void {
+    this.#db.prepare('UPDATE ledger SET content_json = NULL WHERE instance_id = ? AND seq = ?').run(instanceId, seq)
+  }
+
+  loadLedger(instanceId: string): { records: LedgerRecord[]; contents: Map<number, unknown> } {
+    const rows = this.#db.prepare('SELECT * FROM ledger WHERE instance_id = ? ORDER BY seq ASC').all(instanceId) as Array<{
+      seq: number
+      kind: string
+      actor: string
+      at_sim: number
+      fingerprint: string | null
+      content_hash: string
+      prev_hash: string
+      hash: string
+      content_json: string | null
+    }>
+    const records: LedgerRecord[] = []
+    const contents = new Map<number, unknown>()
+    for (const r of rows) {
+      records.push({
+        seq: r.seq,
+        kind: r.kind,
+        actor: r.actor,
+        atSim: r.at_sim,
+        fingerprint: r.fingerprint,
+        contentHash: r.content_hash,
+        prevHash: r.prev_hash,
+        hash: r.hash,
+      })
+      if (r.content_json !== null) contents.set(r.seq, JSON.parse(r.content_json))
+    }
+    return { records, contents }
   }
 
   /* ----------------------------------------------------------------- events */
