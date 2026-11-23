@@ -461,5 +461,8 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 本仓库以 [Apache License 2.0](LICENSE) 发布，版权声明见 [`NOTICE`](NOTICE)。
 再分发（包括打进便携包或安装包）时，需要附带 `LICENSE` 与 `NOTICE`。
 
+例外：`docs/assets/` 里的吉祥物插画和 README 配图按 [CC BY-NC-ND 4.0](docs/assets/LICENSE.md) 授权，
+可以注明出处后原样转载，但不能商用、不能修改；角色形象（博士、云朵）不授权用于其他项目。
+
 基于本内核的应用和角色包（人设、立绘、语音、知识库）在各自的仓库里另行声明许可，
 不受本仓库许可的约束。

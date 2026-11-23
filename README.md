@@ -159,6 +159,10 @@ nothing but showing up when you said you would does.
 
 [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
 
+The mascot illustrations and the README images in `docs/assets/` are an exception: they are licensed
+under [CC BY-NC-ND 4.0](docs/assets/LICENSE.md). You can share them unchanged with credit, but not use
+them commercially or modify them, and the character designs are not licensed for other projects.
+
 The repository contains no real API keys, user data or platform credentials. The OneBot adapter uses
 a community protocol that is not officially authorized by Tencent and may put the account at risk.
 Whether to use it, and with which account, is up to whoever deploys it.
