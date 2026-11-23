@@ -407,6 +407,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：四模块职责、接口、数据流与不变量
 - [`docs/MEMORY_ARCHITECTURE.md`](docs/MEMORY_ARCHITECTURE.md)：状态模型、记忆权限、上下文预算、压缩策略、恢复流程
 - [`docs/DECISIONS.md`](docs/DECISIONS.md)：技术取舍、被放弃的方案、未解决的问题
+- [`docs/proposals/`](docs/proposals/)：**提案（未实现）**——[自维护记忆](docs/proposals/SELF_MAINTAINED_MEMORY.md)、[动机模型 v2](docs/proposals/MOTIVATION_V2.md)
 
 **V0.2 跨平台**
 
