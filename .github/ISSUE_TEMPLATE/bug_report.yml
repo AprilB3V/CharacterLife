@@ -1,0 +1,38 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! English or Chinese is fine. Please remove API keys, tokens and private chat content before posting.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands or code. With the mock model (no key) if possible, since it is deterministic.
+      placeholder: |
+        1. npm run demo
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Node version (`node -v`), commit or branch, and the model/platform if one is involved.
+      placeholder: Windows 11, Node 24.4.0, main @ abc1234, Ollama qwen3:8b
+    validations:
+      required: true

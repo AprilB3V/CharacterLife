@@ -465,7 +465,13 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - OneBot 走的是社区协议，**不是腾讯官方授权方式**，存在账号风险；项目只提供适配器，
   不提供任何风控绕过手段，使用与否、用哪个号，由部署者自行决定并承担后果。
 
-## 17. 许可
+## 17. 参与贡献
+
+欢迎提交模型实测报告、Bug 报告、文档英文翻译和新平台适配器，中英文都可以。
+开发环境和基本规则见 [`CONTRIBUTING.md`](CONTRIBUTING.md)（英文），行为准则见
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)，安全问题请按 [`SECURITY.md`](SECURITY.md) 私下报告。
+
+## 18. 许可
 
 本仓库以 [Apache License 2.0](LICENSE) 发布，版权声明见 [`NOTICE`](NOTICE)。
 再分发（包括打进便携包或安装包）时，需要附带 `LICENSE` 与 `NOTICE`。
