@@ -116,6 +116,20 @@ export type {
   TemplateVersionCheck,
 } from './character/template.ts'
 
+/* Character packs (data-only, shareable; docs/CHARACTER_PACK.md) */
+export {
+  loadCharacterPack,
+  validatePackManifest,
+  templateFromManifest,
+  packModelId,
+  packTemplateId,
+  parsePackDuration,
+  formatPackDuration,
+  CharacterPackError,
+  PACK_FORMAT,
+} from './character/pack.ts'
+export type { CharacterPackManifest, LoadedCharacterPack, PackAuthor, PackEvent, PackIssue } from './character/pack.ts'
+
 /* Instance / Session */
 export { createInstanceRecord, createSessionRecord } from './character/instance.ts'
 export type {

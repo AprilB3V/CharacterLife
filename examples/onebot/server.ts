@@ -25,7 +25,8 @@
  *   ONEBOT_REPLY_WAIT_MS       回复前等待期，期间补充的消息并进同一轮（默认 3000-5000；0 关闭）
  *   ONEBOT_SPLIT_REPLIES       回复按行拆成多条发送、去掉句尾句号（默认 true）
  *   ONEBOT_CONVERSATION_STYLE  学习对方的说话方式与发送节奏，作为资料给回复模型（默认 true）
- *   CHARACTERLIFE_CHARACTER_MODULE 可选：角色模块路径（导出 profile / voice），不填用默认角色沈知微
+ *   CHARACTERLIFE_CHARACTER_PACK   可选：角色包目录（docs/CHARACTER_PACK.md），不填用默认角色沈知微
+ *   CHARACTERLIFE_CHARACTER_MODULE 可选：角色模块路径（导出 profile / voice），与角色包二选一
  *   CHARACTERLIFE_DB / CHARACTERLIFE_WORLD / DEEPSEEK_API_KEY 同其他入口
  *
  * 运行：
@@ -37,7 +38,7 @@
 import { loadEnvConfig, assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { bootConsole } from '../console-boot.ts'
 import { createOneBotReportServer } from '../../src/adapters/onebot/report-server.ts'
-import { loadCharacterModule } from '../character-module.ts'
+import { describeTemplateMismatch, loadCharacterFromEnv } from '../character-module.ts'
 
 const env = loadEnvConfig()
 if (!env.onebot) {
@@ -48,7 +49,7 @@ if (!env.onebot) {
 }
 
 const cfg = env.onebot
-const template = await loadCharacterModule(process.env.CHARACTERLIFE_CHARACTER_MODULE)
+const { template } = await loadCharacterFromEnv()
 const conversationStyle = process.env.ONEBOT_CONVERSATION_STYLE?.trim().toLowerCase() !== 'false'
 const runtime = assembleRuntime({
   dbPath: env.dbPath,
@@ -63,6 +64,13 @@ const runtime = assembleRuntime({
     splitReplies: cfg.splitReplies,
   },
 })
+
+const mismatch = describeTemplateMismatch(runtime.persistence, runtime.template, env.dbPath)
+if (mismatch) {
+  console.error(`❌ ${mismatch}`)
+  runtime.close()
+  process.exit(2)
+}
 
 const handle = createOneBotReportServer({
   runtime,

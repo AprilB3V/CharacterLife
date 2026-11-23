@@ -10,6 +10,7 @@
  *   TELEGRAM_ALLOWED_USER_IDS   允许对话的用户 id（逗号分隔）
  *   TELEGRAM_API_BASE           可选，自建反代地址
  *   CHARACTERLIFE_DB / CHARACTERLIFE_WORLD / DEEPSEEK_API_KEY 同其他入口
+ *   CHARACTERLIFE_CHARACTER_PACK 可选；角色包目录（docs/CHARACTER_PACK.md）
  *
  * 运行：
  *   node examples/telegram/server.ts
@@ -18,6 +19,7 @@
 import { loadEnvConfig, assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { bootTelegram } from './boot.ts'
 import { bootConsole } from '../console-boot.ts'
+import { describeTemplateMismatch, loadCharacterFromEnv } from '../character-module.ts'
 
 const env = loadEnvConfig()
 if (!env.telegram) {
@@ -25,8 +27,10 @@ if (!env.telegram) {
   process.exit(2)
 }
 
+const character = await loadCharacterFromEnv()
 const runtime = assembleRuntime({
   dbPath: env.dbPath,
+  ...(character.template ? { template: character.template } : {}),
   worldId: process.env.CHARACTERLIFE_WORLD ?? 'world_local',
   auditFile: null,
   telegram: {
@@ -37,6 +41,13 @@ const runtime = assembleRuntime({
     splitParagraphs: env.telegram.splitParagraphs,
   },
 })
+
+const mismatch = describeTemplateMismatch(runtime.persistence, runtime.template, env.dbPath)
+if (mismatch) {
+  console.error(`❌ ${mismatch}`)
+  runtime.close()
+  process.exit(2)
+}
 
 const poller = await bootTelegram(runtime, env.telegram)
 if (!poller) {

@@ -78,4 +78,7 @@
 
 - **2026-11-04 · CL-015 / CL-016 提案 / Claude（网页对话）**：把与主导者在网页对话中讨论的两份设计写回仓库：`docs/proposals/SELF_MAINTAINED_MEMORY.md`（自维护记忆：两层真值、记忆系统调用与内核检查、三种节律、`gate`→`audit`、评测指标）与 `docs/proposals/MOTIVATION_V2.md`（动机模型 v2：饱和驱力、趋近/回避、期望与价值学习、约束与塑形分离、气质参数默认退化为 V0.4）；DECISIONS 追加 §20；TodoList 新增 CL-015、CL-016（均为待决策，分别依赖 CL-001/002 与 CL-004）；README 文档索引加提案入口。**只改文档，未改实现。** 本地 Node 22.23.4 不识别 `--test-isolation=none`（DECISIONS §16.1 第 5 条），改用 `node --test --experimental-strip-types "tests/**/*.test.ts"`：391/391 通过；`npm run typecheck` 通过。分支：`claude/memory-motivation-proposals`。
 
+- **2026-11-23 · 角色包 v1 / Claude**：新增纯数据角色包格式：`src/character/pack.ts`（校验、加载、生成模板，一次列出全部问题；路径不得越出包目录）、`docs/CHARACTER_PACK.md` 与中文版、`docs/schemas/character-pack.v1.schema.json`（编辑器提示）、`npm run pack:check`、参考包 `characters/shen-zhiwei`（哈希与内置默认模板一致）。`CHARACTERLIFE_CHARACTER_PACK` 接入 st / telegram / onebot 入口，模型名随包变为 `characterlife/<id>`；三个入口启动时检查数据库是否属于该角色，不匹配就退出并说明原因（此前只表现为每条回复 502 NO_REPLY）。DECISIONS 追加 §21。新增 `tests/character-pack.test.ts` 6 项，`npm test` 607/607；typecheck 通过（借用主检出的 tsc 与 @types）。实测：沈知微包接已有数据库继续对话；改内容不升版本、换别的角色时服务拒绝启动并给出提示。未做：模板迁移命令、SillyTavern 角色卡导入、QQ 官方入口未接角色包。
+
 - **2026-11-23 · 酒馆英文文档与 UI 实测 / Claude**：新增英文 `docs/SILLYTAVERN_SETUP.md`（原中文版改名为 `SILLYTAVERN_SETUP.zh-CN.md`），配三张截图（`docs/images/sillytavern/`）。首次在浏览器里做了酒馆 UI 全链路：SillyTavern 1.19.0（临时数据目录与配置，未动本机酒馆数据）+ `st:server` + 本机 Ollama qwen3:8b；API 面板连接显示 Valid，流式聊天正常，新开聊天并删除旧聊天文件后仍准确复述约定。只改文档，未改代码，未跑 `npm test`。未测：酒馆群聊、多用户共用一个 API。
+
