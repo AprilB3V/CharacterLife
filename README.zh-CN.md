@@ -113,6 +113,15 @@ cd CharacterLife
 npm install          # 仅 devDependencies（可选，仅类型检查需要）
 ```
 
+也可以用 Docker 运行（API 地址 `http://127.0.0.1:8787/v1`，数据存在命名卷里）：
+
+```bash
+cp .env.docker.example .env    # 填 CHARACTERLIFE_API_TOKEN，可选填模型
+docker compose up -d
+```
+
+模型、Telegram、备份和安全说明见 [`docs/DOCKER.md`](docs/DOCKER.md)（英文）。
+
 ## 8. 运行演示（无需任何 API Key）
 
 ### 8.1 虚构时间演示（内存态，单进程）

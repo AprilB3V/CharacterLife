@@ -1,0 +1,21 @@
+# Only package.json, LICENSE, NOTICE, src/ and examples/ go into the image.
+.git
+.github
+.claude
+node_modules
+data
+**/.data
+.st-data
+.env
+.env.*
+*.db
+*.db-*
+*.log
+docs
+reports
+media
+tests
+experiments
+scripts
+README*.md
+TodoList.md
