@@ -40,7 +40,7 @@ export { AuditLog } from './kernel/policy/audit.ts'
 export type { AuditEvent, AuditEventType } from './kernel/policy/audit.ts'
 
 /* Runtime */
-export { CharacterWorkspace, parseDueOffsetDays } from './runtime/workspace.ts'
+export { CharacterWorkspace, parseDueAtSim, parseDueOffsetDays } from './runtime/workspace.ts'
 export type {
   WorkspaceOptions,
   WorkspaceView,
@@ -76,9 +76,15 @@ export {
   DeepSeekProvider,
   ProviderError,
   hasDeepSeekCredentials,
+  isLocalBaseUrl,
+  OpenAICompatibleProvider,
+  hasModelConfig,
+  modelConfigFromEnv,
   deepSeekConfigFromEnv,
 } from './conversation/providers/deepseek.ts'
 export type { DeepSeekProviderOptions } from './conversation/providers/deepseek.ts'
+export { REASONING_MODES, parseReasoningMode, resolveReasoningMode, reasoningBody } from './conversation/providers/reasoning.ts'
+export type { ReasoningMode } from './conversation/providers/reasoning.ts'
 export {
   buildSystemPrompt,
   buildMessages,

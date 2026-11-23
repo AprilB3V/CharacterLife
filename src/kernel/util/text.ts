@@ -47,7 +47,7 @@ export function asQuotedData(text: string): string {
   return `「${text.replace(/」/g, '』')}」`
 }
 
-const STOPWORDS = new Set([
+export const STOPWORDS: ReadonlySet<string> = new Set([
   '的', '了', '是', '我', '你', '他', '她', '它', '在', '和', '就', '都', '也', '很',
   '不', '有', '这', '那', '个', '吗', '呢', '吧', '啊', '呀', '哦', '嗯', '要',
   'the', 'a', 'an', 'is', 'are', 'to', 'of', 'and', 'it', 'you', 'i', 'me', 'my',

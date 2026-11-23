@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<style>
+    html, body { height: 960px; }
+
+    .title { position: absolute; left: 70px; top: 50px; }
+    .title h2 { font-family: var(--font-display); font-size: 64px; line-height: 1; }
+    .title p { margin-top: 14px; font-size: 27px; color: var(--cl-ink-soft); font-weight: 600; }
+
+    .stats { position: absolute; left: 70px; top: 200px; display: flex; gap: 22px; }
+    .stat {
+        position: relative; width: 250px; padding: 16px 20px 14px;
+        background: var(--cl-card); border: var(--line) solid var(--cl-ink); border-radius: var(--radius);
+        box-shadow: var(--shadow);
+    }
+    .stat b { display: block; font-family: var(--font-display); font-size: 46px; line-height: 1; color: var(--cl-orange); }
+    .stat span { display: block; margin-top: 8px; font-size: 19px; font-weight: 700; line-height: 1.25; }
+
+    .board { left: 70px; top: 400px; width: 1460px; height: 515px; padding: 22px 30px; }
+    .board .tape { left: 40px; top: -18px; transform: rotate(-3deg); }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 22px; padding: 6px 12px 12px; border-bottom: 3px solid var(--cl-ink); }
+    th.ok { color: var(--cl-ok); }
+    th.todo { color: var(--cl-action, #e9781f); }
+    td { vertical-align: top; padding: 11px 12px; font-size: 19px; line-height: 1.32; border-bottom: 2px dashed var(--cl-paper-dot); }
+    tr:last-child td { border-bottom: none; }
+    td.area { width: 230px; font-weight: 900; font-size: 21px; }
+    td.ok::before { content: "✓ "; color: var(--cl-ok); font-weight: 900; }
+    td.todo::before { content: "○ "; color: #e9781f; font-weight: 900; }
+
+    .doctor { right: 80px; top: 16px; width: 196px; }
+    .stamp {
+        position: absolute; right: 320px; top: 70px;
+        padding: 8px 20px; border: 4px solid var(--cl-thought); border-radius: 10px;
+        color: var(--cl-thought); font-size: 30px; transform: rotate(-6deg);
+    }
+</style>
+</head>
+<body>
+    <div class="title">
+        <h2>Where it stands</h2>
+        <p>Measured, not promised. Last updated November 2026.</p>
+    </div>
+    <div class="stamp hand">honest lab notes</div>
+    <img class="art doctor" src="art/doctor-giggle.png" alt="">
+
+    <div class="stats">
+        <div class="stat"><b>601</b><span>offline tests, deterministic, no network</span></div>
+        <div class="stat"><b>0</b><span>runtime dependencies</span></div>
+        <div class="stat"><b>4</b><span>platforms: QQ official, OneBot 11, Telegram, SillyTavern</span></div>
+        <div class="stat"><b>60/60</b><span>valid replies on a laptop GPU (Ollama qwen3:8b)</span></div>
+        <div class="stat"><b>K1–K6</b><span>integrity rules, each with a test</span></div>
+    </div>
+
+    <div class="card board">
+        <div class="tape"></div>
+        <table>
+            <tr><th></th><th class="ok">Working today</th><th class="todo">Not proven yet</th></tr>
+            <tr>
+                <td class="area">Persona &amp; policy</td>
+                <td class="ok">Chat cannot rewrite the persona or the relationship, even when the model is fully persuaded</td>
+                <td class="todo">Injection detection is heuristic; no claim of jailbreak-proof</td>
+            </tr>
+            <tr>
+                <td class="area">Memory</td>
+                <td class="ok">Survives new sessions and process restarts; real-model A/B recalls shared history</td>
+                <td class="todo">Retrieval quality with large long-term memory</td>
+            </tr>
+            <tr>
+                <td class="area">Autonomy</td>
+                <td class="ok">Drives, wake-ups and interventions run correctly; text sandbox lives a day on its own</td>
+                <td class="todo">Real-model drive experiment (H5 · E1) not run yet</td>
+            </tr>
+            <tr>
+                <td class="area">Integrity</td>
+                <td class="ok">Hash-chain ledger checkable offline; bit-compatible with the Free Roam game engine</td>
+                <td class="todo">Several worlds writing to one character at once</td>
+            </tr>
+            <tr>
+                <td class="area">Models</td>
+                <td class="ok">Any OpenAI-compatible endpoint; local Ollama without a key</td>
+                <td class="todo">Few models measured so far — reports welcome</td>
+            </tr>
+            <tr>
+                <td class="area">Others</td>
+                <td class="ok">Guesses about other people's intent as a pluggable module (T0)</td>
+                <td class="todo">Per-person relationships; characters talking to each other</td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

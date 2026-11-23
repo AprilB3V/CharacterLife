@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { LEDGER_SCHEMA_SQL, PLATFORM_SCHEMA_SQL, SCHEMA_SQL, SCHEMA_VERSION, splitStatements } from './schema.ts'
+import { LEDGER_SCHEMA_SQL, MEMORY_RECALL_SCHEMA_SQL, PLATFORM_SCHEMA_SQL, SCHEMA_SQL, SCHEMA_VERSION, splitStatements } from './schema.ts'
 
 export class CharacterDatabase {
   readonly db: DatabaseSync
@@ -60,6 +60,7 @@ export class CharacterDatabase {
     if (!row) {
       for (const stmt of splitStatements(PLATFORM_SCHEMA_SQL)) this.db.exec(stmt)
       for (const stmt of splitStatements(LEDGER_SCHEMA_SQL)) this.db.exec(stmt)
+      for (const stmt of splitStatements(MEMORY_RECALL_SCHEMA_SQL)) this.db.exec(stmt)
       this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION))
       return
     }
@@ -72,9 +73,10 @@ export class CharacterDatabase {
     }
     if (existing < SCHEMA_VERSION) {
       this.transaction(() => {
-        // V1 -> V2：平台接入层四张表；V2 -> V3：完整性账本表。都是纯新增，不改旧表
+        // V1 -> V2：平台接入层四张表；V2 -> V3：完整性账本表；V3 -> V4：记忆曲线表。都是纯新增，不改旧表
         if (existing < 2) for (const stmt of splitStatements(PLATFORM_SCHEMA_SQL)) this.db.exec(stmt)
         if (existing < 3) for (const stmt of splitStatements(LEDGER_SCHEMA_SQL)) this.db.exec(stmt)
+        if (existing < 4) for (const stmt of splitStatements(MEMORY_RECALL_SCHEMA_SQL)) this.db.exec(stmt)
         this.db
           .prepare('UPDATE meta SET value = ? WHERE key = ?')
           .run(String(SCHEMA_VERSION), 'schema_version')

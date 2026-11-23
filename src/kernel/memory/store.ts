@@ -27,6 +27,12 @@ import type { Clock } from '../util/clock.ts'
 import type { IdFactory } from '../util/ids.ts'
 import { detectInjectionMarkers, lexicalOverlap, sanitizeForMemory, tokenize } from '../util/text.ts'
 import { rankMemories } from './ranking.ts'
+import { recallByCues } from './cues.ts'
+import type { CueRecall } from './cues.ts'
+import { selectPinned } from './pins.ts'
+import type { PinnedOptions } from './pins.ts'
+import { associates, initialRecallState, isRecallState, recallTier, reinforce, retention, strengthenByAssociation } from './curve.ts'
+import type { CurveConfig, RecallState, RecallTier } from './curve.ts'
 import type { RankParts } from './ranking.ts'
 import type { SnapshotSection } from '../storage/snapshot.ts'
 
@@ -74,6 +80,8 @@ export interface RetrievedMemory {
 export interface MemorySink {
   onMemoryWritten?(entry: MemoryEntry): void
   onMemoryDeleted?(id: string, atSim: number): void
+  /** Memory curve: the recall state after a memory reached a prompt */
+  onMemoryRecalled?(id: string, state: RecallState): void
 }
 
 export interface MemoryExport {
@@ -103,6 +111,8 @@ export class MemoryStore implements SnapshotSection {
   /** 每次写入记忆时留下审计痕迹（不持久化在 section 内，由 Runtime 的日志负责持久化） */
   #lastInjectionFlags: string[] = []
   #sink: MemorySink | null = null
+  /** Memory curve state by memory id; absent = never recalled (initial state derives from salience) */
+  #recall = new Map<string, RecallState>()
 
   constructor(opts: {
     profile: CharacterProfile
@@ -116,6 +126,7 @@ export class MemoryStore implements SnapshotSection {
       user?: MemoryEntry[]
       dynamicState?: CharacterDynamicState
       relationship?: RelationshipState
+      recall?: Record<string, RecallState>
     }
   }) {
     this.#profile = deepFreeze(structuredClone(opts.profile))
@@ -126,6 +137,7 @@ export class MemoryStore implements SnapshotSection {
     this.#user = opts.snapshot?.user?.map(cloneEntry) ?? []
     this.#dynamic = structuredClone(opts.snapshot?.dynamicState ?? opts.initialDynamicState)
     this.#relationship = structuredClone(opts.snapshot?.relationship ?? opts.initialRelationship)
+    this.#loadRecall(opts.snapshot?.recall)
   }
 
   setSink(sink: MemorySink | null): void {
@@ -224,15 +236,86 @@ export class MemoryStore implements SnapshotSection {
    */
   search(
     query: string,
-    opts: { nowSim?: number; limit?: number; budgetChars?: number; halfLifeMs?: number } = {},
+    opts: { nowSim?: number; limit?: number; budgetChars?: number; halfLifeMs?: number; curve?: CurveConfig } = {},
   ): RetrievedMemory[] {
-    const ranked = rankMemories([...this.#episodic, ...this.#user], query, {
-      nowSim: opts.nowSim ?? this.#clock.nowSim(),
+    const nowSim = opts.nowSim ?? this.#clock.nowSim()
+    const curve = opts.curve
+    // With the memory curve on, forgotten memories leave lexical retrieval and retention replaces recency.
+    const pool = [...this.#episodic, ...this.#user].filter(
+      (e) => !curve || recallTier(this.retentionOf(e, nowSim, curve), curve) !== 'forgotten',
+    )
+    const ranked = rankMemories(pool, query, {
+      nowSim,
       limit: opts.limit,
       budgetChars: opts.budgetChars,
       halfLifeMs: opts.halfLifeMs,
+      retention: curve ? (e) => this.retentionOf(e, nowSim, curve) : undefined,
     })
     return ranked.map((r) => ({ ...r, entry: cloneEntry(r.entry) }))
+  }
+
+  /** Cue channel: memories whose cue keys occur in `text`, outside the lexical ranking. */
+  recallByCues(text: string, opts: { limit: number; excludeIds?: ReadonlySet<string> }): CueRecall[] {
+    return recallByCues([...this.#episodic, ...this.#user], text, opts).map((r) => ({
+      entry: cloneEntry(r.entry),
+      keys: r.keys,
+    }))
+  }
+
+  /* ------------------------------------------------------------ memory curve */
+
+  retentionOf(entry: MemoryEntry, nowSim: number, curve: CurveConfig): number {
+    return retention(entry, this.#recall.get(entry.id), nowSim, curve)
+  }
+
+  tierOf(entry: MemoryEntry, nowSim: number, curve: CurveConfig): RecallTier {
+    return recallTier(this.retentionOf(entry, nowSim, curve), curve)
+  }
+
+  recallState(id: string): RecallState | null {
+    const state = this.#recall.get(id)
+    return state ? { ...state } : null
+  }
+
+  recallStates(): Record<string, RecallState> {
+    return Object.fromEntries([...this.#recall].map(([id, s]) => [id, { ...s }]))
+  }
+
+  /** The given memories reached a prompt at `nowSim`: consolidate each once. */
+  markRecalled(ids: readonly string[], nowSim: number, curve: CurveConfig): void {
+    const live = [...this.#episodic, ...this.#user].filter((e) => e.deletedAtSim === null)
+    const byId = new Map(live.map((e) => [e.id, e]))
+    const recalled: MemoryEntry[] = []
+    for (const id of new Set(ids)) {
+      const entry = byId.get(id)
+      if (!entry) continue
+      recalled.push(entry)
+      const before = this.#recall.get(id) ?? initialRecallState(entry, curve)
+      const next = reinforce(before, retention(entry, before, nowSim, curve), nowSim, curve)
+      this.#recall.set(id, next)
+      this.#sink?.onMemoryRecalled?.(id, { ...next })
+    }
+    // Neighbours sharing cue keys grow sturdier without counting as recalled.
+    if (!curve.association) return
+    for (const entry of associates(recalled, live, curve.association)) {
+      const before = this.#recall.get(entry.id) ?? initialRecallState(entry, curve)
+      const next = strengthenByAssociation(before, retention(entry, before, nowSim, curve), curve)
+      this.#recall.set(entry.id, next)
+      this.#sink?.onMemoryRecalled?.(entry.id, { ...next })
+    }
+  }
+
+  #loadRecall(recall: unknown): void {
+    this.#recall = new Map()
+    if (!recall || typeof recall !== 'object') return
+    for (const [id, state] of Object.entries(recall as Record<string, unknown>)) {
+      if (isRecallState(state)) this.#recall.set(id, { ...state })
+    }
+  }
+
+  /** Pinned layer: safety / boundary / address facts carried on every turn. */
+  pinned(opts: PinnedOptions): MemoryEntry[] {
+    return selectPinned(this.#user, opts).map(cloneEntry)
   }
 
   /** 软删除：保留审计痕迹。权限由 Policy 层检查，Memory 只执行存储语义。 */
@@ -288,6 +371,7 @@ export class MemoryStore implements SnapshotSection {
       user: this.#user.map(cloneEntry),
       dynamicState: this.#dynamic,
       relationship: this.#relationship,
+      recall: this.recallStates(),
     }
   }
 
@@ -297,12 +381,14 @@ export class MemoryStore implements SnapshotSection {
       user?: MemoryEntry[]
       dynamicState?: CharacterDynamicState
       relationship?: RelationshipState
+      recall?: Record<string, RecallState>
     }
     if (!v || typeof v !== 'object') throw new Error('memory section 结构非法')
     this.#episodic = (v.episodic ?? []).map(cloneEntry)
     this.#user = (v.user ?? []).map(cloneEntry)
     if (v.dynamicState) this.#dynamic = structuredClone(v.dynamicState)
     if (v.relationship) this.#relationship = structuredClone(v.relationship)
+    this.#loadRecall(v.recall)
   }
 
   /* ----------------------------------------------------------------- helpers */
@@ -323,6 +409,7 @@ export class MemoryStore implements SnapshotSection {
       const idx = bucket.findIndex((e) => e.id === victim.id)
       if (idx >= 0) {
         bucket.splice(idx, 1)
+        this.#recall.delete(victim.id)
         overflow--
       }
     }

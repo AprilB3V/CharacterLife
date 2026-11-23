@@ -55,6 +55,12 @@ export interface ContextPlanInput {
   /** 受保护 system 文本（人格/权限/决策/协议），只会原样使用 */
   protectedSystem: string
   memories: MemoryEntry[]
+  /** Recalled by a cue in the user's words: outside memoryLimit, trimmed only after `memories` */
+  cueMemories?: MemoryEntry[]
+  /** Pinned safety / boundary / address facts: outside memoryLimit, trimmed only after everything else */
+  pinnedMemories?: MemoryEntry[]
+  /** Memories rendered as a vague impression (memory curve) */
+  fuzzyIds?: ReadonlySet<string>
   history: LLMMessage[]
   userText: string
   nowSim: number
@@ -72,6 +78,8 @@ export interface ContextPlan {
   degradation: DegradationLevel
   droppedHistoryTurns: number
   droppedMemoryIds: string[]
+  /** Memories actually rendered into the prompt, after memoryLimit and budget trimming */
+  promptMemoryIds: string[]
   digestedTurns: number
   digestText: string | null
   notes: string[]
@@ -110,7 +118,10 @@ export class ContextManager {
     // 历史按「轮」切分：从最新往回取，保证最近的一问一答优先保留。
     const turns = groupTurns(input.history)
     let keptTurns = Math.min(budget.recentTurns, turns.length)
-    let memories = input.memories.slice(0, budget.memoryLimit)
+    let lexicalMemories = input.memories.slice(0, budget.memoryLimit)
+    let cueMemories = input.cueMemories ?? []
+    let pinnedMemories = input.pinnedMemories ?? []
+    let memories = [...pinnedMemories, ...lexicalMemories, ...cueMemories]
     let degradation: DegradationLevel = 'none'
     let digestText: string | null = null
     let droppedMemoryIds: string[] = []
@@ -120,7 +131,7 @@ export class ContextManager {
 
     const build = (): { messages: LLMMessage[]; tokens: number; historyTokens: number; memoryTokens: number; userTokens: number } => {
       const recent = turns.slice(turns.length - keptTurns).flatMap((t) => t.messages)
-      const memoryBlock = renderMemoryData(memories, input.nowSim)
+      const memoryBlock = renderMemoryData(memories, input.nowSim, input.fuzzyIds)
       const userContent = `${memoryBlock}\n\n${userHeader}\n${userText}`
       const messages: LLMMessage[] = []
       if (digestText) {
@@ -154,8 +165,19 @@ export class ContextManager {
 
       // 阶梯 2：按打分从低到高丢弃记忆（memories 已按分数降序）
       while (current.tokens > budget.maxPromptTokens && memories.length > 0) {
-        const dropped = memories[memories.length - 1]!
-        memories = memories.slice(0, -1)
+        // Lowest lexical score first, then cue-recalled memories, pinned facts last.
+        let dropped: MemoryEntry
+        if (lexicalMemories.length > 0) {
+          dropped = lexicalMemories[lexicalMemories.length - 1]!
+          lexicalMemories = lexicalMemories.slice(0, -1)
+        } else if (cueMemories.length > 0) {
+          dropped = cueMemories[cueMemories.length - 1]!
+          cueMemories = cueMemories.slice(0, -1)
+        } else {
+          dropped = pinnedMemories[pinnedMemories.length - 1]!
+          pinnedMemories = pinnedMemories.slice(0, -1)
+        }
+        memories = [...pinnedMemories, ...lexicalMemories, ...cueMemories]
         droppedMemoryIds = [...droppedMemoryIds, dropped.id]
         current = build()
         degradation = 'trim_memory'
@@ -221,6 +243,7 @@ export class ContextManager {
       degradation,
       droppedHistoryTurns: turns.length - keptTurns,
       droppedMemoryIds,
+      promptMemoryIds: fits ? memories.map((m) => m.id) : [],
       digestedTurns: digestText ? turns.length - keptTurns : 0,
       digestText,
       notes,

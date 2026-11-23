@@ -257,7 +257,9 @@ export class AgentCore {
     actor: Actor = RUNTIME_ACTOR,
     sourceRef: string | null = null,
   ): { written: boolean; entryId: string | null; verdict: string } {
-    const verdict = this.policy.evaluateMemoryWrite({ content: input.content, status: input.status, actor })
+    // Title is checked too: it is rendered into the prompt beside the content.
+    const checkedText = `${input.title}\n${input.content}`
+    const verdict = this.policy.evaluateMemoryWrite({ content: checkedText, status: input.status, actor })
     if (!verdict.allowed) {
       this.audit.append('proposal_rejected', actor.id, '记忆写入被拒绝：权限不足', {
         semantic: 'memory',

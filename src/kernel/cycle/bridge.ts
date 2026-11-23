@@ -65,6 +65,14 @@ export interface BridgeSync {
   situation: Situation
 }
 
+/** What the bridge has already turned into memories; persist it with the character to resume. */
+export interface BridgeCheckpoint {
+  /** Settled action ids already written */
+  seenActionIds: string[]
+  /** Highest observation seq already applied */
+  observationCursor: number
+}
+
 export interface WorldBridgeOptions {
   /** 角色内核：结算写进它的 Memory / Motivation，观察写进它的 Observation / Situation */
   agent: AgentCore
@@ -78,6 +86,12 @@ export interface WorldBridgeOptions {
    * 凭据只能由持有 policy:write 的系统配置登记得到。
    */
   authority?: AuthorityToken | null
+  /**
+   * Resume after the character was rebuilt from storage: settled actions and observations up to the
+   * checkpoint are not written again; observations up to the cursor are replayed into Situation (the
+   * newest also into Observation), never into memory, because Situation is not part of the snapshot.
+   */
+  resumeFrom?: BridgeCheckpoint | null
 }
 
 const RESULT_TEXT: Record<string, string> = {
@@ -107,6 +121,36 @@ export class WorldBridge {
     this.#ids = opts.ids
     this.#authority = opts.authority ?? null
     this.#labelFor = opts.labelFor ?? ((verb, target) => `${verb}(${target ?? '*'})`)
+    if (opts.resumeFrom) this.#resume(opts.resumeFrom)
+  }
+
+  /** Current sync position; store it beside the character snapshot. */
+  checkpoint(): BridgeCheckpoint {
+    return { seenActionIds: [...this.#seen], observationCursor: this.#cursor }
+  }
+
+  #resume(from: BridgeCheckpoint): void {
+    for (const id of from.seenActionIds) this.#seen.add(id)
+    this.#cursor = Math.max(0, from.observationCursor)
+    // Situation is built up incrementally (an event-only observation keeps the earlier location),
+    // so replay every retained observation up to the cursor; only the newest goes to the Observation log.
+    const past = this.#world.observations(this.#instanceId, 0).filter((o) => o.seq <= this.#cursor)
+    past.forEach((obs, i) => {
+      if (i < past.length - 1) {
+        this.#ws.situation.apply({ facts: obs.facts, atSim: obs.receivedAtSim })
+        return
+      }
+      const percept = this.#ws.observation.append({
+        atSim: obs.receivedAtSim,
+        source: 'world',
+        from: null,
+        text: obs.summary,
+        facts: obs.facts,
+        events: factValues(obs, 'event').map(String),
+        ref: obs.eventId,
+      })
+      this.#ws.situation.apply(percept)
+    })
   }
 
   /** 角色的处境信念（就是内核 Situation 槽的当前值）。 */

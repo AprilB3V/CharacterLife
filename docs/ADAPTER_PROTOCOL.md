@@ -160,7 +160,8 @@ QQ: /bind  →  8 位数字码（5 分钟有效、最多 3 次尝试、只存 sh
 |---|---|
 | QQ 官方机器人 | 已实现（Webhook + Ed25519 验签；真实联调未执行） |
 | OneBot 11（NapCat / Lagrange / SnowLuma） | 已实现（HTTP 上报 + HTTP API，仅文本；真实网关联调未执行） |
-| Telegram / Discord | 未实现（协议已就绪） |
+| Telegram | 已实现（Bot API 长轮询，仅私聊文本，`/start 绑定码` 深链绑定；真实机器人联调未执行） |
+| Discord | 未实现（协议已就绪） |
 | 图片 / 语音 / 视频 | 未实现（OneBot 侧转成 `[图片]` `[语音]` 占位符进引擎） |
 | 多进程部署 | 未实现（进程内锁 + SQLite 单写者） |
 | 主动消息调度器 | 未实现（队列在 workspace 里，靠用户来信带走；OneBot 能在来信时先推送一条） |

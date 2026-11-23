@@ -30,6 +30,7 @@ import { initDriveProposals, interventionProposal } from '../semantics/drives.ts
 import type { Mind, MindDecision, MindInput, MindMemory, MindRecentOutcome } from './mind.ts'
 import { actionKey } from './mind.ts'
 import type { WakeDecision, WakerConfig } from './waker.ts'
+import type { Agenda, AgendaActionView, AgendaChange, AgendaOpResult } from '../semantics/agenda.ts'
 import { decideWake } from './waker.ts'
 
 /** 自主轮次的「行为决策」占位：准入闸门需要一个决策，自主轮次本身不是拒绝/等待。 */
@@ -71,8 +72,11 @@ export type AutonomyLogRecord =
       error: string | null
       usage: MindDecision['usage']
       latencyMs: number
+      /** Present when the runner keeps an agenda */
+      agenda?: { forItem: string | null; linked: boolean; ops: AgendaOpResult[]; open: Record<'urgentImportant' | 'important' | 'urgent' | 'other', string[]> }
     }
   | { type: 'intervention'; t: number; clock: string; drive: string; value: number }
+  | { type: 'agenda'; t: number; clock: string; changes: AgendaChange[] }
 
 export interface AutonomyRunnerOptions {
   /** 角色内核：六个语义槽都从这里读，驱力规格在 agent.motivation 上 */
@@ -94,6 +98,8 @@ export interface AutonomyRunnerOptions {
   memoryLimit?: number
   /** 世界 id → 显示名，交给 Mind 渲染 */
   names?: Readonly<Record<string, string>>
+  /** The character's four-quadrant to-do list (optional; without it prompts are unchanged) */
+  agenda?: Agenda
 }
 
 const OUTCOME_TEXT: Record<string, string> = {
@@ -145,14 +151,19 @@ export class AutonomyRunner {
     this.#o.logger?.(record)
   }
 
-  /** 把驱力写成显式状态（之后的衰减都从这里算起）。只执行一次。 */
+  /**
+   * 把驱力写成显式状态（之后的衰减都从这里算起）。只执行一次。
+   * Drives already in the restored state are kept, so a character rebuilt from storage resumes them.
+   */
   start(): void {
     if (this.#started) return
     this.#started = true
     const profile = this.#o.agent.motivation.driveProfile
     if (profile) {
-      const proposals = initDriveProposals(profile, () => this.#o.ids.next('pr'))
-      this.#o.agent.submitProposals(proposals, RUNTIME_ACTOR, { source: 'autonomy_init' })
+      const existing = this.#o.agent.dynamicState.drives ?? {}
+      const missing = { ...profile, specs: profile.specs.filter((s) => !Object.hasOwn(existing, s.name)) }
+      const proposals = initDriveProposals(missing, () => this.#o.ids.next('pr'))
+      if (proposals.length > 0) this.#o.agent.submitProposals(proposals, RUNTIME_ACTOR, { source: 'autonomy_init' })
     }
     this.#log({
       type: 'start',
@@ -166,6 +177,37 @@ export class AutonomyRunner {
 
   readDrives(): DriveReading[] {
     return this.#o.agent.motivation.drives()
+  }
+
+  #actionViews(): AgendaActionView[] {
+    return this.#o.world.list({ instanceId: this.#o.instanceId }).map((a) => ({
+      actionId: a.actionId,
+      verb: a.verb,
+      target: a.target,
+      status: a.status,
+      createdAtSim: a.createdAtSim,
+    }))
+  }
+
+  /**
+   * Bring the agenda up to date: settle links to world actions, then mirror commitments, urgent
+   * drives and goals. Call it outside step() too (e.g. before a chat turn reads the agenda).
+   */
+  syncAgenda(): AgendaChange[] {
+    const agenda = this.#o.agenda
+    if (!agenda) return []
+    const now = this.#o.agent.nowSim()
+    const changes = [
+      ...agenda.reconcile(this.#actionViews()),
+      ...agenda.sync({
+        nowSim: now,
+        commitments: this.#o.agent.motivation.commitments(),
+        drives: this.readDrives(),
+        goals: this.#o.agent.motivation.goals(),
+      }),
+    ]
+    if (changes.length > 0) this.#log({ type: 'agenda', t: now, clock: this.#clock(), changes })
+    return changes
   }
 
   /** 实验干预（H5）：直接设定某条驱力。走 Runtime 提议通道，审计可见。 */
@@ -208,6 +250,7 @@ export class AutonomyRunner {
       this.#pendingSalient.push(note.events.join(','))
       this.#log({ type: 'observation', t: now, clock: this.#clock(), events: note.events })
     }
+    this.syncAgenda()
 
     const drives = this.readDrives()
     this.#recentWakes = this.#recentWakes.filter((t) => t > now - 3_600_000)
@@ -245,10 +288,16 @@ export class AutonomyRunner {
       })
     }
 
+    // Agenda ops first (an add cannot be the target of `for` in the same wake: ids are not known yet).
+    const agenda = o.agenda
+    const agendaOps = agenda && decision.agendaOps ? agenda.apply(decision.agendaOps, { nowSim: now, actions: this.#actionViews() }) : []
+
     let admission: Extract<AutonomyLogRecord, { type: 'wake' }>['admission'] = null
     if (decision.action) {
       admission = this.#admit(decision, now)
     }
+    const forItem = decision.action?.forItem ?? null
+    const linked = agenda !== undefined && forItem !== null && admission?.ok === true ? agenda.link(forItem, admission.actionId) : false
 
     this.#log({
       type: 'wake',
@@ -271,6 +320,7 @@ export class AutonomyRunner {
       error: decision.error,
       usage: decision.usage,
       latencyMs: decision.latencyMs,
+      ...(agenda ? { agenda: { forItem, linked, ops: agendaOps, open: agendaIds(agenda.view(now)) } } : {}),
     })
     return { woke: true, sync, wake }
   }
@@ -330,6 +380,7 @@ export class AutonomyRunner {
       target: c.target,
       status: c.status,
       line: `${actionKey(c.verb, c.target)} ${OUTCOME_TEXT[c.status] ?? c.status}`,
+      actionId: c.actionId,
     }))
 
     const urgent = drives.filter((d) => d.urgent).map((d) => d.label)
@@ -374,6 +425,16 @@ export class AutonomyRunner {
         believedAvailableHere: a.believedAvailable,
       })),
       ...(o.names ? { names: o.names } : {}),
+      ...(o.agenda ? { agenda: o.agenda.view(now) } : {}),
     }
+  }
+}
+
+function agendaIds(view: ReturnType<Agenda['view']>): Record<'urgentImportant' | 'important' | 'urgent' | 'other', string[]> {
+  return {
+    urgentImportant: view.urgentImportant.map((l) => l.id),
+    important: view.important.map((l) => l.id),
+    urgent: view.urgent.map((l) => l.id),
+    other: view.other.map((l) => l.id),
   }
 }

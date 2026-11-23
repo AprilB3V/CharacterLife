@@ -8,6 +8,7 @@
 
 import type { MemoryEntry } from '../types.ts'
 import type { MemorySink } from '../kernel/memory/store.ts'
+import type { RecallState } from '../kernel/memory/curve.ts'
 import type { StateSink } from '../runtime/workspace.ts'
 import type { PersistedEventType } from './store.ts'
 import { CharacterPersistence, MemoryWriteRejected } from './store.ts'
@@ -89,6 +90,10 @@ export class SqliteSink implements StateSink, MemorySink {
 
   onMemoryDeleted(id: string, atSim: number): void {
     this.#persistence.softDeleteMemory(this.#instanceId, id, atSim)
+  }
+
+  onMemoryRecalled(id: string, state: RecallState): void {
+    this.#persistence.upsertMemoryRecall(this.#instanceId, id, state)
   }
 
   #append(type: PersistedEventType, summary: string, data: Record<string, unknown>): void {

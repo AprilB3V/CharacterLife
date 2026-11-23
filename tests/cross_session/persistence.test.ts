@@ -5,7 +5,7 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { CONVERSATION_ACTOR, OWNER_ACTOR } from '../../src/kernel/policy/policy.ts'
-import { stableStringify } from '../../src/character/template.ts'
+import { defineTemplate, stableStringify } from '../../src/character/template.ts'
 import { cleanupDirs, createRig, openSession, seedTimeline } from './helpers.ts'
 
 after(() => cleanupDirs())
@@ -163,6 +163,36 @@ describe('核心人格 · 非法修改拦截', () => {
     const migrated = rig.persistence.listEvents(rig.instance.id, { types: ['template_migrated'] })
     assert.equal(migrated.length, 1)
     assert.equal(rig.persistence.getInstance(rig.instance.id)!.templateVersion, 2)
+  })
+
+  it('persona change through migration is recorded as an identity revision, so reopening reports no drift', () => {
+    const rig = createRig()
+    openSession(rig).close('user_exit')
+    const p = rig.template.profile
+    const v2 = defineTemplate({ version: 2, profile: { ...p, version: 2, speechStyle: `${p.speechStyle}（改过）` }, voice: rig.template.voice, timeline: rig.template.timeline })
+    const out = rig.persistence.migrateTemplate({ instanceId: rig.instance.id, template: v2, actor: OWNER_ACTOR, nowSim: 0, nowIso: '2025-01-06T00:00:00.000Z' })
+    assert.equal(out.identityRevised, true)
+    openSession({ ...rig, template: v2 }).close('user_exit')
+    const kinds = rig.persistence.loadLedger(rig.instance.id).records.map((r) => r.kind)
+    assert.ok(kinds.includes('identity_revision'))
+    const rejections = rig.persistence.loadLedger(rig.instance.id).records
+      .filter((r) => r.kind === 'rejection')
+      .map((r) => (rig.persistence.loadLedger(rig.instance.id).contents.get(r.seq) as { code?: string } | undefined)?.code)
+    assert.ok(!rejections.includes('IDENTITY_DRIFT'))
+  })
+
+  it('a migration whose ledger write fails leaves nothing behind', () => {
+    const rig = createRig()
+    openSession(rig).close('user_exit')
+    const p = rig.template.profile
+    const v2 = defineTemplate({ version: 2, profile: { ...p, version: 2, speechStyle: `${p.speechStyle}（改过）` }, voice: rig.template.voice, timeline: rig.template.timeline })
+    const original = rig.persistence.appendLedger.bind(rig.persistence)
+    rig.persistence.appendLedger = () => { throw new Error('disk full') }
+    try {
+      assert.throws(() => rig.persistence.migrateTemplate({ instanceId: rig.instance.id, template: v2, actor: OWNER_ACTOR, nowSim: 0, nowIso: '2025-01-06T00:00:00.000Z' }), /disk full/)
+    } finally { rig.persistence.appendLedger = original }
+    assert.equal(rig.persistence.getInstance(rig.instance.id)!.templateVersion, 1)
+    assert.equal(rig.persistence.listEvents(rig.instance.id, { types: ['template_migrated'] }).length, 0)
   })
 
   it('实例绑定的模板版本不匹配时拒绝恢复', () => {

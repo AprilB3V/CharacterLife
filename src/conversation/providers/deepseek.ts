@@ -1,5 +1,8 @@
 /**
- * DeepSeek Provider —— 真实模型接入。
+ * OpenAI-compatible provider (historically named DeepSeekProvider) —— 真实模型接入。
+ *
+ * Works with any `/chat/completions` endpoint: DeepSeek, OpenAI, OpenRouter, Volcengine Ark,
+ * and local servers such as Ollama or LM Studio. Local endpoints may omit the API key.
  *
  * 只依赖 Node 内置 fetch，不引入 SDK：
  * - 路由：`${baseUrl}/chat/completions`，默认 https://api.deepseek.com
@@ -11,9 +14,12 @@
  */
 
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../types.ts'
+import { parseReasoningMode, resolveReasoningMode } from './reasoning.ts'
+import type { ReasoningMode } from './reasoning.ts'
 
 export interface DeepSeekProviderOptions {
-  apiKey: string
+  /** Required unless baseUrl points at a local host (localhost, 127.0.0.1, ::1, *.localhost). */
+  apiKey?: string
   baseUrl?: string
   model?: string
   timeoutMs?: number
@@ -32,6 +38,9 @@ export class ProviderError extends Error {
   }
 }
 
+/** Reasoning text kept per call for the console trace; the full length is still counted. */
+const REASONING_TEXT_CAP = 20_000
+
 export class DeepSeekProvider implements LLMProvider {
   readonly name = 'deepseek'
   readonly model: string
@@ -42,15 +51,28 @@ export class DeepSeekProvider implements LLMProvider {
   #extraBody: Record<string, unknown>
 
   constructor(opts: DeepSeekProviderOptions) {
-    if (!opts.apiKey || opts.apiKey.trim().length === 0) {
-      throw new ProviderError('缺少 DeepSeek API Key（请设置环境变量 DEEPSEEK_API_KEY）')
-    }
-    this.#apiKey = opts.apiKey
     this.#baseUrl = (opts.baseUrl ?? 'https://api.deepseek.com').replace(/\/+$/, '')
+    this.#apiKey = opts.apiKey?.trim() ?? ''
+    if (!this.#apiKey && !isLocalBaseUrl(this.#baseUrl)) {
+      throw new ProviderError('Missing API key (set CHARACTERLIFE_MODEL_API_KEY); only local endpoints may omit it')
+    }
     this.model = opts.model ?? 'deepseek-chat'
     this.#timeoutMs = opts.timeoutMs ?? 60_000
     this.#fetch = opts.fetchImpl ?? fetch
     this.#extraBody = opts.extraBody ?? {}
+  }
+
+  /** Non-secret settings for the owner console (never the key). */
+  describe(): Record<string, unknown> {
+    // Only known, non-secret request options are shown; anything else in the body is listed by name.
+    const { thinking, reasoning_effort: reasoningEffort, ...rest } = this.#extraBody
+    return {
+      baseUrl: this.#baseUrl,
+      timeoutMs: this.#timeoutMs,
+      ...(thinking !== undefined ? { thinking: JSON.stringify(thinking) } : {}),
+      ...(reasoningEffort !== undefined ? { reasoningEffort: String(reasoningEffort) } : {}),
+      ...(Object.keys(rest).length ? { otherBodyFields: Object.keys(rest).join(', ') } : {}),
+    }
   }
 
   async complete(request: LLMRequest): Promise<LLMResponse> {
@@ -80,7 +102,7 @@ export class DeepSeekProvider implements LLMProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.#apiKey}`,
+          ...(this.#apiKey ? { Authorization: `Bearer ${this.#apiKey}` } : {}),
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -104,7 +126,7 @@ export class DeepSeekProvider implements LLMProvider {
     }
 
     let parsed: {
-      choices?: Array<{ message?: { content?: string; reasoning_content?: string }; finish_reason?: string }>
+      choices?: Array<{ message?: { content?: string; reasoning_content?: string; reasoning?: string }; finish_reason?: string }>
       usage?: { prompt_tokens?: number; completion_tokens?: number }
       model?: string
     }
@@ -116,6 +138,9 @@ export class DeepSeekProvider implements LLMProvider {
 
     const choice = parsed.choices?.[0]
     const text = choice?.message?.content
+    // DeepSeek returns reasoning_content; Ollama returns reasoning.
+    const rawReasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning
+    const messageReasoning = typeof rawReasoning === 'string' ? rawReasoning : ''
     if (typeof text !== 'string') {
       throw new ProviderError('DeepSeek 响应缺少 choices[0].message.content', response.status)
     }
@@ -133,7 +158,8 @@ export class DeepSeekProvider implements LLMProvider {
         : null,
       latencyMs: Date.now() - started,
       finishReason: choice?.finish_reason ?? null,
-      reasoningChars: choice?.message?.reasoning_content?.length ?? 0,
+      reasoningChars: messageReasoning.length,
+      ...(messageReasoning ? { reasoningText: messageReasoning.slice(0, REASONING_TEXT_CAP) } : {}),
     }
     } finally { clearTimeout(timer) }
   }
@@ -147,6 +173,7 @@ export class DeepSeekProvider implements LLMProvider {
     let usage: LLMResponse['usage'] = null
     let finishReason: string | null = null
     let reasoningChars = 0
+    let reasoningText = ''
     let completed = false
     const handleLine = (line: string) => {
         if (!line.startsWith('data:')) return
@@ -162,7 +189,12 @@ export class DeepSeekProvider implements LLMProvider {
             text += content
             request.onTextDelta?.(content)
         }
-        reasoningChars += choice?.delta?.reasoning_content?.length ?? 0
+        // DeepSeek streams reasoning_content; Ollama streams reasoning.
+        const reasoning = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning
+        if (typeof reasoning === 'string' && reasoning) {
+            reasoningChars += reasoning.length
+            if (reasoningText.length < REASONING_TEXT_CAP) reasoningText += reasoning.slice(0, REASONING_TEXT_CAP - reasoningText.length)
+        }
         if (choice?.finish_reason) finishReason = choice.finish_reason
         if (event.usage) usage = { promptTokens: event.usage.prompt_tokens ?? 0, completionTokens: event.usage.completion_tokens ?? 0 }
     }
@@ -177,23 +209,55 @@ export class DeepSeekProvider implements LLMProvider {
     buffer += decoder.decode()
     if (buffer.trim()) handleLine(buffer.trim())
     if (!completed && !finishReason) throw new ProviderError('Model stream ended before completion')
-    return { text, provider: this.name, model, usage, finishReason, reasoningChars, latencyMs: Date.now() - started }
+    return { text, provider: this.name, model, usage, finishReason, reasoningChars,
+        ...(reasoningText ? { reasoningText } : {}), latencyMs: Date.now() - started }
   }
 }
 
+/** True for endpoints on this machine, which may run without an API key (Ollama, LM Studio). */
+export function isLocalBaseUrl(baseUrl: string | undefined | null): boolean {
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost')
+  } catch {
+    return false
+  }
+}
+
+/** CHARACTERLIFE_MODEL_* wins; the older DEEPSEEK_* names keep working. */
+function readModelEnv(env: NodeJS.ProcessEnv): { apiKey: string; baseUrl: string; model: string } {
+  const pick = (name: string) => (env[`CHARACTERLIFE_MODEL_${name}`]?.trim() || env[`DEEPSEEK_${name}`]?.trim() || '')
+  return { apiKey: pick('API_KEY'), baseUrl: pick('BASE_URL'), model: pick('MODEL') }
+}
+
+/** A real model is configured: an API key, or a local base URL that needs none. */
 export function hasDeepSeekCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
-  return typeof env.DEEPSEEK_API_KEY === 'string' && env.DEEPSEEK_API_KEY.trim().length > 0
+  const { apiKey, baseUrl } = readModelEnv(env)
+  return apiKey.length > 0 || isLocalBaseUrl(baseUrl)
 }
 
 export function deepSeekConfigFromEnv(env: NodeJS.ProcessEnv = process.env): {
   apiKey: string
   baseUrl: string
   model: string
+  /** CHARACTERLIFE_REASONING, else the verified default for the model (see reasoning.ts) */
+  reasoning: ReasoningMode
 } | null {
   if (!hasDeepSeekCredentials(env)) return null
+  const raw = readModelEnv(env)
+  const model = raw.model || 'deepseek-chat'
   return {
-    apiKey: env.DEEPSEEK_API_KEY!.trim(),
-    baseUrl: env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com',
-    model: env.DEEPSEEK_MODEL?.trim() || 'deepseek-chat',
+    apiKey: raw.apiKey,
+    baseUrl: raw.baseUrl || 'https://api.deepseek.com',
+    model,
+    reasoning: resolveReasoningMode(model, parseReasoningMode(env.CHARACTERLIFE_REASONING)),
   }
+}
+
+/** Neutral names for the same provider; the DeepSeek-prefixed names stay for compatibility. */
+export {
+  DeepSeekProvider as OpenAICompatibleProvider,
+  hasDeepSeekCredentials as hasModelConfig,
+  deepSeekConfigFromEnv as modelConfigFromEnv,
 }

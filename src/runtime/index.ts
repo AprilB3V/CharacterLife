@@ -19,7 +19,7 @@ export type {
 } from './instance-runtime.ts'
 export { MemoryReviewQueue } from './memory-review.ts'
 export type { MemoryReviewMode, PendingMemory } from './memory-review.ts'
-export { CharacterWorkspace, parseDueOffsetDays } from './workspace.ts'
+export { CharacterWorkspace, parseDueAtSim, parseDueOffsetDays } from './workspace.ts'
 export type {
     WorkspaceOptions,
     WorkspaceView,

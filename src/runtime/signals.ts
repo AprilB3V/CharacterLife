@@ -53,6 +53,18 @@ const PROMISE_HINT = [
   /(这次一定|再(来|试)一次|不见不散)/,
 ]
 
+// Time of day + "I/we" + a coming verb, e.g. "tonight at eight I'll come by" (agenda v1 review: the
+// old patterns needed the verb right after 晚上 and missed a clock time in between).
+const PLAN_AT_TIME = /(今天|今晚|晚上|中午|下午|傍晚|早上|上午|明早|明晚)([^。！？\n]{0,6})(我|我们)([^。！？\n]{0,4})(来|去|过来|过去|见|找你|给你|带|陪你)([^。！？\n]{0,8})/
+
+/** A stated plan, not a negation ("我不过来") and not past narration ("我去买菜了"). */
+function isPlanAtTime(text: string): boolean {
+  const m = PLAN_AT_TIME.exec(text)
+  if (!m) return false
+  if (/(不|没|别|甭)/.test(`${m[2]}${m[4]}`)) return false
+  return !/(了|过)/.test(m[6]!.slice(0, 1)) && !/了\s*$/.test(m[6]!)
+}
+
 const DISAGREE_HINT = [/(我不同意|我觉得不对|不认同|未必|但是我觉得|可是我觉得|我倒觉得)/]
 
 const ACCEPT_HINT = [/(你说得对|理解你|那就听你的|有道理|我想了想|是我考虑不周)/]
@@ -119,13 +131,18 @@ export function analyzeMessage(text: string, profile: CharacterProfile): Message
   if (anyMatch(BOUNDARY_NO_CONTACT, trimmed)) declaredBoundary = 'no_contact'
   else if (anyMatch(BOUNDARY_DND, trimmed)) declaredBoundary = 'do_not_disturb'
 
-  const rawPromise = anyMatch(PROMISE_HINT, trimmed) ? trimmed : null
+  const rawPromise = anyMatch(PROMISE_HINT, trimmed) || isPlanAtTime(trimmed) ? trimmed : null
   // 「上次说好」「之前约定的」是在**引用过去**，不是现在做新约定。
   // 不加这条判断，每次回忆都会凭空生成一条新约定，状态会持续漂移。
   const isPastReference = /(上次|之前|那天|前几天|已经|昨天)[^。！\n]{0,8}(说好|约定|约好|答应|来过|见过)/.test(
     trimmed,
   )
-  const promiseText = isPastReference ? null : rawPromise
+  // Asking what was agreed ("what did we agree on again?") recalls a promise, it does not make one.
+  // Only an actual question counts: "约好了明天去，记得带伞" is still a new promise.
+  const isRecallQuestion =
+    /(约定|约好|说好|说定|答应)/.test(trimmed) &&
+    (/来着/.test(trimmed) || (/[?？吗]\s*$/.test(trimmed) && /(什么|啥|哪|是不是|还记得|记得)/.test(trimmed)))
+  const promiseText = isPastReference || isRecallQuestion ? null : rawPromise
   const disagrees = anyMatch(DISAGREE_HINT, trimmed)
   const agrees = anyMatch(ACCEPT_HINT, trimmed)
 

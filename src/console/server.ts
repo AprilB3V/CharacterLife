@@ -39,6 +39,7 @@ const PUBLIC_DIR = join(import.meta.dirname, 'public')
 const ASSETS: Record<string, { file: string; type: string }> = {
     '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
     '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
+    '/trace.js': { file: 'trace.js', type: 'text/javascript; charset=utf-8' },
     '/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
 }
 
@@ -55,8 +56,10 @@ class ConsoleError extends Error {
 const digest = (value: string) => createHash('sha256').update(value).digest()
 
 function send(res: ServerResponse, status: number, value: unknown): void {
+    // Serialise first: a throw here must reach the error handler before any header is written.
+    const body = JSON.stringify(value)
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-    res.end(JSON.stringify(value))
+    res.end(body)
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -158,6 +161,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): ConsoleServerHa
         const method = req.method ?? 'GET'
         if (parts[0] !== 'api') throw new ConsoleError(404, 'NOT_FOUND', '未知路径')
         if (!authorized(req)) throw new ConsoleError(401, 'UNAUTHORIZED', '需要后台令牌')
+        if (method === 'GET' && parts.length === 2 && parts[1] === 'config') return send(res, 200, runtime.describe())
         if (method === 'GET' && parts.length === 2 && parts[1] === 'instances') {
             return send(res, 200, runtime.persistence.listInstances().map(item => ({ id: item.id, label: item.label,
                 templateId: item.templateId, templateVersion: item.templateVersion, worldId: item.worldId, lastActiveAtWall: item.lastActiveAtWall })))
@@ -189,6 +193,23 @@ export function createConsoleServer(opts: ConsoleServerOptions): ConsoleServerHa
             if (body.decision !== 'approve' && body.decision !== 'reject') throw new ConsoleError(400, 'INVALID_DECISION', 'decision 必须是 approve 或 reject')
             const decision = body.decision
             return send(res, 200, await mutate(id, rt => rt.memoryReview.decide(parts[4]!, decision, ACTOR_ID)))
+        }
+        if (method === 'GET' && tail === 'traces') {
+            // Existence check only: traces live in memory, so a cold instance needs no rehydration.
+            if (!runtime.persistence.getInstance(id)) throw new ConsoleError(404, 'INSTANCE_NOT_FOUND', `实例 ${id} 不存在`)
+            const kind = url.searchParams.get('kind')
+            if (kind && kind !== 'turn' && kind !== 'think') throw new ConsoleError(400, 'INVALID_QUERY', 'kind 必须是 turn 或 think')
+            const limit = boundedInt(url.searchParams.get('limit'), 50, 500)
+            return send(res, 200, { enabled: runtime.traces !== null, perInstance: runtime.traces?.perInstance ?? 0,
+                traces: runtime.traces?.list(id, { limit, ...(kind ? { kind: kind as 'turn' | 'think' } : {}) }) ?? [] })
+        }
+        if (method === 'GET' && tail === 'instance-config') {
+            const record = runtime.persistence.getInstance(id)
+            if (!record) throw new ConsoleError(404, 'INSTANCE_NOT_FOUND', `实例 ${id} 不存在`)
+            const rt = manager.get(id)
+            const { template, ...report } = rt.report
+            return send(res, 200, { record, report: { ...report, template: { id: template.id, version: template.version, contentHash: template.contentHash } }, conflicts: rt.conflicts.length,
+                sessions: Object.fromEntries(rt.sessionIds), historyTurns: Object.fromEntries([...rt.histories].map(([key, list]) => [key, list.length / 2])) })
         }
         if (method === 'GET' && tail === 'audit') {
             return send(res, 200, instance(id).workspace.audit.tail(boundedInt(url.searchParams.get('limit'), 100, 1000)).reverse())

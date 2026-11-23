@@ -137,3 +137,5 @@ npm run sandbox:h5 -- --mind deepseek --max-calls 800
 - **E1**：`npm run sandbox:h5 -- --mind deepseek`，几百次便宜模型调用，产出 H5 的第一份真实数据。
 - **E2**：承诺账本（目标状态与完成判据）+ 备忘录 §10 的承诺/失败/纠错任务。
 - **Godot 回放**：读 `log.jsonl` 驱动小球，头顶显示驱力条与当前想法。
+- **Godot 实时箱庭（已实现，2026-11-16）**：`npm run sandbox:live` 用同一套装配，把 TextWorld 换成 HTTP 上的 Godot；
+  世界规则移植在 `apps/CharacterLife-World/scripts/town/town_rules.gd`，用法见该仓库 `docs/TOWN.md`。

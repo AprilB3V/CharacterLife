@@ -7,6 +7,10 @@
  */
 
 import type { LedgerRecord } from '../kernel/integrity/ledger.ts'
+import { Ledger } from '../kernel/integrity/ledger.ts'
+import { Integrity } from '../kernel/integrity/index.ts'
+import { identityFingerprint } from '../kernel/integrity/identity.ts'
+import { SqliteLedgerSink } from './ledger-sink.ts'
 import { canonicalJson } from '../kernel/integrity/canonical.ts'
 import type { CharacterDatabase } from './database.ts'
 import type {
@@ -32,6 +36,7 @@ import { rankMemories } from '../kernel/memory/ranking.ts'
 import type { RankedMemory } from '../kernel/memory/ranking.ts'
 import type { TemplateEventSpec } from '../character/template.ts'
 import { SCHEMA_VERSION } from './schema.ts'
+import type { RecallState } from '../kernel/memory/curve.ts'
 
 /* ==========================================================================
  * 事件（append-only）
@@ -350,7 +355,7 @@ export class CharacterPersistence {
     actor: Actor
     nowSim: number
     nowIso: string
-  }): { from: { version: number; hash: string }; to: { version: number; hash: string } } {
+  }): { from: { version: number; hash: string }; to: { version: number; hash: string }; identityRevised: boolean } {
     if (!opts.actor.capabilities.has('profile:write')) {
       this.appendEvent({
         instanceId: opts.instanceId,
@@ -364,32 +369,52 @@ export class CharacterPersistence {
       })
       throw new Error(`${opts.actor.id} 缺少 profile:write，拒绝模板迁移`)
     }
-    const instance = this.requireInstance(opts.instanceId)
-    if (instance.templateId !== opts.template.id && opts.renameFrom !== instance.templateId) {
-      throw new Error(`模板迁移只能在同一角色内进行：${instance.templateId} != ${opts.template.id}`)
-    }
-    this.putTemplate(opts.template)
-    this.#db
-      .prepare('UPDATE instances SET template_id = ?, template_version = ?, template_hash = ?, last_active_at = ? WHERE id = ?')
-      .run(opts.template.id, opts.template.version, opts.template.contentHash, opts.nowIso, opts.instanceId)
-    this.appendEvent({
-      instanceId: opts.instanceId,
-      sessionId: null,
-      type: 'template_migrated',
-      atSim: opts.nowSim,
-      atWall: opts.nowIso,
-      actor: opts.actor.id,
-      summary: `模板版本迁移 ${instance.templateVersion} -> ${opts.template.version}`,
-      data: {
+    // One transaction: the template row, the instance, the event and the identity revision land together or not at all.
+    return this.#db.transaction(() => {
+      const instance = this.requireInstance(opts.instanceId)
+      if (instance.templateId !== opts.template.id && opts.renameFrom !== instance.templateId) {
+        throw new Error(`模板迁移只能在同一角色内进行：${instance.templateId} != ${opts.template.id}`)
+      }
+      this.putTemplate(opts.template)
+      this.#db
+        .prepare('UPDATE instances SET template_id = ?, template_version = ?, template_hash = ?, last_active_at = ? WHERE id = ?')
+        .run(opts.template.id, opts.template.version, opts.template.contentHash, opts.nowIso, opts.instanceId)
+      this.appendEvent({
+        instanceId: opts.instanceId,
+        sessionId: null,
+        type: 'template_migrated',
+        atSim: opts.nowSim,
+        atWall: opts.nowIso,
+        actor: opts.actor.id,
+        summary: `模板版本迁移 ${instance.templateVersion} -> ${opts.template.version}`,
+        data: {
+          from: { version: instance.templateVersion, hash: instance.templateHash },
+          to: { version: opts.template.version, hash: opts.template.contentHash },
+          templateIds: { from: instance.templateId, to: opts.template.id },
+        },
+      })
+      // The persona changed with the template: record it in the integrity ledger as an identity revision,
+      // so the next rehydration does not report identity drift. Run with the instance's service stopped.
+      // A broken chain is left alone (rehydration already reports it); nothing is appended onto it.
+      let identityRevised = false
+      const stored = this.loadLedger(opts.instanceId)
+      if (stored.records.length > 0) {
+        const clock = { nowSim: () => opts.nowSim }
+        const { ledger, verification } = Ledger.restore({ clock, sink: new SqliteLedgerSink(this, opts.instanceId) }, stored.records, stored.contents)
+        if (verification.ok) {
+          const integrity = new Integrity({ clock, ledger })
+          if (integrity.fingerprint !== identityFingerprint(opts.template.profile)) {
+            const revised = integrity.reviseIdentity(opts.actor, opts.template.profile, `模板迁移 v${instance.templateVersion} -> v${opts.template.version}`)
+            identityRevised = revised.ok
+          }
+        }
+      }
+      return {
         from: { version: instance.templateVersion, hash: instance.templateHash },
         to: { version: opts.template.version, hash: opts.template.contentHash },
-        templateIds: { from: instance.templateId, to: opts.template.id },
-      },
+        identityRevised,
+      }
     })
-    return {
-      from: { version: instance.templateVersion, hash: instance.templateHash },
-      to: { version: opts.template.version, hash: opts.template.contentHash },
-    }
   }
 
   /* -------------------------------------------------------------- sessions */
@@ -816,6 +841,32 @@ export class CharacterPersistence {
     return rows.map(rowToMemory)
   }
 
+  /** Memory curve: upsert the recall state of one memory (no event: it changes on most turns). */
+  upsertMemoryRecall(instanceId: string, memoryId: string, state: RecallState): void {
+    this.requireInstance(instanceId)
+    this.#db
+      .prepare(
+        `INSERT INTO memory_recall (instance_id, memory_id, stability_ms, last_recalled_sim, recalls)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(instance_id, memory_id) DO UPDATE SET
+           stability_ms = excluded.stability_ms,
+           last_recalled_sim = excluded.last_recalled_sim,
+           recalls = excluded.recalls`,
+      )
+      .run(instanceId, memoryId, state.stability, state.lastRecalledSim, state.recalls)
+  }
+
+  listMemoryRecall(instanceId: string): Record<string, RecallState> {
+    const rows = this.#db
+      .prepare('SELECT memory_id, stability_ms, last_recalled_sim, recalls FROM memory_recall WHERE instance_id = ?')
+      .all(instanceId) as Array<{ memory_id: string; stability_ms: number; last_recalled_sim: number | null; recalls: number }>
+    return Object.fromEntries(rows.map((r) => [r.memory_id, {
+      stability: r.stability_ms,
+      lastRecalledSim: r.last_recalled_sim,
+      recalls: r.recalls,
+    }]))
+  }
+
   softDeleteMemory(instanceId: string, memoryId: string, sim: number): boolean {
     const info = this.#db
       .prepare('UPDATE memories SET deleted_at_sim = ? WHERE instance_id = ? AND id = ? AND deleted_at_sim IS NULL')
@@ -1062,6 +1113,8 @@ export class CharacterPersistence {
     instance: CharacterInstance
     state: PersistedState | null
     memories: MemoryEntry[]
+    /** Memory curve state by memory id */
+    memoryRecall: Record<string, RecallState>
     sessions: SessionRecord[]
     conflicts: StoredConflict[]
     events: PersistedEvent[]
@@ -1072,6 +1125,7 @@ export class CharacterPersistence {
       instance: this.requireInstance(instanceId),
       state: this.loadState(instanceId),
       memories: this.listMemories(instanceId, { includeDeleted: true }),
+      memoryRecall: this.listMemoryRecall(instanceId),
       sessions: this.listSessions(instanceId),
       conflicts: this.listConflicts(instanceId),
       events: this.listEvents(instanceId),
