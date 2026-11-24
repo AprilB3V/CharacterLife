@@ -3,6 +3,10 @@
 适用于 Claude Code、Codex、GPT 以及任何读取本仓库的 agent。这里只写**去哪读、按什么规矩做**；
 项目状态、设计和决策都在下面链接的文件里，不在本文件重复。
 
+> **用户只是想安装、使用或试玩 CharacterLife（不是开发）？** 不要读下面的开发规则，
+> 照 [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md) 一步步做。
+> *If the user only wants to install or try CharacterLife, follow [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md) instead.*
+
 ## 开工顺序
 
 1. **[`TodoList.md`](TodoList.md)**：任务状态与交接的单一入口。先看「当前焦点」、§1 任务表和 §4 最近的交接记录。

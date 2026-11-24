@@ -1,0 +1,14 @@
+{
+    "name": "characterlife-dsh",
+    "version": "0.1.0",
+    "description": "Chat with a CharacterLife character from the DeepSeek Harness (dsh) web UI",
+    "private": true,
+    "license": "Apache-2.0",
+    "dsh": {
+        "bundle": {
+            "patch": [
+                "./characterlife.patch.yml"
+            ]
+        }
+    }
+}
