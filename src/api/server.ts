@@ -60,6 +60,8 @@ export interface ApiServerOptions {
   /** SillyTavern 本地身份（默认 local-default） */
   stIdentityUserId?: string
   modelId?: string
+  /** Extra models to list on GET /v1/models (a character router lists every character here). */
+  listedModels?: ReadonlyArray<{ id: string; label: string }>
   bodyLimitBytes?: number
   rateLimit?: { windowMs?: number; max?: number }
   logger?: (line: string) => void
@@ -76,8 +78,17 @@ export interface ApiServerOptions {
   }
 }
 
+/**
+ * A router that already consumed the request body (to read `model`) stores it here, so the
+ * handler does not wait for a stream that has ended.
+ */
+export const PRELOADED_BODY: unique symbol = Symbol.for('characterlife.preloadedBody')
+export type PreloadedRequest = IncomingMessage & { [PRELOADED_BODY]?: string }
+
 export interface ApiServerHandle {
   server: Server
+  /** The request handler, for routers that dispatch between several servers without listening on each. */
+  handle(req: IncomingMessage, res: ServerResponse): void
   listen(): Promise<{ host: string; port: number; url: string }>
   close(): Promise<void>
   readonly url: string | null
@@ -200,6 +211,11 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   }
 
   async function readBody(req: IncomingMessage): Promise<string> {
+    const preloaded = (req as PreloadedRequest)[PRELOADED_BODY]
+    if (typeof preloaded === 'string') {
+      if (Buffer.byteLength(preloaded) > bodyLimit) throw new HttpError(413, 'BODY_TOO_LARGE', `请求体超过 ${bodyLimit} 字节`)
+      return preloaded
+    }
     return await new Promise((resolve, reject) => {
       let size = 0
       const chunks: Buffer[] = []
@@ -305,7 +321,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
   /** In-flight thinking runs per instance: input during thinking joins the queue. */
   const thinkRuns = new Map<string, { phase: 'thinking' | 'speaking'; queue: ThinkInput[] }>()
 
-  const server = createServer((req, res) => {
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
     const started = Date.now()
     const method = req.method ?? 'GET'
     const path = (req.url ?? '/').split('?')[0] ?? '/'
@@ -343,7 +359,7 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
 
         /* ---------------------------- OpenAI 兼容 ---------------------------- */
         if (method === 'GET' && path === '/v1/models') {
-          json(res, 200, buildModelsResponse({ models: [{ id: modelId, label: 'CharacterLife 持久角色' }] }))
+          json(res, 200, buildModelsResponse({ models: opts.listedModels?.length ? [...opts.listedModels] : [{ id: modelId, label: 'CharacterLife 持久角色' }] }))
           return
         }
 
@@ -679,10 +695,12 @@ export function createApiServer(opts: ApiServerOptions): ApiServerHandle {
         fail(res, err)
       }
     })()
-  })
+  }
+  const server = createServer(handle)
 
   return {
     server,
+    handle,
     get url() {
       return url
     },

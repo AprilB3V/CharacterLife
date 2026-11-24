@@ -38,7 +38,7 @@
 import { loadEnvConfig, assembleRuntime } from '../../src/api/runtime-factory.ts'
 import { bootConsole } from '../console-boot.ts'
 import { createOneBotReportServer } from '../../src/adapters/onebot/report-server.ts'
-import { describeTemplateMismatch, loadCharacterFromEnv } from '../character-module.ts'
+import { loadCharacterFromEnv, prepareCharacterDatabase } from '../character-module.ts'
 
 const env = loadEnvConfig()
 if (!env.onebot) {
@@ -65,9 +65,10 @@ const runtime = assembleRuntime({
   },
 })
 
-const mismatch = describeTemplateMismatch(runtime.persistence, runtime.template, env.dbPath)
-if (mismatch) {
-  console.error(`❌ ${mismatch}`)
+const prepared = prepareCharacterDatabase(runtime, env.dbPath)
+for (const u of prepared.upgrades) console.log(`角色已更新：${u.instanceId} v${u.from} → v${u.to}（记忆保留）`)
+if (prepared.problem) {
+  console.error(`❌ ${prepared.problem}`)
   runtime.close()
   process.exit(2)
 }

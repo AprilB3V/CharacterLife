@@ -42,7 +42,7 @@ $env:CHARACTERLIFE_ALLOW_PUBLIC = "true"
 4. **Custom Endpoint (Base URL)** 填 `http://127.0.0.1:8787/v1`
    （只填到 `/v1`，酒馆会自己拼 `/chat/completions`）；
 5. **Custom API Key** 填你的 `CHARACTERLIFE_API_TOKEN`；
-6. 点 **连接 / 刷新模型**，模型下拉里应出现 `characterlife/shen-zhiwei`；
+6. 点 **连接 / 刷新模型**，模型下拉里应出现 `characterlife/shen-zhiwei`（`characters/` 里的每个角色各占一项，选哪个就和谁聊；新建角色用 `npm run studio`）；
 7. 选它，开始聊天。
 
 > 如果酒馆提示连接失败：先 `curl http://127.0.0.1:8787/v1/models -H "Authorization: Bearer <token>"`，

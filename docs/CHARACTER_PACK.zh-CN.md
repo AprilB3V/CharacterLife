@@ -15,7 +15,31 @@ my-character/
 
 参考包是 [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json)（测试角色沈知微）。它生成的模板与内置默认模板完全一致，测试会检查这一点。
 
+## 不写 JSON 也能做角色
+
+```bash
+npm run studio
+```
+
+角色工作室会打开一个本机网页（终端里打印一次性链接），有三种开始方式：
+
+- **导入 SillyTavern 角色卡**：PNG 或 JSON，支持 V1、V2、V3。描述变成背景，性格变成性格条目，场景变成「怎么对待你」，标签变成兴趣，卡面图片变成立绘。开场白、示例对话、卡片自带的提示词和世界书暂时没有对应字段，原文保存在 `knowledge/card.md`。
+- **用几句话描述你的角色**，让已配置的模型（`CHARACTERLIFE_MODEL_*`，本地 Ollama 也行）起草所有字段。
+- **从空白开始。**
+
+卡片或模型没填到的字段会保留合理的默认值，并用黄色标出。页面边输入边校验，保存到 `characters/<id>/`。这样做出来的角色不会进 git：`.gitignore` 只保留示例角色包。
+
 ## 使用
+
+`characters/`（或 `CHARACTERLIFE_CHARACTERS_DIR`）里的每个角色包会同时运行：
+
+```bash
+npm run st:server
+```
+
+SillyTavern 的模型下拉框里每个角色是一个模型 `characterlife/<id>`，选哪个就和谁聊。每个角色单独一个数据库，放在 `CHARACTERLIFE_DB` 旁边（`data/<id>.db`）；内置的沈知微沿用 `CHARACTERLIFE_DB`，已有对话不受影响。请求里没指定角色时由第一个角色回答（`CHARACTERLIFE_DEFAULT_CHARACTER=<id>` 可以换）。加载失败的包会被跳过并列出问题，其他角色照常启动。在工作室里保存后要重启服务。
+
+只跑一个角色包，或者用 Telegram、OneBot 服务（各一个角色）时：
 
 ```bash
 npm run pack:check -- path/to/my-character      # 校验，一次列出所有问题
@@ -24,7 +48,7 @@ export CHARACTERLIFE_CHARACTER_PACK=path/to/my-character
 npm run st:server                                # telegram:server、onebot:server 同理
 ```
 
-SillyTavern 的模型列表里会出现 `characterlife/<id>`。用 Docker 时把包挂载进容器，再把 `CHARACTERLIFE_CHARACTER_PACK` 指向挂载路径。
+用 Docker 时把包挂载进容器，再把 `CHARACTERLIFE_CHARACTER_PACK` 指向挂载路径。
 
 **每个角色用一个数据库。** 实例会记住创建时的模板；用别的角色建的数据库，服务启动时会直接停下并说明原因。
 
@@ -42,8 +66,14 @@ SillyTavern 的模型列表里会出现 `characterlife/<id>`。用 Docker 时把
 
 加载时会对 `profile`、`voice`、`timeline` 计算哈希；每段关系（实例）都记着创建时的模板 id、版本和哈希，对不上就拒绝恢复，这样角色不会被悄悄改写。服务启动时会先检查，发现数据库属于别的角色或旧版本的这个角色，就停下并说明，而不是每条回复都失败。
 
-- **写角色阶段**：用一个临时数据库（`CHARACTERLIFE_DB=data/draft.db`），每次改完删掉。
-- **已经有人聊过之后**：升 `version`，然后换新数据库，或者迁移已有关系。迁移目前只有内核接口（`src/persistence/store.ts` 的 `migrateTemplate`，需要 `profile:write` 能力，会记录 `template_migrated` 事件），还没有现成命令。
+改了 `profile`、`voice` 或 `timeline` 之后：
+
+- **在工作室里改**：直接保存，人设有变化时会自动把 `version` 加 1。
+- **手动改文件**：自己把 `version` 加 1。
+
+下次启动时，用旧版本创建的对话会自动迁移到新版本，记忆和关系都保留。每次迁移都记录为 `template_migrated` 事件和一次身份修订，服务启动日志里会写 `角色已更新：…（inst_001 v1 → v2，记忆保留）`。
+
+仍然会拦下的两种情况：内容变了但 `version` 没变（手改忘了升版本）；数据库是用比当前包更新的版本建的。设 `CHARACTERLIFE_AUTO_MIGRATE=false` 可以关掉自动迁移，改为提示。时间线事件在关系开始时写入，新版本里加的事件只对新关系生效。
 
 `name`、`summary`、`authors`、`license`、`homepage`、`assets`、`knowledge` 不参与哈希，改了不用升版本。
 
@@ -58,4 +88,5 @@ SillyTavern 的模型列表里会出现 `characterlife/<id>`。用 Docker 时把
 
 - 一个包一个角色、一种语言。
 - 不能在包里指定模型，沿用服务端的 `CHARACTERLIFE_MODEL_*`。
-- 不自动导入 SillyTavern 角色卡：卡片字段大致对应 `background`、`traits`、`speechStyle`，但没有边界、关系规则和时间线，手写的包效果好得多。
+- 导入角色卡只是起点：卡片没有边界、关系规则、主动开口的台词和时间线，请检查黄色字段。开场白、示例对话和世界书保存在 `knowledge/card.md`，暂时不发给模型。
+- 工作室暂时不能编辑时间线，会原样保留。

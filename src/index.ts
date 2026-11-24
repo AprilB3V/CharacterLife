@@ -129,6 +129,12 @@ export {
   PACK_FORMAT,
 } from './character/pack.ts'
 export type { CharacterPackManifest, LoadedCharacterPack, PackAuthor, PackEvent, PackIssue } from './character/pack.ts'
+export { scanCharacterPacks, saveCharacterPack, upgradeInstancesToTemplate } from './character/pack-library.ts'
+export type { PackScan, SavePackResult, TemplateUpgrade } from './character/pack-library.ts'
+export { blankPack, draftFromDescription, mergeDraft, packIdFromName, guessLanguage, DraftError } from './character/pack-draft.ts'
+export type { DraftLanguage, PackDraft } from './character/pack-draft.ts'
+export { importCharacterCard, readCharacterCard, packFromCard, CardError } from './character/st-card.ts'
+export type { CharacterCard, CardImport } from './character/st-card.ts'
 
 /* Instance / Session */
 export { createInstanceRecord, createSessionRecord } from './character/instance.ts'

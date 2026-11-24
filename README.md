@@ -116,13 +116,18 @@ that uses the real event formats with a mock transport.
 
 ### Bring your own character
 
-A character pack is a folder with a `character.json`: persona, boundaries, the lines she opens
-conversations with, and events in her own life. Packs are plain data, so sharing one is safe.
+Make your own character in the browser: import a SillyTavern card (PNG or JSON), describe your OC in
+a few sentences and let your model draft it, or start blank.
 
 ```bash
-npm run pack:check -- characters/shen-zhiwei
-CHARACTERLIFE_CHARACTER_PACK=path/to/your-character npm run st:server
+npm run studio      # opens the character studio; saves to characters/<id>/
+npm run st:server   # every character in characters/ shows up in SillyTavern's model dropdown
 ```
+
+Each character is a pack: a folder with a `character.json` holding persona, boundaries, the lines she
+opens conversations with, and events in her own life. Packs are plain data, so sharing one is safe.
+Edit a character after people have talked to her and existing conversations move to the new version,
+memories intact.
 
 The format, limits and versioning rules are in [docs/CHARACTER_PACK.md](docs/CHARACTER_PACK.md).
 

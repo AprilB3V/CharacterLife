@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CharacterLife · 角色工作室</title>
+<style>
+:root {
+    --cl-paper: #fbf4e4; --cl-paper-dot: #e3d6b8; --cl-card: #fffef8; --cl-rule: #e3d5b8;
+    --cl-ink: #2b2d42; --cl-ink-soft: #5c5f78; --cl-tag: #9a917c;
+    --cl-orange: #f28c38; --cl-action: #e9781f; --cl-tape: #ffd23f; --cl-sky: #8cd3f5;
+    --cl-thought: #8a63c9; --cl-mint: #b7e4c7; --cl-glass: #ddf2fb;
+    --cl-ok: #2f9e6a; --cl-warn: #e0a019; --cl-danger: #d64545;
+    --cl-line-w: 3px; --cl-radius: 14px; --cl-shadow: 4px 4px 0 var(--cl-ink);
+    --cl-font: "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --cl-font-hand: "LXGW WenKai", KaiTi, "Microsoft YaHei", sans-serif;
+    --cl-font-mono: Consolas, ui-monospace, "Microsoft YaHei", monospace;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; color: var(--cl-ink); font: 15px/1.55 var(--cl-font);
+    background-color: var(--cl-paper);
+    background-image: radial-gradient(var(--cl-paper-dot) 2px, transparent 2px);
+    background-size: 28px 28px;
+}
+body.loading main { visibility: hidden; }
+header {
+    display: flex; align-items: center; gap: 14px; padding: 14px 28px;
+    border-bottom: var(--cl-line-w) solid var(--cl-ink); background: var(--cl-sky);
+}
+header h1 { margin: 0; font-size: 20px; }
+header .hand { font-family: var(--cl-font-hand); color: var(--cl-ink-soft); }
+header .spacer { flex: 1; }
+main { display: grid; grid-template-columns: 330px 1fr; gap: 24px; padding: 24px 28px 120px; max-width: 1280px; margin: 0 auto; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+.card {
+    background: var(--cl-card); border: var(--cl-line-w) solid var(--cl-ink); border-radius: var(--cl-radius);
+    box-shadow: var(--cl-shadow); padding: 18px 20px; margin-bottom: 22px; position: relative;
+}
+.card > h2, fieldset > legend {
+    display: inline-block; margin: -4px 0 12px; padding: 2px 12px; font-size: 16px;
+    background: var(--cl-tape); border: 2px solid var(--cl-ink); border-radius: 6px; transform: rotate(-1.2deg);
+}
+button, .button {
+    font: inherit; font-weight: 600; cursor: pointer; color: var(--cl-ink);
+    background: var(--cl-card); border: 2px solid var(--cl-ink); border-radius: 10px;
+    padding: 7px 14px; box-shadow: 3px 3px 0 var(--cl-ink); display: inline-block;
+}
+button:active, .button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--cl-ink); }
+button.primary { background: var(--cl-orange); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.small { padding: 3px 10px; font-size: 13px; box-shadow: 2px 2px 0 var(--cl-ink); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.stack > * + * { margin-top: 10px; }
+.hint { color: var(--cl-ink-soft); font-size: 13px; }
+.handnote { font-family: var(--cl-font-hand); color: var(--cl-thought); }
+input[type=text], input[type=number], textarea, select {
+    width: 100%; font: inherit; color: var(--cl-ink); background: #fff;
+    border: 2px solid var(--cl-ink); border-radius: 8px; padding: 7px 10px;
+}
+textarea { min-height: 70px; resize: vertical; }
+textarea.tall { min-height: 140px; }
+input:focus, textarea:focus, select:focus { outline: 3px solid var(--cl-sky); outline-offset: 1px; }
+input[readonly] { background: var(--cl-paper); }
+.charlist { list-style: none; margin: 0; padding: 0; }
+.charlist li {
+    display: flex; gap: 10px; align-items: center; padding: 8px; border: 2px solid transparent;
+    border-radius: 10px; cursor: pointer;
+}
+.charlist li:hover { border-color: var(--cl-rule); }
+.charlist li.active { border-color: var(--cl-ink); background: var(--cl-glass); }
+.thumb {
+    width: 44px; height: 44px; border-radius: 10px; border: 2px solid var(--cl-ink); flex: none;
+    background: var(--cl-glass) center/cover; display: grid; place-items: center; font-weight: 700;
+}
+.charlist .meta { font-family: var(--cl-font-mono); font-size: 12px; color: var(--cl-tag); }
+fieldset { border: 2px dashed var(--cl-rule); border-radius: var(--cl-radius); padding: 14px 18px 6px; margin: 0 0 18px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+@media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+.field { margin-bottom: 14px; }
+.field label { display: flex; gap: 8px; align-items: baseline; font-weight: 600; margin-bottom: 4px; }
+.field label small { font-weight: 400; color: var(--cl-ink-soft); }
+.field .badge {
+    display: none; font-size: 12px; font-weight: 600; padding: 0 8px; border-radius: 5px;
+    background: var(--cl-tape); border: 1.5px solid var(--cl-ink);
+}
+.field.placeholder .badge { display: inline-block; }
+.field.placeholder input, .field.placeholder textarea { background: #fffbe6; border-style: dashed; }
+.field .err { color: var(--cl-danger); font-size: 13px; margin-top: 3px; }
+.field.bad input, .field.bad textarea, .field.bad select { border-color: var(--cl-danger); }
+.edhead { display: flex; gap: 18px; align-items: center; margin-bottom: 16px; }
+.portrait {
+    width: 96px; height: 96px; border-radius: 14px; border: var(--cl-line-w) solid var(--cl-ink);
+    background: var(--cl-glass) center/cover; box-shadow: 3px 3px 0 var(--cl-ink); flex: none;
+    display: grid; place-items: center; font-size: 34px; font-weight: 700;
+}
+.edhead h2 { margin: 0 0 4px; font-size: 24px; }
+code, .mono { font-family: var(--cl-font-mono); font-size: 13px; }
+.pill { display: inline-block; padding: 0 9px; border-radius: 999px; border: 2px solid var(--cl-ink); font-size: 12px; font-weight: 700; background: var(--cl-mint); }
+.pill.new { background: var(--cl-tape); }
+.notes { background: #f4efff; border: 2px solid var(--cl-thought); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+.notes ul { margin: 4px 0 0; padding-left: 20px; }
+.savebar {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 28px; z-index: 5;
+    background: var(--cl-card); border-top: var(--cl-line-w) solid var(--cl-ink);
+    display: flex; gap: 14px; align-items: center;
+}
+.savebar .msg { flex: 1; }
+.msg.ok { color: var(--cl-ok); }
+.msg.bad { color: var(--cl-danger); }
+.empty { text-align: center; padding: 60px 20px; }
+.empty .big { font-family: var(--cl-font-hand); font-size: 26px; color: var(--cl-ink-soft); }
+details summary { cursor: pointer; font-weight: 600; }
+pre.json { max-height: 420px; overflow: auto; background: var(--cl-paper); border: 2px solid var(--cl-rule); border-radius: 8px; padding: 10px; font: 12px/1.4 var(--cl-font-mono); }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 3px solid var(--cl-ink); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body class="loading">
+<header>
+    <h1 data-t="title">CharacterLife · 角色工作室</h1>
+    <span class="hand" data-t="tagline">把你的 OC 带进会持续生活的角色里</span>
+    <span class="spacer"></span>
+    <button class="small" id="langBtn" type="button">English</button>
+</header>
+<main>
+    <aside>
+        <section class="card stack">
+            <h2 data-t="newTitle">新建角色</h2>
+            <div class="row">
+                <button type="button" id="blankBtn" data-t="blank">从空白开始</button>
+                <label class="button" for="cardFile" data-t="importCard">导入 ST 角色卡</label>
+                <input type="file" id="cardFile" accept=".png,.json,image/png,application/json" hidden>
+            </div>
+            <p class="hint" data-t="importHint">支持 SillyTavern 导出的 PNG / JSON 角色卡（V1、V2、V3）。</p>
+            <hr style="border:0;border-top:2px dashed var(--cl-rule)">
+            <label for="describe" style="font-weight:600" data-t="describeLabel">或者，用几句话描述你的 OC</label>
+            <textarea id="describe" class="tall" data-tp="describePh" placeholder="例如：一个在雨城开修表铺的二十多岁女生，话少但守约，养了一只三花猫……"></textarea>
+            <div class="row">
+                <button type="button" class="primary" id="draftBtn" data-t="draft">让模型起草</button>
+                <span class="hint" id="draftHint"></span>
+            </div>
+        </section>
+        <section class="card">
+            <h2 data-t="mine">我的角色</h2>
+            <ul class="charlist" id="charList"></ul>
+            <p class="hint" id="charDir"></p>
+            <div id="scanErrors" class="hint" style="color:var(--cl-danger)"></div>
+        </section>
+    </aside>
+
+    <section>
+        <div class="card empty" id="emptyState">
+            <p class="big" data-t="emptyBig">选一个角色，或者新建一个。</p>
+            <p class="hint" data-t="emptyHint">保存后，角色会出现在 SillyTavern 的模型下拉框里（重启 npm run st:server）。</p>
+        </div>
+
+        <form class="card" id="editor" hidden autocomplete="off">
+            <div class="edhead">
+                <div class="portrait" id="portrait"></div>
+                <div>
+                    <h2 id="edName"></h2>
+                    <div class="row">
+                        <span class="pill" id="edStatus"></span>
+                        <code id="edModel"></code>
+                    </div>
+                </div>
+            </div>
+            <div class="notes" id="notes" hidden>
+                <strong class="handnote" data-t="notesTitle">导入说明</strong>
+                <ul id="notesList"></ul>
+            </div>
+
+            <fieldset>
+                <legend data-t="secBasic">基本信息</legend>
+                <div class="grid2">
+                    <div class="field" data-path="name"><label><span data-t="fName">名字</span><span class="badge" data-t="fill">待填写</span></label><input type="text" name="name" maxlength="80"></div>
+                    <div class="field" data-path="id"><label><span data-t="fId">角色 id</span><small data-t="fIdHint">小写字母、数字和连字符；保存后不能改</small></label><input type="text" name="id" maxlength="48"></div>
+                    <div class="field" data-path="language"><label data-t="fLang">语言</label>
+                        <select name="language"><option value="zh-CN">中文 zh-CN</option><option value="en">English en</option><option value="ja">日本語 ja</option></select></div>
+                    <div class="field" data-path="authors"><label data-t="fAuthor">作者</label><input type="text" name="author" maxlength="80"></div>
+                    <div class="field" data-path="license"><label><span data-t="fLicense">许可证</span><small data-t="fLicenseHint">只自己用可以不管</small></label><input type="text" name="license" list="licenses"></div>
+                    <div class="field" data-path="profile.age"><label><span data-t="fAge">年龄</span><span class="badge" data-t="fill">待填写</span></label><input type="number" name="profile.age" min="0" max="100000"></div>
+                </div>
+                <div class="field" data-path="summary"><label><span data-t="fSummary">一句话简介</span><small data-t="fSummaryHint">分享时显示</small></label><input type="text" name="summary" maxlength="280"></div>
+            </fieldset>
+
+            <fieldset>
+                <legend data-t="secPersona">人设</legend>
+                <div class="field" data-path="profile.occupation"><label><span data-t="fOcc">身份 / 职业</span><span class="badge" data-t="fill">待填写</span></label><input type="text" name="profile.occupation" maxlength="200"></div>
+                <div class="field" data-path="profile.background"><label><span data-t="fBg">背景经历</span><span class="badge" data-t="fill">待填写</span></label><textarea class="tall" name="profile.background" maxlength="2000"></textarea></div>
+                <div class="grid2">
+                    <div class="field" data-path="profile.traits"><label><span data-t="fTraits">性格</span><small data-t="perLine">一行一条</small><span class="badge" data-t="fill">待填写</span></label><textarea name="profile.traits" data-list></textarea></div>
+                    <div class="field" data-path="profile.values"><label><span data-t="fValues">在乎的事</span><small data-t="perLine">一行一条</small><span class="badge" data-t="fill">待填写</span></label><textarea name="profile.values" data-list></textarea></div>
+                    <div class="field" data-path="profile.interests"><label><span data-t="fInterests">兴趣</span><small data-t="perLine">一行一条</small><span class="badge" data-t="fill">待填写</span></label><textarea name="profile.interests" data-list></textarea></div>
+                    <div class="field" data-path="profile.dislikes"><label><span data-t="fDislikes">讨厌的事</span><small data-t="optional">可空</small></label><textarea name="profile.dislikes" data-list></textarea></div>
+                    <div class="field" data-path="profile.goals"><label><span data-t="fGoals">目标</span><small data-t="optional">可空</small></label><textarea name="profile.goals" data-list></textarea></div>
+                    <div class="field" data-path="profile.contentBoundaries"><label><span data-t="fBounds">内容边界</span><small data-t="fBoundsHint">角色不会做的事</small></label><textarea name="profile.contentBoundaries" data-list></textarea></div>
+                </div>
+                <div class="field" data-path="profile.speechStyle"><label><span data-t="fSpeech">说话方式</span><span class="badge" data-t="fill">待填写</span></label><input type="text" name="profile.speechStyle" maxlength="400"></div>
+                <div class="field" data-path="profile.relationshipNotes"><label><span data-t="fRel">怎么对待你</span><small data-t="fRelHint">陌生时怎样，什么让关系变近或变远</small><span class="badge" data-t="fill">待填写</span></label><textarea name="profile.relationshipNotes" maxlength="1000"></textarea></div>
+            </fieldset>
+
+            <fieldset>
+                <legend data-t="secVoice">主动找你时会说</legend>
+                <p class="hint" data-t="voiceHint">角色在你离开一阵后主动发消息的口吻示例，一行一条。模型会照着这个语气写，不会原样照抄。</p>
+                <div class="grid2">
+                    <div class="field" data-path="voice.proactive.idle_check_in"><label><span data-t="vIdle">好久没聊时</span><span class="badge" data-t="fill">待填写</span></label><textarea name="voice.proactive.idle_check_in" data-list></textarea></div>
+                    <div class="field" data-path="voice.proactive.promise_reminder"><label><span data-t="vPromise">提醒约定</span><span class="badge" data-t="fill">待填写</span></label><textarea name="voice.proactive.promise_reminder" data-list></textarea></div>
+                    <div class="field" data-path="voice.proactive.life_update"><label><span data-t="vLife">分享近况</span><span class="badge" data-t="fill">待填写</span></label><textarea name="voice.proactive.life_update" data-list></textarea></div>
+                    <div class="field" data-path="voice.proactive.story_followup"><label><span data-t="vStory">接着上次的话题</span><span class="badge" data-t="fill">待填写</span></label><textarea name="voice.proactive.story_followup" data-list></textarea></div>
+                    <div class="field" data-path="voice.proactive.boundary_pushback"><label><span data-t="vBoundary">拒绝越界</span><span class="badge" data-t="fill">待填写</span></label><textarea name="voice.proactive.boundary_pushback" data-list></textarea></div>
+                </div>
+            </fieldset>
+
+            <p class="hint" id="timelineNote"></p>
+            <details>
+                <summary data-t="raw">查看 character.json</summary>
+                <pre class="json" id="rawJson"></pre>
+            </details>
+        </form>
+    </section>
+</main>
+<datalist id="licenses">
+    <option value="LicenseRef-Proprietary"><option value="CC-BY-4.0"><option value="CC-BY-NC-4.0"><option value="CC0-1.0"><option value="LicenseRef-Unspecified">
+</datalist>
+<div class="savebar" id="saveBar" hidden>
+    <span class="msg" id="saveMsg"></span>
+    <button type="button" class="primary" id="saveBtn" data-t="save">保存角色</button>
+</div>
+
+<script>
+const MESSAGES = {
+    zh: {
+        title: 'CharacterLife · 角色工作室', tagline: '把你的 OC 带进会持续生活的角色里', newTitle: '新建角色',
+        blank: '从空白开始', importCard: '导入 ST 角色卡', importHint: '支持 SillyTavern 导出的 PNG / JSON 角色卡（V1、V2、V3）。',
+        describeLabel: '或者，用几句话描述你的 OC', describePh: '例如：一个在雨城开修表铺的二十多岁女生，话少但守约，养了一只三花猫……',
+        draft: '让模型起草', drafting: '模型正在起草…', noModel: '没有配置模型，这一步用不了；可以先导入卡片或从空白开始。',
+        draftModel: '用 {model} 起草，本地模型可能要半分钟。', mine: '我的角色', none: '还没有角色。', dir: '角色库：{dir}',
+        emptyBig: '选一个角色，或者新建一个。', emptyHint: '保存后，角色会出现在 SillyTavern 的模型下拉框里（重启 npm run st:server）。',
+        notesTitle: '导入说明', secBasic: '基本信息', secPersona: '人设', secVoice: '主动找你时会说',
+        fName: '名字', fId: '角色 id', fIdHint: '小写字母、数字和连字符；保存后不能改', fLang: '语言', fAuthor: '作者',
+        fLicense: '许可证', fLicenseHint: '只自己用可以不管', fAge: '年龄', fSummary: '一句话简介', fSummaryHint: '分享时显示',
+        fOcc: '身份 / 职业', fBg: '背景经历', fTraits: '性格', fValues: '在乎的事', fInterests: '兴趣', fDislikes: '讨厌的事',
+        fGoals: '目标', fBounds: '内容边界', fBoundsHint: '角色不会做的事', fSpeech: '说话方式', fRel: '怎么对待你',
+        fRelHint: '陌生时怎样，什么让关系变近或变远', perLine: '一行一条', optional: '可空', fill: '待填写',
+        voiceHint: '角色在你离开一阵后主动发消息的口吻示例，一行一条。模型会照着这个语气写，不会原样照抄。',
+        vIdle: '好久没聊时', vPromise: '提醒约定', vLife: '分享近况', vStory: '接着上次的话题', vBoundary: '拒绝越界',
+        raw: '查看 character.json', save: '保存角色', saving: '保存中…',
+        statusNew: '未保存的新角色', statusSaved: '版本 {v}', unsaved: '有未保存的修改',
+        placeholdersLeft: '还有 {n} 处是默认内容（黄色标记），可以先保存，之后再改。', problems: '有 {n} 个问题要先改：',
+        savedNew: '已保存。重启 npm run st:server 后，在 SillyTavern 里选模型 {model} 就能聊。',
+        savedBump: '已保存为版本 {v}。重启 npm run st:server 后，已有的对话会迁移到新人设，记忆保留。',
+        savedSame: '已保存（人设没变，版本仍是 {v}）。',
+        timeline: '这个角色有 {n} 个时间线事件，工作室暂时不改它们，会原样保留。',
+        cardRead: '已读取 {spec} 角色卡「{name}」。检查一下黄色标记的地方再保存。',
+        leave: '有未保存的修改，确定离开？', exists: '已经有 id 为「{id}」的角色了，换一个 id。', error: '出错了：{msg}',
+    },
+    en: {
+        title: 'CharacterLife · Character Studio', tagline: 'Bring your OC to life as a character who keeps living', newTitle: 'New character',
+        blank: 'Start blank', importCard: 'Import ST card', importHint: 'SillyTavern PNG or JSON character cards (V1, V2, V3).',
+        describeLabel: 'Or describe your OC in a few sentences', describePh: 'e.g. A twenty-something who runs a watch-repair shop in a rainy city. Quiet, keeps promises, has a calico cat…',
+        draft: 'Draft with the model', drafting: 'The model is drafting…', noModel: 'No model configured, so drafting is off. Import a card or start blank instead.',
+        draftModel: 'Drafts with {model}; a local model may take half a minute.', mine: 'My characters', none: 'No characters yet.', dir: 'Folder: {dir}',
+        emptyBig: 'Pick a character, or make a new one.', emptyHint: 'Saved characters show up in the SillyTavern model dropdown (restart npm run st:server).',
+        notesTitle: 'Import notes', secBasic: 'Basics', secPersona: 'Persona', secVoice: 'When they reach out first',
+        fName: 'Name', fId: 'Character id', fIdHint: 'lowercase letters, digits, hyphens; fixed after saving', fLang: 'Language', fAuthor: 'Author',
+        fLicense: 'Licence', fLicenseHint: 'ignore it if only you use it', fAge: 'Age', fSummary: 'One-line summary', fSummaryHint: 'shown when shared',
+        fOcc: 'Role / occupation', fBg: 'Background', fTraits: 'Personality', fValues: 'What they care about', fInterests: 'Interests', fDislikes: 'Dislikes',
+        fGoals: 'Goals', fBounds: 'Content boundaries', fBoundsHint: 'what the character won\'t do', fSpeech: 'How they talk', fRel: 'How they treat you',
+        fRelHint: 'with a stranger, and what brings them closer or pushes them away', perLine: 'one per line', optional: 'optional', fill: 'fill in',
+        voiceHint: 'Examples of the tone they use when messaging you after a while, one per line. The model writes in this voice; it does not copy them.',
+        vIdle: 'After a quiet spell', vPromise: 'Reminding a promise', vLife: 'Sharing news', vStory: 'Following up', vBoundary: 'Pushing back',
+        raw: 'Show character.json', save: 'Save character', saving: 'Saving…',
+        statusNew: 'New, not saved', statusSaved: 'version {v}', unsaved: 'Unsaved changes',
+        placeholdersLeft: '{n} field(s) still hold defaults (yellow). You can save now and edit later.', problems: 'Fix {n} problem(s) first:',
+        savedNew: 'Saved. Restart npm run st:server, then pick the model {model} in SillyTavern.',
+        savedBump: 'Saved as version {v}. After restarting npm run st:server, existing conversations move to the new persona and keep their memories.',
+        savedSame: 'Saved (the persona did not change, still version {v}).',
+        timeline: 'This character has {n} timeline event(s). The studio keeps them as they are.',
+        cardRead: 'Read the {spec} card "{name}". Check the yellow fields before saving.',
+        leave: 'You have unsaved changes. Leave anyway?', exists: 'A character with id "{id}" already exists; pick another id.', error: 'Something went wrong: {msg}',
+    },
+}
+let lang = localStorage.getItem('cl.studio.lang') || (navigator.language.startsWith('zh') ? 'zh' : 'en')
+const t = (key, params = {}) => (MESSAGES[lang][key] ?? key).replace(/\{(\w+)\}/g, (_, k) => params[k] ?? '')
+
+const $ = (sel) => document.querySelector(sel)
+const form = $('#editor')
+const state = { list: [], draftModel: null, author: 'me', current: null, dirty: false, issues: [] }
+
+function applyLang() {
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+    document.title = t('title')
+    for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t)
+    for (const el of document.querySelectorAll('[data-tp]')) el.placeholder = t(el.dataset.tp)
+    $('#langBtn').textContent = lang === 'zh' ? 'English' : '中文'
+    renderList()
+    renderDraftHint()
+    if (state.current) renderHeader()
+    refreshStatus()
+}
+
+async function api(path, init = {}) {
+    const res = await fetch(path, { ...init, headers: { ...(init.body && !(init.body instanceof Blob) && !(init.body instanceof ArrayBuffer) ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+        const err = new Error(body.error?.message || res.statusText)
+        err.code = body.error?.code
+        err.issues = body.error?.issues || []
+        throw err
+    }
+    return body
+}
+
+/* ---------- list ---------- */
+async function loadState() {
+    const s = await api('/api/state')
+    state.list = s.characters
+    state.draftModel = s.draftModel
+    state.author = s.author
+    $('#charDir').textContent = t('dir', { dir: s.dir })
+    $('#scanErrors').textContent = s.errors.map((e) => e.dir + ': ' + e.message.split('\n')[0]).join('\n')
+    renderList()
+    renderDraftHint()
+}
+
+function initial(name) { return (name || '?').trim().slice(0, 1).toUpperCase() }
+
+function renderList() {
+    const ul = $('#charList')
+    ul.replaceChildren()
+    if (!state.list.length) {
+        const li = document.createElement('li')
+        li.className = 'hint'
+        li.textContent = t('none')
+        ul.append(li)
+        return
+    }
+    for (const c of state.list) {
+        const li = document.createElement('li')
+        if (state.current && !state.current.isNew && state.current.manifest.id === c.id) li.className = 'active'
+        const thumb = document.createElement('div')
+        thumb.className = 'thumb'
+        if (c.portrait) thumb.style.backgroundImage = `url("/api/characters/${encodeURIComponent(c.id)}/portrait")`
+        else thumb.textContent = initial(c.name)
+        const text = document.createElement('div')
+        const name = document.createElement('div')
+        name.textContent = c.name
+        name.style.fontWeight = '600'
+        const meta = document.createElement('div')
+        meta.className = 'meta'
+        meta.textContent = `${c.id} · v${c.version}`
+        text.append(name, meta)
+        li.append(thumb, text)
+        li.addEventListener('click', () => openExisting(c.id))
+        ul.append(li)
+    }
+}
+
+function renderDraftHint() {
+    $('#draftBtn').disabled = !state.draftModel
+    $('#draftHint').textContent = state.draftModel ? t('draftModel', { model: state.draftModel }) : t('noModel')
+}
+
+/* ---------- editor ---------- */
+function confirmLeave() { return !state.dirty || confirm(t('leave')) }
+
+function openDraft(draft, extra = {}) {
+    state.current = {
+        manifest: draft.manifest,
+        isNew: true,
+        placeholders: new Set(draft.placeholders || []),
+        notes: [...(extra.lead ? [extra.lead] : []), ...(draft.notes || [])],
+        pendingId: extra.pendingId || null,
+        portrait: extra.portrait || null,
+        model: 'characterlife/' + draft.manifest.id,
+    }
+    state.dirty = true
+    fillForm()
+}
+
+async function openExisting(id) {
+    if (!confirmLeave()) return
+    try {
+        const { manifest, model } = await api('/api/characters/' + encodeURIComponent(id))
+        const item = state.list.find((c) => c.id === id)
+        state.current = {
+            manifest, isNew: false, placeholders: new Set(), notes: [], pendingId: null, model,
+            portrait: item?.portrait ? `/api/characters/${encodeURIComponent(id)}/portrait?ts=${Date.now()}` : null,
+        }
+        state.dirty = false
+        fillForm()
+    } catch (e) { setMsg(t('error', { msg: e.message }), 'bad') }
+}
+
+function getPath(obj, path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj) }
+function setPath(obj, path, value) {
+    const keys = path.split('.')
+    let o = obj
+    for (const k of keys.slice(0, -1)) o = o[k] ??= {}
+    o[keys.at(-1)] = value
+}
+
+function fillForm() {
+    const m = state.current.manifest
+    for (const el of form.elements) {
+        if (!el.name) continue
+        if (el.name === 'author') el.value = m.authors?.[0]?.name ?? ''
+        else if (el.hasAttribute('data-list')) el.value = (getPath(m, el.name) || []).join('\n')
+        else el.value = getPath(m, el.name) ?? ''
+    }
+    form.elements.id.readOnly = !state.current.isNew
+    const notes = state.current.notes
+    $('#notes').hidden = notes.length === 0
+    $('#notesList').replaceChildren(...notes.map((n) => Object.assign(document.createElement('li'), { textContent: n })))
+    const n = m.timeline?.length || 0
+    $('#timelineNote').textContent = n ? t('timeline', { n }) : ''
+    form.hidden = false
+    $('#emptyState').hidden = true
+    $('#saveBar').hidden = false
+    renderHeader()
+    markPlaceholders()
+    renderList()
+    validateSoon(0)
+}
+
+function renderHeader() {
+    const c = state.current
+    $('#edName').textContent = c.manifest.name || '—'
+    const status = $('#edStatus')
+    status.textContent = c.isNew ? t('statusNew') : t('statusSaved', { v: c.manifest.version })
+    status.className = 'pill' + (c.isNew ? ' new' : '')
+    $('#edModel').textContent = 'characterlife/' + (c.manifest.id || '…')
+    const p = $('#portrait')
+    p.style.backgroundImage = c.portrait ? `url("${c.portrait}")` : ''
+    p.textContent = c.portrait ? '' : initial(c.manifest.name)
+    $('#rawJson').textContent = JSON.stringify(c.manifest, null, 2)
+}
+
+function markPlaceholders() {
+    for (const field of form.querySelectorAll('.field')) {
+        const path = field.dataset.path
+        const isPh = [...state.current.placeholders].some((p) => path === p || path.startsWith(p + '.'))
+        field.classList.toggle('placeholder', isPh)
+    }
+}
+
+function readForm() {
+    const m = structuredClone(state.current.manifest)
+    for (const el of form.elements) {
+        if (!el.name) continue
+        if (el.name === 'author') { m.authors = [{ ...(m.authors?.[0] || {}), name: el.value.trim() }]; continue }
+        if (el.hasAttribute('data-list')) setPath(m, el.name, el.value.split('\n').map((s) => s.trim()).filter(Boolean))
+        else if (el.type === 'number') setPath(m, el.name, el.value === '' ? null : Number(el.value))
+        else setPath(m, el.name, el.value)
+    }
+    m.profile.name = m.name
+    if (!m.profile.shortPersona) delete m.profile.shortPersona
+    return m
+}
+
+form.addEventListener('input', (ev) => {
+    if (!state.current) return
+    const field = ev.target.closest('.field')
+    if (field) {
+        const path = field.dataset.path
+        for (const p of [...state.current.placeholders]) if (path === p || path.startsWith(p + '.')) state.current.placeholders.delete(p)
+        // The five proactive lists share one placeholder entry.
+        if (path.startsWith('voice.proactive.')) state.current.placeholders.delete('voice.proactive')
+        markPlaceholders()
+        if (path.startsWith('voice.proactive.')) field.classList.remove('placeholder')
+    }
+    state.current.manifest = readForm()
+    if (state.current.isNew && ev.target.name === 'id') state.current.model = 'characterlife/' + state.current.manifest.id
+    state.dirty = true
+    renderHeader()
+    validateSoon()
+})
+
+let validateTimer = 0
+function validateSoon(delay = 300) {
+    clearTimeout(validateTimer)
+    validateTimer = setTimeout(async () => {
+        try {
+            const { issues } = await api('/api/validate', { method: 'POST', body: JSON.stringify({ manifest: state.current.manifest }) })
+            state.issues = issues
+        } catch { state.issues = [] }
+        renderIssues()
+        refreshStatus()
+    }, delay)
+}
+
+function fieldFor(path) {
+    const fields = [...form.querySelectorAll('.field')]
+    let best = null
+    for (const f of fields) {
+        const p = f.dataset.path
+        if ((path === p || path.startsWith(p + '.') || path.startsWith(p + '[')) && (!best || p.length > best.dataset.path.length)) best = f
+    }
+    return best
+}
+
+function renderIssues() {
+    for (const el of form.querySelectorAll('.field .err')) el.remove()
+    for (const f of form.querySelectorAll('.field.bad')) f.classList.remove('bad')
+    for (const issue of state.issues) {
+        const f = fieldFor(issue.path === 'profile.name' ? 'name' : issue.path)
+        if (!f) continue
+        f.classList.add('bad')
+        const err = document.createElement('div')
+        err.className = 'err'
+        err.textContent = issue.message
+        f.append(err)
+    }
+}
+
+function setMsg(text, kind = '') {
+    const el = $('#saveMsg')
+    el.textContent = text
+    el.className = 'msg ' + kind
+}
+
+function refreshStatus() {
+    if (!state.current) return
+    if (state.issues.length) {
+        setMsg(t('problems', { n: state.issues.length }) + ' ' + state.issues.slice(0, 3).map((i) => i.path).join(', '), 'bad')
+        $('#saveBtn').disabled = true
+        return
+    }
+    $('#saveBtn').disabled = false
+    const left = state.current.placeholders.size
+    if (left) setMsg(t('placeholdersLeft', { n: left }))
+    else setMsg(state.dirty ? t('unsaved') : '')
+}
+
+$('#saveBtn').addEventListener('click', async () => {
+    const c = state.current
+    if (!c) return
+    $('#saveBtn').disabled = true
+    setMsg(t('saving'))
+    try {
+        const manifest = readForm()
+        const r = await api('/api/characters', { method: 'POST', body: JSON.stringify({ manifest, pendingId: c.pendingId, create: c.isNew }) })
+        const wasNew = c.isNew
+        c.isNew = false
+        c.pendingId = null
+        c.manifest = { ...manifest, version: r.version }
+        c.model = r.model
+        c.placeholders.clear()
+        state.dirty = false
+        await loadState()
+        const item = state.list.find((x) => x.id === r.id)
+        if (item?.portrait) c.portrait = `/api/characters/${encodeURIComponent(r.id)}/portrait?ts=${Date.now()}`
+        form.elements.id.readOnly = true
+        markPlaceholders()
+        renderHeader()
+        renderList()
+        setMsg(wasNew ? t('savedNew', { model: r.model }) : r.bumped ? t('savedBump', { v: r.version }) : t('savedSame', { v: r.version }), 'ok')
+    } catch (e) {
+        if (e.code === 'EXISTS') setMsg(t('exists', { id: form.elements.id.value }), 'bad')
+        else if (e.issues?.length) { state.issues = e.issues; renderIssues(); refreshStatus() }
+        else setMsg(t('error', { msg: e.message }), 'bad')
+    } finally {
+        $('#saveBtn').disabled = state.issues.length > 0
+    }
+})
+
+/* ---------- new characters ---------- */
+$('#blankBtn').addEventListener('click', async () => {
+    if (!confirmLeave()) return
+    try {
+        const draft = await api('/api/blank', { method: 'POST', body: JSON.stringify({ name: '', language: lang === 'zh' ? 'zh-CN' : 'en' }) })
+        openDraft(draft)
+    } catch (e) { setMsg(t('error', { msg: e.message }), 'bad') }
+})
+
+$('#cardFile').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0]
+    ev.target.value = ''
+    if (!file || !confirmLeave()) return
+    try {
+        const r = await api('/api/import-card', { method: 'POST', body: await file.arrayBuffer(), headers: { 'content-type': 'application/octet-stream' } })
+        openDraft(r, { pendingId: r.pendingId, portrait: r.portrait, lead: t('cardRead', { spec: r.card.spec.toUpperCase(), name: r.card.name }) })
+    } catch (e) {
+        $('#saveBar').hidden = false
+        setMsg(t('error', { msg: e.message }), 'bad')
+    }
+})
+
+$('#draftBtn').addEventListener('click', async () => {
+    const description = $('#describe').value.trim()
+    if (!description || !confirmLeave()) return
+    const btn = $('#draftBtn')
+    btn.disabled = true
+    $('#draftHint').innerHTML = '<span class="spinner"></span> ' + t('drafting')
+    try {
+        const draft = await api('/api/draft', { method: 'POST', body: JSON.stringify({ description }) })
+        openDraft(draft)
+    } catch (e) {
+        $('#saveBar').hidden = false
+        setMsg(t('error', { msg: e.message }), 'bad')
+    } finally {
+        renderDraftHint()
+    }
+})
+
+$('#langBtn').addEventListener('click', () => {
+    lang = lang === 'zh' ? 'en' : 'zh'
+    localStorage.setItem('cl.studio.lang', lang)
+    applyLang()
+})
+window.addEventListener('beforeunload', (ev) => { if (state.dirty) { ev.preventDefault(); ev.returnValue = '' } })
+
+loadState().then(() => { applyLang(); document.body.classList.remove('loading') }).catch((e) => {
+    document.body.classList.remove('loading')
+    document.body.textContent = t('error', { msg: e.message })
+})
+</script>
+</body>
+</html>
