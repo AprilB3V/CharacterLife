@@ -366,3 +366,19 @@
 1. 模板迁移只有 `migrateTemplate` 内核接口，没有命令行或控制台入口；包作者改版后目前只能换新数据库。
 2. 未做 SillyTavern 角色卡导入。
 
+
+## 22. dsh 聊天入口与 agent 安装脚本（2026-11-24）
+
+| 决策 | 选择 | 理由 | 代价 |
+|---|---|---|---|
+| 怎么接 dsh | 把 CL 的 OpenAI 兼容接口注册成 dsh 的模型 provider，dsh 只当聊天界面；不在 dsh 里跑人设 + MCP | 人设、记忆、关系必须留在内核；让 dsh 的模型扮演角色就绕过了提案审查（鲸鲸 dsh 版就是这条路） | 这个 profile 没有工具，不能边写代码边聊 |
+| 清掉 dsh 的附加消息 | 在插件包里关掉：替换全部 agent 预设（无工具、无技能、空人设、`includeRuntimeContext: false`），关掉 `session-title-llm`，上下文声明 1M | 实测 dsh 把运行环境快照和技能列表作为 user 消息排在真实消息之后，CL 取最后一条 user，角色会回复技能列表；起标题也会多调一次模型并被记成对话 | 依赖 dsh 0.2 的条目 id，dsh 改名就会失效 |
+| 不改服务端 | 不在 `extractFromChatRequest` 里按内容过滤“像框架注入”的消息 | 按内容猜测会误伤真实用户消息；问题出在客户端配置，就在客户端配置里解决 | 其他 agent 前端要各自做类似配置 |
+| 安装方式 | `dsh --from-default-profile web` 建专用 profile，再 `dsh plugin add link:` 链接仓库里的插件包；`dsh:chat` 每次生成 `--patch` 覆盖端口和模型名 | 走 dsh 自己的安装与校验，不手写用户的 profile 文件；不动用户其他 profile | 仓库移动后要重跑 `dsh:install` |
+| 给 agent 的安装说明 | `docs/AGENT_INSTALL.md` 写成分步脚本，规定 Key 只由用户自己写进 `.env` | 测试者多半会让自己的 agent 来装；Key 不进对话记录 | 说明要随入口变化维护 |
+
+### 22.1 未决
+
+1. `start-server.ts` 启动时总是打印 SillyTavern 配置提示，dsh 用户会看到一段无关说明。
+2. 只在 Windows + dsh 0.2.0-rc.2 上实测；macOS / Linux 未测。
+3. 只有文字，角色不会主动发消息；dsh 是否支持由服务端推送消息未调查。

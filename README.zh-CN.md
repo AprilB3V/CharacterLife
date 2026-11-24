@@ -102,6 +102,10 @@ CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**�
 
 ## 7. 环境与安装
 
+> **在用 AI agent？** 直接对它说“按 docs/AGENT_INSTALL.md 帮我安装 CharacterLife”。
+> [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md) 是写给 dsh、Claude Code、Codex 等 agent 的分步安装脚本，不会让你把 Key 发进对话。
+> dsh 用户装好后用 `npm run dsh:chat` 在 dsh 网页里聊天，见 [`docs/DSH.zh-CN.md`](docs/DSH.zh-CN.md)；想当测试者请看 [`docs/TESTER_GUIDE.zh-CN.md`](docs/TESTER_GUIDE.zh-CN.md)。
+
 - **Node.js ≥ 22.6**（本仓库实测 Node **v26.7.0**）。利用 Node 原生的 TypeScript 类型擦除，
   **不需要编译步骤、也没有任何运行时依赖**。
 - 持久化使用 Node 内置的 `node:sqlite`（实测 SQLite 3.53.4），**不需要安装任何数据库驱动**。
@@ -438,6 +442,8 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/QQ_SETUP.md`](docs/QQ_SETUP.md)：QQ Webhook 接入步骤与排错
 - [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md)：OneBot 11 网关接入（NapCat / Lagrange / SnowLuma）、**启动脚本用法**、群聊策略、隐私与风险
 - [`docs/SILLYTAVERN_SETUP.zh-CN.md`](docs/SILLYTAVERN_SETUP.zh-CN.md)：酒馆配置、记忆边界、已验证/未验证
+- [`docs/DSH.zh-CN.md`](docs/DSH.zh-CN.md)：在 dsh（DeepSeek Harness）网页里和角色聊天
+- [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md)：给 AI agent 的安装脚本；[`docs/TESTER_GUIDE.zh-CN.md`](docs/TESTER_GUIDE.zh-CN.md)：测试者指南与反馈问卷
 - [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
 - [`docs/CHARACTER_PACK.zh-CN.md`](docs/CHARACTER_PACK.zh-CN.md)：角色包格式（纯数据、可分享），`npm run pack:check` 校验，`CHARACTERLIFE_CHARACTER_PACK` 加载
 

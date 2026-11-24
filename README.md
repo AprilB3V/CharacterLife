@@ -69,6 +69,10 @@ This is research-grade software. The main open items:
 
 ## Quick start
 
+> **Using an AI agent?** Tell it: *"Install CharacterLife for me following docs/AGENT_INSTALL.md"*.
+> [docs/AGENT_INSTALL.md](docs/AGENT_INSTALL.md) is a step-by-step script written for agents such as
+> dsh, Claude Code and Codex. It never asks you to paste an API key into the chat.
+
 You need **Node.js 22.6 or newer**. Running `npm install` is optional: it only installs TypeScript for
 `npm run typecheck`.
 
@@ -117,6 +121,7 @@ One character keeps one identity, one relationship and one memory across platfor
 | Platform | Command | Guide |
 |---|---|---|
 | SillyTavern (OpenAI-compatible API) | `npm run st:server` | [docs/SILLYTAVERN_SETUP.md](docs/SILLYTAVERN_SETUP.md) |
+| dsh (DeepSeek Harness) web UI | `npm run dsh:install` once, then `npm run dsh:chat` | [docs/DSH.md](docs/DSH.md) |
 | Telegram (private chats) | `npm run telegram:server` (needs `TELEGRAM_BOT_TOKEN`) | `.env.example` |
 | QQ via OneBot 11 (NapCat, Lagrange…) | `npm run onebot:start` | [docs/ONEBOT_SETUP.md](docs/ONEBOT_SETUP.md) |
 | QQ official bot | `npm run qq:server` | [docs/QQ_SETUP.md](docs/QQ_SETUP.md) |
@@ -161,6 +166,9 @@ Docs marked 中文 are currently in Chinese only. English translations are on th
 
 | Doc | Topic |
 |---|---|
+| [AGENT_INSTALL.md](docs/AGENT_INSTALL.md) | Install script for AI agents (and patient humans) |
+| [DSH.md](docs/DSH.md) | Chatting with a character in the dsh web UI |
+| [TESTER_GUIDE.zh-CN.md](docs/TESTER_GUIDE.zh-CN.md) 中文 | Guide and feedback form for testers |
 | [MODELS.md](docs/MODELS.md) | Connecting models, reasoning settings, measured results |
 | [CHARACTER_PACK.md](docs/CHARACTER_PACK.md) | Character pack format: write and share your own character |
 | [DOCKER.md](docs/DOCKER.md) | Running with Docker and Docker Compose |

@@ -82,3 +82,5 @@
 
 - **2026-11-23 · 酒馆英文文档与 UI 实测 / Claude**：新增英文 `docs/SILLYTAVERN_SETUP.md`（原中文版改名为 `SILLYTAVERN_SETUP.zh-CN.md`），配三张截图（`docs/images/sillytavern/`）。首次在浏览器里做了酒馆 UI 全链路：SillyTavern 1.19.0（临时数据目录与配置，未动本机酒馆数据）+ `st:server` + 本机 Ollama qwen3:8b；API 面板连接显示 Valid，流式聊天正常，新开聊天并删除旧聊天文件后仍准确复述约定。只改文档，未改代码，未跑 `npm test`。未测：酒馆群聊、多用户共用一个 API。
 
+
+- **2026-11-24 · dsh 入口与测试者指南 / Claude**：新增 dsh 聊天入口：`integrations/dsh/`（dsh 插件包，把本机 CL 服务端注册成模型，关掉会把框架文本当 user 消息发给角色的预设、运行环境快照和模型起标题）、`npm run dsh:install` / `npm run dsh:chat`（`examples/dsh/`）。新增 `docs/AGENT_INSTALL.md`（给 AI agent 的分步安装脚本，Key 只由用户写进 `.env`）、`docs/DSH.md` 与中文版、`docs/TESTER_GUIDE.zh-CN.md`（试用清单 + 反馈问卷，问卷前半兼作目标用户筛选）；README、README.zh-CN、AGENTS.md 加入口。DECISIONS 追加 §22。`npm test` 607/607，typecheck 通过。实测（Windows、dsh 0.2.0-rc.2、Ollama qwen3:8b，临时 DSH_HOME）：从干净克隆按 AGENT_INSTALL 走完 demo、smoke、dsh:install（重复运行无副作用）、dsh:chat；每轮只发一次请求、无标题请求；重启后在 dsh 新会话里角色记得之前的事。未测：真正由 dsh agent 读文档自装、macOS/Linux、DeepSeek 等托管模型经 dsh。
