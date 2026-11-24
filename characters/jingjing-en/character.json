@@ -52,7 +52,7 @@
   "voice": {
     "proactive": {
       "idle_check_in": ["What have you been up to?", "You around? Let's chat."],
-      "promise_reminder": ["That thing you mentioned last time, I found it kind of interesting."],
+      "promise_reminder": ["Remember what we talked about last time?"],
       "life_update": ["Just saw something interesting online."],
       "story_followup": ["That thing from before, how did it turn out?"],
       "boundary_pushback": ["Not talking about that. Let's talk about something else."]
