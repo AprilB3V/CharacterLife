@@ -23,7 +23,7 @@ try {
   console.log(`    timeline     ${template.timeline.length} event(s)`)
   console.log(`    portrait     ${files.portrait ? 'yes' : 'no'}; expressions: ${Object.keys(files.expressions).join(', ') || 'none'}`)
   console.log(`    knowledge    ${files.knowledge.length} file(s)`)
-  console.log('Changing the pack later? Bump "version", or existing instances will refuse to restore.')
+  console.log('Changing the pack later? Raise "version" (npm run studio does it); existing conversations move to it at the next start.')
 } catch (error) {
   if (error instanceof CharacterPackError) {
     console.error(error.message)

@@ -1,4 +1,4 @@
-# Only package.json, LICENSE, NOTICE, src/ and examples/ go into the image.
+# Only package.json, LICENSE, NOTICE, src/, examples/ and characters/ go into the image.
 .git
 .github
 .claude

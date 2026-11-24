@@ -14,6 +14,9 @@ ENV NODE_ENV=production \
 COPY package.json LICENSE NOTICE ./
 COPY src ./src
 COPY examples ./examples
+# Example characters; every pack in /app/characters shows up as a model.
+# Mount your own folder there (or set CHARACTERLIFE_CHARACTERS_DIR) to run your characters.
+COPY characters ./characters
 
 # Character state lives in /data; mount a volume there to keep it across containers.
 RUN mkdir -p /data && chown node:node /data

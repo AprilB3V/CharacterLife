@@ -164,3 +164,18 @@ test('a new pack runs in the runtime and a changed pack needs a version bump', a
     rmSync(dbDir, { recursive: true, force: true })
   }
 })
+
+test('non-Chinese packs make the character reply in their language', async () => {
+  const { buildSystemPrompt, CAPABILITY_NOTE } = await import('../src/conversation/context.ts')
+  const english = loadCharacterPack(fileURLToPath(new URL('../characters/jingjing-en/', import.meta.url))).template
+  const chinese = loadCharacterPack(fileURLToPath(new URL('../characters/jingjing/', import.meta.url))).template
+  assert.equal(english.profile.replyLanguage, 'en')
+  assert.equal(chinese.profile.replyLanguage, undefined, 'Chinese stays implicit so existing hashes hold')
+  const decision = { action: 'answer', responseStyle: 'plain', rationale: [] } as never
+  const en = buildSystemPrompt({ profile: english.profile, decision, capabilityNote: CAPABILITY_NOTE })
+  const zh = buildSystemPrompt({ profile: chinese.profile, decision, capabilityNote: CAPABILITY_NOTE })
+  assert.match(en, /reply 一律用 English 写/)
+  assert.match(en, /说出的 English 回复/)
+  assert.doesNotMatch(zh, /一律用/)
+  assert.match(zh, /说出的中文回复/)
+})

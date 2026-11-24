@@ -41,3 +41,9 @@ backups/
 *.p12
 *.pfx
 secrets/
+
+# Characters made in the studio or imported from cards stay local; only the example packs are tracked.
+characters/*
+!characters/shen-zhiwei/
+!characters/jingjing/
+!characters/jingjing-en/

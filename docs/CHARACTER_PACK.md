@@ -16,10 +16,46 @@ my-character/
 └── notes/                optional: knowledge files for apps
 ```
 
-The reference pack is [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json), the test
-character. It builds exactly the same template as the built-in default, which the test suite checks.
+Two packs ship with the repository: [`characters/jingjing`](../characters/jingjing/character.json), the example
+character and a good template to copy (in English: [`characters/jingjing-en`](../characters/jingjing-en/character.json)), and [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json), the test
+character, which builds exactly the same template as the built-in default (the test suite checks).
+
+## Make a character without writing JSON
+
+```bash
+npm run studio
+```
+
+The character studio opens a local page (the terminal prints a one-time link) with three ways to start:
+
+- **Import a SillyTavern card**: PNG or JSON, Character Card V1, V2 or V3. The description becomes
+  the background, the personality line the traits, the scenario the relationship notes, tags the
+  interests, and the card image the portrait. Greetings, example dialogue, the card's prompts and its
+  lorebook have no pack field yet; they are kept word for word in `knowledge/card.md`.
+- **Describe your character in a few sentences** and let the configured model (`CHARACTERLIFE_MODEL_*`,
+  Ollama works) draft every field.
+- **Start blank.**
+
+Whatever the card or the model did not fill keeps a sensible default and is marked yellow. The page
+checks the pack as you type and saves it to `characters/<id>/`. Characters made this way are not
+committed: `.gitignore` keeps everything in `characters/` except the example pack.
 
 ## Use a pack
+
+Every pack in `characters/` (or `CHARACTERLIFE_CHARACTERS_DIR`) runs at once:
+
+```bash
+npm run st:server
+```
+
+SillyTavern lists each one as a model, `characterlife/<id>`; pick a character from the model dropdown.
+Each character has its own database next to `CHARACTERLIFE_DB` (`data/<id>.db`); the built-in Shen Zhiwei
+keeps `CHARACTERLIFE_DB` itself, so existing conversations carry on. The example character
+Jingjing (`characters/jingjing`) answers requests that name no character
+(`CHARACTERLIFE_DEFAULT_CHARACTER=<id>` picks another). A pack that fails to load
+is skipped with its problems listed; the others still start. Restart the server after saving in the studio.
+
+To run a single pack instead, or with the Telegram and OneBot servers (one character each):
 
 ```bash
 npm run pack:check -- path/to/my-character      # validate and list every problem
@@ -28,8 +64,7 @@ export CHARACTERLIFE_CHARACTER_PACK=path/to/my-character
 npm run st:server                                # or telegram:server, onebot:server
 ```
 
-SillyTavern then lists the model `characterlife/<id>`. With Docker, mount the pack and point
-`CHARACTERLIFE_CHARACTER_PACK` at the mount path.
+With Docker, mount the pack and point `CHARACTERLIFE_CHARACTER_PACK` at the mount path.
 
 **Use one database per character.** An instance remembers which template it was created with; a
 database created with another character refuses to load (see [Versions](#versions-and-changes)).
@@ -47,7 +82,7 @@ inline checks in VS Code and other editors.
 | `id` | yes | Stable id: lowercase letters, digits, single hyphens (`shen-zhiwei`). Becomes the model id `characterlife/<id>` and, by default, the template id `char_<id>` |
 | `version` | yes | Integer ≥ 1. Bump it whenever `profile`, `voice` or `timeline` changes |
 | `name` | yes | Display name for listings (may differ from `profile.name`, e.g. a romanized form) |
-| `language` | yes | BCP 47 tag of the language the character speaks: `en`, `zh-CN`, `ja` |
+| `language` | yes | BCP 47 tag of the language the character speaks: `en`, `zh-CN`, `ja`. The character replies in it; changing it changes the character (bump `version`) |
 | `summary` | yes | One or two sentences, up to 280 characters |
 | `license` | yes | SPDX expression for the text: `CC-BY-4.0`, `CC0-1.0`, `Apache-2.0`, or `LicenseRef-Proprietary` |
 | `authors` | yes | `[{ "name": "...", "url": "..." }]`, at least one |
@@ -154,12 +189,21 @@ earlier state of this one, they stop with a message saying which, instead of fai
 
 What to do when you change `profile`, `voice` or `timeline`:
 
-- **While writing the character**, use a throwaway database (`CHARACTERLIFE_DB=data/draft.db`) and
-  delete it after each change.
-- **After people have talked to the character**, bump `version` and either start a new database or
-  migrate the existing relationships. Migration is a kernel API today (`migrateTemplate` in
-  `src/persistence/store.ts`, which needs the `profile:write` capability and records a
-  `template_migrated` event); there is no command for it yet.
+- **In the studio**, just save. It raises `version` by one when the character itself changed.
+- **By hand**, raise `version` yourself.
+
+At the next start, conversations created with an older version of the same character move to the new
+one automatically, keeping their memories and relationships. Each move is recorded as a
+`template_migrated` event and an identity revision, and the server prints it:
+
+```
+角色已更新：Mara mara@2（inst_001 v1 → v2，记忆保留）
+```
+
+Two cases still stop the server: the content changed but `version` did not (a hand edit that forgot the
+bump), and a database made with a newer version than the pack. Set `CHARACTERLIFE_AUTO_MIGRATE=false` to
+refuse migration and get the message instead. Timeline events are seeded when a relationship starts, so
+events added in a later version only reach new relationships.
 
 Changes to `name`, `summary`, `authors`, `license`, `homepage`, `assets` and `knowledge` don't
 affect the hash and need no bump.
@@ -178,6 +222,7 @@ affect the hash and need no bump.
 
 - One character per pack, one language per pack.
 - No per-pack model settings; the server's `CHARACTERLIFE_MODEL_*` apply.
-- SillyTavern character cards are not imported automatically. Their fields map roughly to
-  `background`, `traits` and `speechStyle`, but a card has no boundaries, relationship rules or
-  timeline, so a hand-written pack plays much better.
+- Card import is a starting point, not a conversion: a card has no boundaries, relationship rules,
+  proactive lines or timeline, so review the yellow fields. Greetings, example dialogue and lorebooks
+  are kept in `knowledge/card.md` but not sent to the model yet.
+- The studio does not edit timelines yet; it keeps them as they are.

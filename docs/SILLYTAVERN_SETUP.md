@@ -38,8 +38,10 @@ Open **API Connections** (the plug icon) and set:
 | Custom Endpoint (Base URL) | `http://127.0.0.1:8787/v1` (up to `/v1`; SillyTavern adds `/chat/completions`) |
 | Custom API Key | your `CHARACTERLIFE_API_TOKEN` |
 
-Click **Connect**. The status turns to **Valid** and `characterlife/shen-zhiwei` appears under
-Available Models.
+Click **Connect**. The status turns to **Valid** and Available Models lists one entry per character in
+`characters/`: `characterlife/jingjing` (the example character), `characterlife/jingjing-en`, `characterlife/shen-zhiwei`
+and any you made. The model you pick is the character you talk to. Make your own with `npm run studio`
+([docs/CHARACTER_PACK.md](CHARACTER_PACK.md)).
 
 <p align="center"><img src="images/sillytavern/connect.png" alt="SillyTavern API Connections panel connected to CharacterLife: status Valid, model characterlife/shen-zhiwei" width="420"></p>
 

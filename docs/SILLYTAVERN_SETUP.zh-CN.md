@@ -24,7 +24,7 @@ CharacterLife API 已启动：http://127.0.0.1:8787
 SillyTavern 配置（Chat Completion → Custom (OpenAI-compatible)）：
   Base URL : http://127.0.0.1:8787/v1
   API Key  : 使用已配置的 CHARACTERLIFE_API_TOKEN（不在日志中显示）
-  模型      : characterlife/shen-zhiwei
+  模型      : 从下拉列表里选角色（默认 characterlife/jingjing）
 ```
 
 默认**只监听 127.0.0.1**。要绑非回环地址必须显式：
@@ -45,7 +45,7 @@ $env:CHARACTERLIFE_ALLOW_PUBLIC = "true"
 4. **Custom Endpoint (Base URL)** 填 `http://127.0.0.1:8787/v1`
    （只填到 `/v1`，酒馆会自己拼 `/chat/completions`）；
 5. **Custom API Key** 填你的 `CHARACTERLIFE_API_TOKEN`；
-6. 点 **连接 / 刷新模型**，模型下拉里应出现 `characterlife/shen-zhiwei`；
+6. 点 **连接 / 刷新模型**，模型下拉里会列出 `characters/` 里的每个角色（`characterlife/jingjing`、`characterlife/jingjing-en`、`characterlife/shen-zhiwei` 和你自建的），选哪个就和谁聊；新建角色用 `npm run studio`；
 7. 选它，开始聊天。
 
 > 如果酒馆提示连接失败：先 `curl http://127.0.0.1:8787/v1/models -H "Authorization: Bearer <token>"`，

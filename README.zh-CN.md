@@ -445,7 +445,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/DSH.zh-CN.md`](docs/DSH.zh-CN.md)：在 dsh（DeepSeek Harness）网页里和角色聊天
 - [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md)：给 AI agent 的安装脚本；[`docs/TESTER_GUIDE.zh-CN.md`](docs/TESTER_GUIDE.zh-CN.md)：测试者指南与反馈问卷
 - [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
-- [`docs/CHARACTER_PACK.zh-CN.md`](docs/CHARACTER_PACK.zh-CN.md)：角色包格式（纯数据、可分享），`npm run pack:check` 校验，`CHARACTERLIFE_CHARACTER_PACK` 加载
+- [`docs/CHARACTER_PACK.zh-CN.md`](docs/CHARACTER_PACK.zh-CN.md)：角色包格式（纯数据、可分享）；`npm run studio` 打开角色工作室（导入酒馆角色卡、一句话起草、表单编辑），`characters/` 里的角色都会出现在酒馆的模型下拉框里
 
 **世界交互（CL-World）**
 
