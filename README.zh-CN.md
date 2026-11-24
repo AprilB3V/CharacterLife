@@ -53,7 +53,7 @@ CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**�
 |---|---|---|
 | **陪伴角色** | 跨 QQ / OneBot / SillyTavern 保持同一个人格、关系与长期记忆；会拒绝、会协商、会沉默 | 已实现（`src/runtime`、`src/conversation`、`src/adapters`） |
 | **自主箱庭** | 无人输入时自己生活：饿了去找吃的、想说话了去找人，只能看见自己所在的地方 | 文字箱庭已实现（`npm run sandbox`）；2.5D 观察箱庭 CharacterLife-World（Godot）为独立实验仓库 |
-| **节目与游戏** | 神话神兽在罐中博弈，心声分级、封存、到期揭晓，每局一本可核对的账本 | [Free Roam《罐中斗》](https://github.com/AprilB3V/Free-Roam) 第一期引擎已接入内核 |
+| **节目与游戏** | 神话神兽在罐中博弈，心声分级、封存、到期揭晓，每局一本可核对的账本 | Free Roam《罐中斗》（独立仓库，暂未公开） 第一期引擎已接入内核 |
 
 ## 4. 现在走到哪一步（如实标注）
 
@@ -102,6 +102,10 @@ CharacterLife（CL）把角色从提示词里拿出来，放进一个**内核**�
 
 ## 7. 环境与安装
 
+> **在用 AI agent？** 直接对它说“按 docs/AGENT_INSTALL.md 帮我安装 CharacterLife”。
+> [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md) 是写给 dsh、Claude Code、Codex 等 agent 的分步安装脚本，不会让你把 Key 发进对话。
+> dsh 用户装好后用 `npm run dsh:chat` 在 dsh 网页里聊天，见 [`docs/DSH.zh-CN.md`](docs/DSH.zh-CN.md)；想当测试者请看 [`docs/TESTER_GUIDE.zh-CN.md`](docs/TESTER_GUIDE.zh-CN.md)。
+
 - **Node.js ≥ 22.6**（本仓库实测 Node **v26.7.0**）。利用 Node 原生的 TypeScript 类型擦除，
   **不需要编译步骤、也没有任何运行时依赖**。
 - 持久化使用 Node 内置的 `node:sqlite`（实测 SQLite 3.53.4），**不需要安装任何数据库驱动**。
@@ -112,6 +116,15 @@ git clone <this-repo>
 cd CharacterLife
 npm install          # 仅 devDependencies（可选，仅类型检查需要）
 ```
+
+也可以用 Docker 运行（API 地址 `http://127.0.0.1:8787/v1`，数据存在命名卷里）：
+
+```bash
+cp .env.docker.example .env    # 填 CHARACTERLIFE_API_TOKEN，可选填模型
+docker compose up -d
+```
+
+模型、Telegram、备份和安全说明见 [`docs/DOCKER.md`](docs/DOCKER.md)（英文）。
 
 ## 8. 运行演示（无需任何 API Key）
 
@@ -188,7 +201,8 @@ npm run st:probe
 > **OneBot 真实网关联调未执行**：没有 QQ 小号，网关在本环境不可达；上报服务用真实 HTTP
 > 端口 + 假网关做了端到端测试，协议行为按 OneBot 11 规范实现，见
 > [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md) §8。
-> **酒馆 UI 级联调未执行**：只验证到「酒馆服务端构造请求并解析响应」这一层。
+> **酒馆 UI 级联调已执行**（2026-11-23，SillyTavern 1.19.0 网页界面 + 本机 Ollama），见
+> [`docs/SILLYTAVERN_SETUP.zh-CN.md`](docs/SILLYTAVERN_SETUP.zh-CN.md) §5。
 
 演示会打印：每轮的行为决策与理由、被拒绝的提议、关系数值变化、事件触发顺序、
 待发送的主动消息（默认**不**推送到任何外部平台），以及审计日志尾部。
@@ -408,8 +422,7 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 ├── docs/                        # ARCHITECTURE / MEMORY_ARCHITECTURE / DECISIONS
 │                                # + QQ_CAPABILITIES / QQ_SETUP / ONEBOT_SETUP
 │                                # + SILLYTAVERN_SETUP / ADAPTER_PROTOCOL / openapi.yaml
-├── reports/                     # 测试报告、真实日志、评估、A/B、V02 报告
-└── media/                       # BILIBILI_NOTES / V02_VIDEO_NOTES
+└── reports/                     # 测试报告、真实日志、评估、A/B、V02 报告
 ```
 
 ## 15. 文档索引
@@ -428,7 +441,9 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/QQ_CAPABILITIES.md`](docs/QQ_CAPABILITIES.md)：QQ 官方能力核查（含「未验证」清单）
 - [`docs/QQ_SETUP.md`](docs/QQ_SETUP.md)：QQ Webhook 接入步骤与排错
 - [`docs/ONEBOT_SETUP.md`](docs/ONEBOT_SETUP.md)：OneBot 11 网关接入（NapCat / Lagrange / SnowLuma）、**启动脚本用法**、群聊策略、隐私与风险
-- [`docs/SILLYTAVERN_SETUP.md`](docs/SILLYTAVERN_SETUP.md)：酒馆配置、记忆边界、已验证/未验证
+- [`docs/SILLYTAVERN_SETUP.zh-CN.md`](docs/SILLYTAVERN_SETUP.zh-CN.md)：酒馆配置、记忆边界、已验证/未验证
+- [`docs/DSH.zh-CN.md`](docs/DSH.zh-CN.md)：在 dsh（DeepSeek Harness）网页里和角色聊天
+- [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md)：给 AI agent 的安装脚本；[`docs/TESTER_GUIDE.zh-CN.md`](docs/TESTER_GUIDE.zh-CN.md)：测试者指南与反馈问卷
 - [`docs/openapi.yaml`](docs/openapi.yaml)：对外 HTTP 接口规范
 - [`docs/CHARACTER_PACK.zh-CN.md`](docs/CHARACTER_PACK.zh-CN.md)：角色包格式（纯数据、可分享）；`npm run studio` 打开角色工作室（导入酒馆角色卡、一句话起草、表单编辑），`characters/` 里的角色都会出现在酒馆的模型下拉框里
 
@@ -437,27 +452,32 @@ npm run real:continuity   # 14 次调用：A/B 跨会话记忆实验（脚本内
 - [`docs/WORLD_PROTOCOL.md`](docs/WORLD_PROTOCOL.md)：动作/回执契约、状态机与叙述许可、
   去重规则、独立 world token、Godot 拉取模型、第一阶段限制与第二阶段崩溃一致性要求
 
-**报告与素材**
+**报告**
 
 - [`reports/V02_TEST_REPORT.md`](reports/V02_TEST_REPORT.md)：V0.2 测试结果（Mock / 真实 API / 真实客户端三层分开）
 - [`reports/TEST_REPORT.md`](reports/TEST_REPORT.md)：V0.1/V0.1.1 测试结果与真实失败案例
 - [`reports/DEEPSEEK_EVALUATION.md`](reports/DEEPSEEK_EVALUATION.md)：DeepSeek 工程表现与局限
 - [`reports/REAL_MODEL_RUN.md`](reports/REAL_MODEL_RUN.md)：真实 DeepSeek 调用记录（18 次）
 - [`reports/AB_RESULTS.md`](reports/AB_RESULTS.md)、[`reports/PERSONA_CONTINUITY.md`](reports/PERSONA_CONTINUITY.md)：两组对照实验
-- [`media/BILIBILI_NOTES.md`](media/BILIBILI_NOTES.md)、[`media/V02_VIDEO_NOTES.md`](media/V02_VIDEO_NOTES.md)：视频素材
 
 ## 16. 声明
 
 - 角色与剧情均为虚构；本项目不宣称模型具有意识或真实情感。
 - 不生成、不存储露骨内容；内容边界的处理方式是**拒绝 + 转移话题**。
 - 仓库中不含真实 API Key、真实用户隐私或任何外部平台凭据。
-- **QQ 真实联调未执行**（无凭证）；**OneBot 真实网关联调未执行**（无 QQ 小号，网关不可达）；
-  **酒馆只到服务端转发层**（本环境无浏览器）。这三点在所有相关文档里都有明确标注，
+- **QQ 真实联调未执行**（无凭证）；**OneBot 真实网关联调未执行**（无 QQ 小号，网关不可达）。
+  这两点在所有相关文档里都有明确标注，
   不用模拟结果冒充真实平台测试。
 - OneBot 走的是社区协议，**不是腾讯官方授权方式**，存在账号风险；项目只提供适配器，
   不提供任何风控绕过手段，使用与否、用哪个号，由部署者自行决定并承担后果。
 
-## 17. 许可
+## 17. 参与贡献
+
+欢迎提交模型实测报告、Bug 报告、文档英文翻译和新平台适配器，中英文都可以。
+开发环境和基本规则见 [`CONTRIBUTING.md`](CONTRIBUTING.md)（英文），行为准则见
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)，安全问题请按 [`SECURITY.md`](SECURITY.md) 私下报告。
+
+## 18. 许可
 
 本仓库以 [Apache License 2.0](LICENSE) 发布，版权声明见 [`NOTICE`](NOTICE)。
 再分发（包括打进便携包或安装包）时，需要附带 `LICENSE` 与 `NOTICE`。

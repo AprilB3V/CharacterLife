@@ -13,7 +13,7 @@
 - [docs/MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md)：Template / Instance / Session、记忆来源与状态、上下文预算和恢复。
 - [docs/CONSTITUTION.md](docs/CONSTITUTION.md)：身份指纹、意图与世界事实的分离、可核对账本。
 - [docs/WORLD_PROTOCOL.md](docs/WORLD_PROTOCOL.md)：动作、回执和幂等协议。
-- 外部演示/世界：[CharacterLife-World](https://github.com/AprilB3V/CharacterLife-World)；游戏/实验：[Free-Roam](https://github.com/AprilB3V/Free-Roam)。这两个仓库的具体进度**不能**仅据 CL 文档推断。
+- 外部演示/世界：CharacterLife-World；游戏/实验：Free-Roam（两者暂未公开）。这两个仓库的具体进度**不能**仅据 CL 文档推断。
 
 **当前定位**：CL 是可在持续世界中运行、可检验行为因果与记录可信性的 AI 角色心智内核；不是以全面替代 MaiBot、DSH 或聊天桥接生态为目标。优先复用已有工具，不为“看起来完整”而扩张功能。
 
@@ -80,6 +80,11 @@
 
 - **2026-11-23 · 角色包 v1 / Claude**：新增纯数据角色包格式：`src/character/pack.ts`（校验、加载、生成模板，一次列出全部问题；路径不得越出包目录）、`docs/CHARACTER_PACK.md` 与中文版、`docs/schemas/character-pack.v1.schema.json`（编辑器提示）、`npm run pack:check`、参考包 `characters/shen-zhiwei`（哈希与内置默认模板一致）。`CHARACTERLIFE_CHARACTER_PACK` 接入 st / telegram / onebot 入口，模型名随包变为 `characterlife/<id>`；三个入口启动时检查数据库是否属于该角色，不匹配就退出并说明原因（此前只表现为每条回复 502 NO_REPLY）。DECISIONS 追加 §21。新增 `tests/character-pack.test.ts` 6 项，`npm test` 607/607；typecheck 通过（借用主检出的 tsc 与 @types）。实测：沈知微包接已有数据库继续对话；改内容不升版本、换别的角色时服务拒绝启动并给出提示。未做：模板迁移命令、SillyTavern 角色卡导入、QQ 官方入口未接角色包。
 
-- **2026-11-24 · 用户自建角色 / Claude**：`npm run studio` 角色工作室（`src/studio/`，本机网页，一次性链接 + cookie，校验 Host/Origin）：导入酒馆角色卡（`src/character/st-card.ts`，PNG/JSON，V1–V3）、一句话让模型起草（`src/character/pack-draft.ts`）、表单编辑并实时校验，保存到 `characters/<id>/`（`src/character/pack-library.ts`，人设变了才升版本）。`st:server` 改为运行 `characters/` 里的所有角色，每个角色一个数据库，`src/api/character-router.ts` 按 `model` 分发；三个入口启动时自动把旧版本对话迁移到新版本（`CHARACTERLIFE_AUTO_MIGRATE=false` 可关）。`.gitignore` 忽略用户角色。DECISIONS 追加 §22。新增 `tests/character-library.test.ts`、`character-card.test.ts`、`character-studio.test.ts` 共 10 项，`npm test` 617/617，typecheck 通过。实测：浏览器里用本地 qwen3:8b 一句话起草「林雾」并保存、改人设升到 v3；导入 PNG 卡保存后立绘与 `knowledge/card.md` 落盘；`st:server` 下拉列出 3 个角色，和新角色聊天后改人设重启，日志显示 `inst_001 v2 → v3，记忆保留` 且继续可聊（Mock 模型）。未做：热加载、世界书注入、时间线编辑、Telegram/OneBot 多角色、桌宠换角色；酒馆英文文档（PR #22）合并后需补一句多角色说明；Docker 镜像（PR #19）需挂载 `characters/`。
+- **2026-11-23 · 酒馆英文文档与 UI 实测 / Claude**：新增英文 `docs/SILLYTAVERN_SETUP.md`（原中文版改名为 `SILLYTAVERN_SETUP.zh-CN.md`），配三张截图（`docs/images/sillytavern/`）。首次在浏览器里做了酒馆 UI 全链路：SillyTavern 1.19.0（临时数据目录与配置，未动本机酒馆数据）+ `st:server` + 本机 Ollama qwen3:8b；API 面板连接显示 Valid，流式聊天正常，新开聊天并删除旧聊天文件后仍准确复述约定。只改文档，未改代码，未跑 `npm test`。未测：酒馆群聊、多用户共用一个 API。
+
+
+- **2026-11-24 · dsh 入口与测试者指南 / Claude**：新增 dsh 聊天入口：`integrations/dsh/`（dsh 插件包，把本机 CL 服务端注册成模型，关掉会把框架文本当 user 消息发给角色的预设、运行环境快照和模型起标题）、`npm run dsh:install` / `npm run dsh:chat`（`examples/dsh/`）。新增 `docs/AGENT_INSTALL.md`（给 AI agent 的分步安装脚本，Key 只由用户写进 `.env`）、`docs/DSH.md` 与中文版、`docs/TESTER_GUIDE.zh-CN.md`（试用清单 + 反馈问卷，问卷前半兼作目标用户筛选）；README、README.zh-CN、AGENTS.md 加入口。DECISIONS 追加 §22。`npm test` 607/607，typecheck 通过。实测（Windows、dsh 0.2.0-rc.2、Ollama qwen3:8b，临时 DSH_HOME）：从干净克隆按 AGENT_INSTALL 走完 demo、smoke、dsh:install（重复运行无副作用）、dsh:chat；每轮只发一次请求、无标题请求；重启后在 dsh 新会话里角色记得之前的事。未测：真正由 dsh agent 读文档自装、macOS/Linux、DeepSeek 等托管模型经 dsh。
+
+- **2026-11-24 · 用户自建角色 / Claude**：`npm run studio` 角色工作室（`src/studio/`，本机网页，一次性链接 + cookie，校验 Host/Origin）：导入酒馆角色卡（`src/character/st-card.ts`，PNG/JSON，V1–V3）、一句话让模型起草（`src/character/pack-draft.ts`）、表单编辑并实时校验，保存到 `characters/<id>/`（`src/character/pack-library.ts`，人设变了才升版本）。`st:server` 改为运行 `characters/` 里的所有角色，每个角色一个数据库，`src/api/character-router.ts` 按 `model` 分发；三个入口启动时自动把旧版本对话迁移到新版本（`CHARACTERLIFE_AUTO_MIGRATE=false` 可关）。`.gitignore` 忽略用户角色。DECISIONS 追加 §22。新增 `tests/character-library.test.ts`、`character-card.test.ts`、`character-studio.test.ts` 共 10 项，`npm test` 617/617，typecheck 通过。实测：浏览器里用本地 qwen3:8b 一句话起草「林雾」并保存、改人设升到 v3；导入 PNG 卡保存后立绘与 `knowledge/card.md` 落盘；`st:server` 下拉列出 3 个角色，和新角色聊天后改人设重启，日志显示 `inst_001 v2 → v3，记忆保留` 且继续可聊（Mock 模型）。未做：热加载、世界书注入、时间线编辑、Telegram/OneBot 多角色、桌宠换角色；合并 main 后已补酒馆中英文文档的多角色说明；Docker 镜像内置 `characters/`（实测列出 3 个角色），自建角色挂载到 `/app/characters`。
 
 - **2026-11-24 · 示例角色鲸鲸 / Claude**：新增 `characters/jingjing`（以视频搭档仓库 QQ 闲聊版 v3 为底稿，去掉当铺、店主和游戏边界，主导者已审阅修订）和英文版 `characters/jingjing-en`；未指定角色时默认鲸鲸。发现英文角色会用中文回复（内核输出协议写死「中文回复」），新增 `CharacterProfile.replyLanguage`：非中文角色包自动填入，系统提示词按它要求回复语言；中文包哈希不变。DECISIONS §22 加两行。新增 1 项测试，`npm test` 618/618，typecheck 通过。实测（本地 qwen3:8b）：中英文鲸鲸各 5 轮，语言、边界、口吻符合人设。

@@ -12,10 +12,8 @@ npm run pack:check -- characters/jingjing
 npm run st:server        # SillyTavern model: characterlife/jingjing
 ```
 
-This is the minimal chat version of the Jingjing who co-hosts game streams in
-[CharacterLife-VideoCohost](https://github.com/AprilB3V/CharacterLife-VideoCohost) and lives on the desktop in
-[character-companion](https://github.com/AprilB3V/character-companion); the game setting, shop owner and
-streaming rules are left out. Use it as a template for your own character, or open it in `npm run studio`.
+This is the minimal chat version of the Jingjing who co-hosts game streams and lives on the desktop in
+the author's other projects; the game setting, shop owner and streaming rules are left out. Use it as a template for your own character, or open it in `npm run studio`.
 
 Content: everyday conversation; no mature content (see `profile.contentBoundaries`).
 License: Apache-2.0, same as the repository.

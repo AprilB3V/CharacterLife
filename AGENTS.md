@@ -3,6 +3,10 @@
 适用于 Claude Code、Codex、GPT 以及任何读取本仓库的 agent。这里只写**去哪读、按什么规矩做**；
 项目状态、设计和决策都在下面链接的文件里，不在本文件重复。
 
+> **用户只是想安装、使用或试玩 CharacterLife（不是开发）？** 不要读下面的开发规则，
+> 照 [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md) 一步步做。
+> *If the user only wants to install or try CharacterLife, follow [`docs/AGENT_INSTALL.md`](docs/AGENT_INSTALL.md) instead.*
+
 ## 开工顺序
 
 1. **[`TodoList.md`](TodoList.md)**：任务状态与交接的单一入口。先看「当前焦点」、§1 任务表和 §4 最近的交接记录。
@@ -27,9 +31,9 @@
 ## 仓库边界
 
 - CL 只放通用内核、runtime 和通用示例。以下内容在各自仓库，进度不能从 CL 文档推断：
-  - 2.5D 观察箱庭：[CharacterLife-World](https://github.com/AprilB3V/CharacterLife-World)
-  - 《罐中斗》游戏与规则：[Free-Roam](https://github.com/AprilB3V/Free-Roam)
-  - 鲸鲸视频搭档、角色模板与剧本：CharacterLife-VideoCohost
+  - 2.5D 观察箱庭：CharacterLife-World（暂未公开）
+  - 《罐中斗》游戏与规则：Free-Roam（暂未公开）
+  - 鲸鲸视频搭档、角色模板与剧本：CharacterLife-VideoCohost（暂未公开）
 - 扩展只通过 `package.json` `exports` 的公开入口（`.`、`/kernel`、`/runtime`、`/api`、`/console`）依赖 CL。不要在外部项目引用 `src/**` 的内部路径。
 - 外部世界规则、胜负和表现层不得反向写进内核。
 

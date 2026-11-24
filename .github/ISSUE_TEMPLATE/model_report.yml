@@ -1,0 +1,47 @@
+name: Model report
+description: Share M0 baseline results for a model or endpoint.
+title: "Model report: <model> on <endpoint>"
+labels: ["model report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `node experiments/real-model/baseline.ts --provider env --sessions 1 --max-calls 120` (see docs/MODELS.md) and paste the summary. Never include your API key.
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint
+      description: Provider or local server, with version if local.
+      placeholder: Ollama 0.40.16 / OpenRouter / DeepSeek API
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: qwen3:8b
+    validations:
+      required: true
+  - type: input
+    id: reasoning
+    attributes:
+      label: Reasoning mode
+      description: Value of CHARACTERLIFE_REASONING, or "default".
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware (local models)
+      placeholder: RTX 3070 Ti Laptop 8 GB
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Valid replies, invalid first attempts (F1–F6), latency p50/p95, memory probes. The run summary is enough.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything odd, e.g. timeouts, markup in replies, settings you had to change.

@@ -29,6 +29,8 @@
     "st:server": "node examples/sillytavern/start-server.ts",
     "pack:check": "node examples/check-pack.ts",
     "studio": "node examples/studio/start.ts",
+    "dsh:install": "node examples/dsh/install.ts",
+    "dsh:chat": "node examples/dsh/chat.ts",
     "world:dev": "node examples/world/dev-server.ts",
     "world:demo": "node examples/world/world-demo.ts",
     "world:intent": "node examples/world/intent-demo.ts",
