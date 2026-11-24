@@ -124,7 +124,8 @@ npm run studio      # opens the character studio; saves to characters/<id>/
 npm run st:server   # every character in characters/ shows up in SillyTavern's model dropdown
 ```
 
-Each character is a pack: a folder with a `character.json` holding persona, boundaries, the lines she
+The example character is Jingjing ([`characters/jingjing`](characters/jingjing/); English version
+[`characters/jingjing-en`](characters/jingjing-en/)), an AI whale who chats around the internet. Each character is a pack: a folder with a `character.json` holding persona, boundaries, the lines she
 opens conversations with, and events in her own life. Packs are plain data, so sharing one is safe.
 Edit a character after people have talked to her and existing conversations move to the new version,
 memories intact.

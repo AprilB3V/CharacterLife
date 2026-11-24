@@ -14,6 +14,7 @@ import { MockProvider } from '../src/conversation/providers/mock.ts'
 import { loadCharacterLibrary, prepareCharacterDatabase } from '../examples/character-module.ts'
 
 const SHEN_DIR = fileURLToPath(new URL('../characters/shen-zhiwei/', import.meta.url))
+const JINGJING_DIR = fileURLToPath(new URL('../characters/jingjing/', import.meta.url))
 const TOKEN = 'library-test-token'
 
 function shen(): CharacterPackManifest {
@@ -95,6 +96,11 @@ test('the library runs every pack, keeps the built-in database and skips broken 
     assert.equal(library.skipped.length, 1)
     assert.match(library.skipped[0]!, /broken/)
     assert.equal(scanCharacterPacks(join(root, 'missing')).packs.length, 0)
+
+    cpSync(JINGJING_DIR, join(root, 'jingjing'), { recursive: true })
+    const withExample = await loadCharacterLibrary(db, { CHARACTERLIFE_CHARACTERS_DIR: root })
+    assert.equal(withExample.entries[0]!.modelId, 'characterlife/jingjing', 'the example character is the default')
+    assert.equal(withExample.entries.find((e) => e.modelId === 'characterlife/shen-zhiwei')!.dbPath, db)
 
     const chosen = await loadCharacterLibrary(db, { CHARACTERLIFE_CHARACTERS_DIR: root, CHARACTERLIFE_DEFAULT_CHARACTER: 'test-courier' })
     assert.equal(chosen.entries[0]!.modelId, 'characterlife/test-courier')

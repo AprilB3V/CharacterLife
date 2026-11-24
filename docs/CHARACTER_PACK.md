@@ -16,8 +16,9 @@ my-character/
 └── notes/                optional: knowledge files for apps
 ```
 
-The reference pack is [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json), the test
-character. It builds exactly the same template as the built-in default, which the test suite checks.
+Two packs ship with the repository: [`characters/jingjing`](../characters/jingjing/character.json), the example
+character and a good template to copy (in English: [`characters/jingjing-en`](../characters/jingjing-en/character.json)), and [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json), the test
+character, which builds exactly the same template as the built-in default (the test suite checks).
 
 ## Make a character without writing JSON
 
@@ -49,8 +50,9 @@ npm run st:server
 
 SillyTavern lists each one as a model, `characterlife/<id>`; pick a character from the model dropdown.
 Each character has its own database next to `CHARACTERLIFE_DB` (`data/<id>.db`); the built-in Shen Zhiwei
-keeps `CHARACTERLIFE_DB` itself, so existing conversations carry on. The first character answers requests
-that name no character (`CHARACTERLIFE_DEFAULT_CHARACTER=<id>` picks another). A pack that fails to load
+keeps `CHARACTERLIFE_DB` itself, so existing conversations carry on. The example character
+Jingjing (`characters/jingjing`) answers requests that name no character
+(`CHARACTERLIFE_DEFAULT_CHARACTER=<id>` picks another). A pack that fails to load
 is skipped with its problems listed; the others still start. Restart the server after saving in the studio.
 
 To run a single pack instead, or with the Telegram and OneBot servers (one character each):
@@ -80,7 +82,7 @@ inline checks in VS Code and other editors.
 | `id` | yes | Stable id: lowercase letters, digits, single hyphens (`shen-zhiwei`). Becomes the model id `characterlife/<id>` and, by default, the template id `char_<id>` |
 | `version` | yes | Integer ≥ 1. Bump it whenever `profile`, `voice` or `timeline` changes |
 | `name` | yes | Display name for listings (may differ from `profile.name`, e.g. a romanized form) |
-| `language` | yes | BCP 47 tag of the language the character speaks: `en`, `zh-CN`, `ja` |
+| `language` | yes | BCP 47 tag of the language the character speaks: `en`, `zh-CN`, `ja`. The character replies in it; changing it changes the character (bump `version`) |
 | `summary` | yes | One or two sentences, up to 280 characters |
 | `license` | yes | SPDX expression for the text: `CC-BY-4.0`, `CC0-1.0`, `Apache-2.0`, or `LicenseRef-Proprietary` |
 | `authors` | yes | `[{ "name": "...", "url": "..." }]`, at least one |

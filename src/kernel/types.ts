@@ -97,6 +97,11 @@ export interface CharacterProfile {
    * 说话风格与内容边界始终照常注入；完整设定仍用于状态管理、自主循环与审计。
    */
   shortPersona?: string
+  /**
+   * Language of the character's replies as a BCP 47 tag (e.g. "en"). Unset means Chinese, the
+   * kernel's default; character packs set it for every other language. Part of the content hash.
+   */
+  replyLanguage?: string
   version: number
   /** 标记字段：运行时用 Object.freeze 深冻结，防止意外改写 */
   immutable: true

@@ -121,13 +121,16 @@ export interface CharacterLibrary {
 }
 
 const BUILTIN_MODEL = 'characterlife/shen-zhiwei'
+/** Pack id of the example character shipped in characters/ (answers when a request names no character). */
+export const EXAMPLE_CHARACTER = 'jingjing'
 
 /**
  * Every character this server should run:
  * - CHARACTERLIFE_CHARACTER_PACK / _MODULE: just that one, in CHARACTERLIFE_DB (as before);
  * - otherwise every pack in CHARACTERLIFE_CHARACTERS_DIR (default ./characters), each in its own
  *   database next to CHARACTERLIFE_DB (`<id>.db`). The built-in character keeps CHARACTERLIFE_DB so
- *   existing conversations carry on. CHARACTERLIFE_DEFAULT_CHARACTER (a pack id) picks the default.
+ *   existing conversations carry on. The default character is CHARACTERLIFE_DEFAULT_CHARACTER (a pack
+ *   id), else the example character Jingjing, else Shen Zhiwei, else the first pack.
  */
 export async function loadCharacterLibrary(dbPath: string, env: NodeJS.ProcessEnv = process.env): Promise<CharacterLibrary> {
   if (env.CHARACTERLIFE_CHARACTER_PACK?.trim() || env.CHARACTERLIFE_CHARACTER_MODULE?.trim()) {
@@ -153,9 +156,11 @@ export async function loadCharacterLibrary(dbPath: string, env: NodeJS.ProcessEn
     entries.push({ template, modelId: BUILTIN_MODEL, label: template.profile.name, dbPath })
   }
   const wanted = env.CHARACTERLIFE_DEFAULT_CHARACTER?.trim()
+  // Default: the one asked for, else the example character, else the built-in test character.
+  const byId = (id: string) => entries.findIndex((e) => e.modelId === `characterlife/${id}`)
   const first = wanted
-    ? entries.findIndex((e) => e.modelId === `characterlife/${wanted}`)
-    : entries.findIndex((e) => e.template.id === builtinId)
+    ? byId(wanted)
+    : [byId(EXAMPLE_CHARACTER), entries.findIndex((e) => e.template.id === builtinId)].find((i) => i >= 0) ?? -1
   if (wanted && first < 0) throw new Error(`CHARACTERLIFE_DEFAULT_CHARACTER=${wanted} is not in ${dir}`)
   if (first > 0) entries.unshift(...entries.splice(first, 1))
   return { entries, skipped: scan.errors.map((e) => `${e.dir}: ${e.message}`), dir }

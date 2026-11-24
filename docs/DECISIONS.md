@@ -378,6 +378,8 @@
 | 一句话起草 | 用服务端已配置的模型（`CHARACTERLIFE_MODEL_*`）出 JSON，逐字段合并到默认模板；缺失或格式不对的字段保留默认值并标黄 | 结果总能通过校验，用户只需改，不会拿到一个存不了的半成品 | 质量取决于模型；没配模型时按钮禁用 |
 | 多角色 | `characters/` 下每个包一个运行时、一个数据库（`<id>.db`，沈知微沿用 `CHARACTERLIFE_DB`），前面加 `createCharacterRouter` 按 OpenAI `model` 分发；原生接口用 `X-CharacterLife-Model` 头或 `?model=`；未知的 `characterlife/*` 返回 404，其他模型名走默认角色 | 每个角色的锁、限流、实例完全隔离，`createApiServer` 内部不用改；酒馆用户只需在模型下拉框里选 | 每多一个角色多一个 SQLite 连接；Telegram / 控制台只跟默认角色 |
 | 改人设 | 保存时人设（profile / voice / timeline）有变化才 `version + 1`；服务启动时把同一角色旧版本的实例用主人权限迁移到新版本（`upgradeInstancesToTemplate`，记 `template_migrated` 与身份修订），可用 `CHARACTERLIFE_AUTO_MIGRATE=false` 关闭 | 编辑角色的人就是主人，改文件即授权；记忆与关系保留，比换库友好 | 同版本不同内容、数据库版本比包新，仍拒绝启动；新版本时间线事件只对新关系生效 |
+| 示例角色 | 仓库自带鲸鲸（`characters/jingjing`，最小人设，去掉游戏设定）和英文版 `jingjing-en`；未指定角色时默认鲸鲸，沈知微保留为测试角色 | 公开项目的门面角色用最成熟的鲸鲸；最小人设便于照着改 | 鲸鲸立绘不进内核仓库（形象来自社区项目，留在桌宠仓库） |
+| 回复语言 | `CharacterProfile.replyLanguage`（可选，BCP 47）；角色包 `language` 不是中文时自动填入，系统提示词加一条「reply 一律用该语言」，输出协议里的「中文回复」随之替换 | 内核提示词全是中文，英文角色此前会用中文回复（实测）；中文保持隐式，已有角色的哈希不变 | 提示词其余部分仍是中文；思考、记忆标题等内部文本不翻译 |
 | 用户角色不入库 | `.gitignore` 忽略 `characters/*`，只保留示例包 | 用户的 OC 是私人内容，不该随手提交 | 想分享角色要显式复制出去 |
 
 ### 22.1 未决

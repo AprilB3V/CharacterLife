@@ -13,7 +13,7 @@ my-character/
 └── notes/                可选：给应用用的知识文件
 ```
 
-参考包是 [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json)（测试角色沈知微）。它生成的模板与内置默认模板完全一致，测试会检查这一点。
+仓库自带两个角色包：示例角色 [`characters/jingjing`](../characters/jingjing/character.json)（鲸鲸，适合照着改；英文版 [`characters/jingjing-en`](../characters/jingjing-en/character.json)）和测试角色 [`characters/shen-zhiwei`](../characters/shen-zhiwei/character.json)（沈知微，生成的模板与内置默认模板完全一致，测试会检查这一点）。
 
 ## 不写 JSON 也能做角色
 
@@ -37,7 +37,7 @@ npm run studio
 npm run st:server
 ```
 
-SillyTavern 的模型下拉框里每个角色是一个模型 `characterlife/<id>`，选哪个就和谁聊。每个角色单独一个数据库，放在 `CHARACTERLIFE_DB` 旁边（`data/<id>.db`）；内置的沈知微沿用 `CHARACTERLIFE_DB`，已有对话不受影响。请求里没指定角色时由第一个角色回答（`CHARACTERLIFE_DEFAULT_CHARACTER=<id>` 可以换）。加载失败的包会被跳过并列出问题，其他角色照常启动。在工作室里保存后要重启服务。
+SillyTavern 的模型下拉框里每个角色是一个模型 `characterlife/<id>`，选哪个就和谁聊。每个角色单独一个数据库，放在 `CHARACTERLIFE_DB` 旁边（`data/<id>.db`）；内置的沈知微沿用 `CHARACTERLIFE_DB`，已有对话不受影响。请求里没指定角色时由示例角色鲸鲸（`characters/jingjing`）回答（`CHARACTERLIFE_DEFAULT_CHARACTER=<id>` 可以换）。加载失败的包会被跳过并列出问题，其他角色照常启动。在工作室里保存后要重启服务。
 
 只跑一个角色包，或者用 Telegram、OneBot 服务（各一个角色）时：
 
@@ -56,7 +56,7 @@ npm run st:server                                # telegram:server、onebot:serv
 
 字段说明、长度上限和示例以英文版 [CHARACTER_PACK.md](CHARACTER_PACK.md) 为准；在文件里加上 `"$schema": "<相对路径>/docs/schemas/character-pack.v1.schema.json"`，VS Code 等编辑器会给出补全和提示。
 
-- **清单**：`packFormat`（固定为 1）、`id`（小写字母、数字、单个连字符）、`version`、`name`、`language`（BCP 47，如 `zh-CN`）、`summary`、`license`（SPDX，如 `CC-BY-4.0`）、`authors`。
+- **清单**：`packFormat`（固定为 1）、`id`（小写字母、数字、单个连字符）、`version`、`name`、`language`（BCP 47，如 `zh-CN`；角色用这种语言回复，改它等于改人设，要升版本）、`summary`、`license`（SPDX，如 `CC-BY-4.0`）、`authors`。
 - **`profile`**：不可变的核心人设。运行时冻结，任何聊天或模型输出都改不了它。`id`、`version`、`immutable` 由清单自动填入，不要自己写。
 - **`voice.proactive`**：五种主动开口场景（`idle_check_in`、`promise_reminder`、`life_update`、`story_followup`、`boundary_pushback`）各至少一句。
 - **`timeline`**：她自己生活里的事件，`at` 写成 `0`、`9h`、`2d`、`1d2h30m`。

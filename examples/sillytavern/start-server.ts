@@ -11,7 +11,7 @@
  *   TELEGRAM_BOT_TOKEN        可选；设置后在同一进程里启动 Telegram 机器人（见 .env.example）
  *   CHARACTERLIFE_CHARACTERS_DIR 角色库目录（默认 ./characters）：里面每个角色包都是 ST 下拉框里的一个模型，
  *                             各用一个数据库（与 CHARACTERLIFE_DB 同目录的 <id>.db；沈知微沿用 CHARACTERLIFE_DB）
- *   CHARACTERLIFE_DEFAULT_CHARACTER 可选；默认角色的包 id（不填时沈知微，没有则第一个）
+ *   CHARACTERLIFE_DEFAULT_CHARACTER 可选；默认角色的包 id（不填时示例角色鲸鲸，其次沈知微，再其次第一个）
  *   CHARACTERLIFE_CHARACTER_PACK 可选；只跑这一个角色包（docs/CHARACTER_PACK.md），用 CHARACTERLIFE_DB
  *   CHARACTERLIFE_AUTO_MIGRATE  默认开；设为 false 时，改过版本的角色不自动迁移旧对话
  *

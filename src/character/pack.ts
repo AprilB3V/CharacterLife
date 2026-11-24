@@ -296,6 +296,8 @@ export function validatePackManifest(raw: unknown): PackIssue[] {
 export function templateFromManifest(manifest: CharacterPackManifest): CharacterTemplate {
   const profile: CharacterProfile = {
     ...structuredClone(manifest.profile),
+    // Chinese is the kernel default and stays implicit, so Chinese packs hash as before.
+    ...(manifest.language.toLowerCase().startsWith('zh') ? {} : { replyLanguage: manifest.language }),
     id: packTemplateId(manifest),
     version: manifest.version,
     immutable: true,
