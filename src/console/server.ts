@@ -18,12 +18,19 @@ import type { RuntimeBundle } from '../api/runtime-factory.ts'
 import type { InstanceRuntime } from '../runtime/instance-runtime.ts'
 import { OWNER_ACTOR } from '../kernel/policy/policy.ts'
 import type { ConsolePlugin, ConsoleValue } from './plugin.ts'
+import { createModelApi } from './model-api.ts'
+import type { ModelApiOptions } from './model-api.ts'
+import { DevEditError, applyDevEdit } from './dev-api.ts'
+import { ModelSettingsError } from '../conversation/providers/model-settings.ts'
+import { ProviderError } from '../conversation/providers/deepseek.ts'
 
 export interface ConsoleServerOptions {
     runtime: RuntimeBundle
     token: string
     host?: string
     port?: number
+    /** Environment and network seams for the model page (tests). */
+    model?: ModelApiOptions
 }
 
 export interface ConsoleServerHandle {
@@ -40,6 +47,8 @@ const ASSETS: Record<string, { file: string; type: string }> = {
     '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
     '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
     '/trace.js': { file: 'trace.js', type: 'text/javascript; charset=utf-8' },
+    '/model.js': { file: 'model.js', type: 'text/javascript; charset=utf-8' },
+    '/dev.js': { file: 'dev.js', type: 'text/javascript; charset=utf-8' },
     '/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
 }
 
@@ -129,6 +138,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): ConsoleServerHa
     const expected = digest(opts.token)
     const { runtime } = opts
     const manager = runtime.runtimeManager
+    const models = createModelApi(runtime, opts.model)
 
     const authorized = (req: IncomingMessage) => {
         const header = req.headers.authorization ?? ''
@@ -162,6 +172,22 @@ export function createConsoleServer(opts: ConsoleServerOptions): ConsoleServerHa
         if (parts[0] !== 'api') throw new ConsoleError(404, 'NOT_FOUND', '未知路径')
         if (!authorized(req)) throw new ConsoleError(401, 'UNAUTHORIZED', '需要后台令牌')
         if (method === 'GET' && parts.length === 2 && parts[1] === 'config') return send(res, 200, runtime.describe())
+        if (parts[1] === 'model') {
+            if (method === 'GET' && parts.length === 2) return send(res, 200, models.describe())
+            if (method === 'POST' && parts.length === 3) {
+                const body = await readBody(req)
+                if (parts[2] === 'test') return send(res, 200, await models.test(body))
+                if (parts[2] === 'models') return send(res, 200, await models.models(body))
+                if (parts[2] === 'profiles') return send(res, 200, models.save(body))
+                if (parts[2] === 'use-env') return send(res, 200, models.use(null))
+            }
+            if (method === 'POST' && parts.length === 5 && parts[2] === 'profiles') {
+                await readBody(req)
+                if (parts[4] === 'activate') return send(res, 200, models.use(parts[3]!))
+                if (parts[4] === 'delete') return send(res, 200, models.remove(parts[3]!))
+            }
+            throw new ConsoleError(404, 'NOT_FOUND', '未知路径')
+        }
         if (method === 'GET' && parts.length === 2 && parts[1] === 'instances') {
             return send(res, 200, runtime.persistence.listInstances().map(item => ({ id: item.id, label: item.label,
                 templateId: item.templateId, templateVersion: item.templateVersion, worldId: item.worldId, lastActiveAtWall: item.lastActiveAtWall })))
@@ -187,6 +213,10 @@ export function createConsoleServer(opts: ConsoleServerOptions): ConsoleServerHa
             const status = url.searchParams.get('status')
             if (status && !['pending', 'approved', 'rejected'].includes(status)) throw new ConsoleError(400, 'INVALID_QUERY', 'status 无效')
             return send(res, 200, instance(id).memoryReview.list((status ?? undefined) as 'pending' | undefined).reverse())
+        }
+        if (method === 'POST' && parts[3] === 'dev' && parts.length === 5) {
+            const body = await readBody(req)
+            return send(res, 200, await mutate(id, rt => applyDevEdit(rt, parts[4]!, body)))
         }
         if (method === 'POST' && parts[3] === 'memory-review' && parts.length === 5) {
             const body = await readBody(req)
@@ -246,6 +276,9 @@ export function createConsoleServer(opts: ConsoleServerOptions): ConsoleServerHa
                 await route(req, res, url)
             } catch (error) {
                 if (error instanceof ConsoleError) send(res, error.status, { error: { code: error.code, message: error.message } })
+                else if (error instanceof ModelSettingsError) send(res, error.code === 'NOT_FOUND' ? 404 : 400, { error: { code: error.code, message: error.message } })
+                else if (error instanceof DevEditError) send(res, 400, { error: { code: 'DEV_EDIT_REJECTED', message: error.message } })
+                else if (error instanceof ProviderError) send(res, 502, { error: { code: 'MODEL_CALL_FAILED', message: error.message } })
                 else if (error instanceof SyntaxError) send(res, 400, { error: { code: 'INVALID_JSON', message: 'JSON 格式错误' } })
                 else send(res, 409, { error: { code: 'ACTION_FAILED', message: (error as Error).message } })
             }

@@ -8,25 +8,43 @@
 </head>
 <body>
     <header class="topbar">
-        <div class="brand">CharacterLife <span>后台</span> <span class="brand-code">Codename: Frankenstein</span></div>
-        <form id="login" class="login" autocomplete="off">
-            <input id="token" type="password" placeholder="后台令牌" aria-label="后台令牌">
-            <button type="submit">连接</button>
-        </form>
-        <label class="field">实例
-            <select id="instance" aria-label="实例"></select>
-        </label>
-        <label class="toggle"><input id="auto" type="checkbox" checked> 自动刷新</label>
-        <button id="refresh" type="button" class="ghost">刷新</button>
-        <span id="status" class="status" role="status"></span>
+        <div class="wrap topbar-inner">
+            <div class="brand">CharacterLife <span>后台</span></div>
+            <div id="controls" class="controls" hidden>
+                <label class="field">实例
+                    <select id="instance" aria-label="实例"></select>
+                </label>
+                <label class="toggle" title="每 3 秒刷新当前页"><input id="auto" type="checkbox" checked> 自动刷新</label>
+                <label class="toggle dev-toggle" title="在六语义、记忆页显示增改删按钮；所有修改都写审计"><input id="dev" type="checkbox"> 开发者模式</label>
+                <button id="refresh" type="button" class="ghost">刷新</button>
+                <button id="logout" type="button" class="ghost" title="清除本标签页保存的令牌">退出</button>
+            </div>
+            <span id="status" class="status" role="status"></span>
+        </div>
     </header>
-    <nav id="tabs" class="tabs" role="tablist"></nav>
-    <main id="view" class="view">
-        <p class="hint">输入后台令牌后连接。令牌只保存在本标签页的会话存储中。</p>
+    <nav id="tabs" class="tabs" role="tablist" hidden></nav>
+    <div id="banner" class="wrap banner" hidden></div>
+    <main id="view" class="view wrap">
+        <section class="welcome">
+            <h1>CharacterLife <mark>主人后台</mark></h1>
+            <p class="tagline">看见角色在想什么：六语义、思维链、记忆审核、模型接入，一处管理。</p>
+            <form id="login" class="login" autocomplete="off">
+                <input id="token" type="password" placeholder="粘贴后台令牌" aria-label="后台令牌">
+                <button type="submit" class="primary">连接</button>
+            </form>
+            <ol class="steps">
+                <li><b>拿令牌</b>运行 <code>scripts\cl.cmd console 配置档名</code>，令牌会自动复制；或使用环境变量 <code>CHARACTERLIFE_CONSOLE_TOKEN</code> 的值。</li>
+                <li><b>接模型</b>连接后打开「模型接入」，选一家厂商（DeepSeek、Gemini、OpenAI、本机 Ollama…），填 Key、测试、启用，无需重启。</li>
+                <li><b>去聊天</b>在 QQ / Telegram / 酒馆里和角色说话，回到「思维链」看她每一轮怎么想。</li>
+            </ol>
+            <p class="fineprint">令牌只保存在本标签页的会话存储中；后台只监听本机地址。</p>
+        </section>
     </main>
+    <footer class="wrap footer">CharacterLife · 有记忆、有处境、有动机的角色内核</footer>
     <dialog id="dialog">
         <form id="dialog-form" method="dialog">
             <h3 id="dialog-title"></h3>
+            <p id="dialog-note" class="muted" hidden></p>
             <div id="dialog-fields"></div>
             <menu>
                 <button value="cancel" type="button" id="dialog-cancel" class="ghost">取消</button>
@@ -35,6 +53,8 @@
         </form>
     </dialog>
     <script src="/trace.js"></script>
+    <script src="/model.js"></script>
+    <script src="/dev.js"></script>
     <script src="/app.js"></script>
 </body>
 </html>

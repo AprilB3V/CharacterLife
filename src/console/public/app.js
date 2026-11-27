@@ -61,13 +61,31 @@ function card(title, children, note) {
     return el('section', { class: 'card' }, [el('h2', {}, [title, note ? el('small', { text: note }) : null]), ...[].concat(children)])
 }
 
-async function askFields(title, fields) {
+/** Field: { key, label, type?: 'number'|'textarea', options?: [value|[value,label]], value?, required?, placeholder?, hint?, step?, min?, max? } */
+function fieldControl(field) {
+    const value = field.value === undefined || field.value === null ? '' : String(field.value)
+    if (field.options) {
+        return el('select', { name: field.key }, field.options.map(option => {
+            const [optionValue, label] = Array.isArray(option) ? option : [option, option]
+            return el('option', { value: optionValue, text: label, selected: String(optionValue) === value })
+        }))
+    }
+    const node = field.type === 'textarea'
+        ? el('textarea', { name: field.key, rows: 4, required: field.required, placeholder: field.placeholder ?? '' })
+        : el('input', { name: field.key, type: field.type === 'number' ? 'number' : 'text', step: field.step, min: field.min, max: field.max,
+            required: field.required, placeholder: field.placeholder ?? '' })
+    node.value = value
+    return node
+}
+
+async function askFields(title, fields, note) {
     if (!fields?.length) return {}
     const dialog = $('dialog')
     $('dialog-title').textContent = title
+    $('dialog-note').textContent = note ?? ''
+    $('dialog-note').hidden = !note
     const box = $('dialog-fields')
-    box.replaceChildren(...fields.map(field => el('label', {}, [field.label,
-        el('input', { name: field.key, type: field.type === 'number' ? 'number' : 'text', required: field.required, placeholder: field.placeholder ?? '' })])))
+    box.replaceChildren(...fields.map(field => el('label', {}, [field.label, fieldControl(field), field.hint ? el('small', { text: field.hint }) : null])))
     dialog.showModal()
     return new Promise(resolve => {
         const done = ok => {
@@ -118,18 +136,21 @@ async function viewSemantics() {
             el('h3', { text: '身心状况' }), kv([
                 ['心情', condition.mood?.label ? `${condition.mood.label}（效价 ${condition.mood.valence ?? '—'}，唤醒 ${condition.mood.arousal ?? '—'}）` : condition.mood],
                 ['活动', condition.activity?.label ?? condition.activity], ['精力', condition.energy]]),
+            ...devSelf(condition),
         ], '只读人格'),
         card('Situation · 我在什么处境', [
             kv([['截至', s.situation.asOfSim], ['位置', s.situation.location], ['在场', (s.situation.present ?? []).join('、')], ['可做', (s.situation.affords ?? []).join('、')]]),
             el('h3', { text: `事实（${facts.length}）` }),
-            table([{ key: 0, label: '键' }, { key: 1, label: '值' }], facts, '没有事实'),
+            table([{ key: 0, label: '键' }, { key: 1, label: '值' }, ...devColumn(devFactActions)], facts, '没有事实'),
             el('h3', { text: `库存（${inventory.length}）` }),
-            table([{ key: 0, label: '物品' }, { key: 1, label: '数量' }], inventory, '没有库存'),
+            table([{ key: 0, label: '物品' }, { key: 1, label: '数量' }, ...devColumn(devInventoryActions)], inventory, '没有库存'),
+            ...devSituation(),
         ], '由观察推出的信念'),
         card('Observation · 我刚感知到什么', [
             table([{ key: 'seq', label: '#' }, { key: 'source', label: '来源' }, { key: 'text', label: '内容' },
                 { label: '事件', value: row => row.events.length ? chips(row.events) : '—' }, { key: 'ref', label: '出处', class: 'mono' }],
             s.observation.latest, '还没有观察'),
+            ...devObservation(),
         ], `最近 ${s.observation.latest.length} 条 / 共 ${s.observation.lastSeq}`),
         card('Memory · 我记得什么', [
             kv([['有效记忆', s.memory.total], ['已软删除', s.memory.deleted], ['待审（模型提出）', s.review.memories]]),
@@ -140,20 +161,22 @@ async function viewSemantics() {
             el('h3', { text: '关系认识' }),
             kv([['阶段', s.memory.relationship.stage], ['熟悉度', s.memory.relationship.familiarity], ['信任', s.memory.relationship.trust],
                 ['里程碑', (s.memory.relationship.milestones ?? []).length]]),
+            ...devMemory(s.memory.relationship),
         ], '带出处的记忆'),
         card('Motivation · 我想要什么', [
             el('h3', { text: '目标' }),
-            table([{ key: 'id', label: 'ID', class: 'mono' }, { key: 'title', label: '目标' }, { key: 'kind', label: '类型' }, { key: 'progress', label: '进度' }], s.motivation.goals, '没有目标'),
+            table([{ key: 'id', label: 'ID', class: 'mono' }, { key: 'title', label: '目标' }, { key: 'kind', label: '类型' }, { key: 'progress', label: '进度' }, ...devColumn(devGoalActions)], s.motivation.goals, '没有目标'),
+            devGoalBar(),
             el('h3', { text: '内驱力' }),
-            table([{ key: 'label', label: '驱力' }, { key: 'value', label: '值' }, { key: 'threshold', label: '阈值' }, { key: 'urgent', label: '紧迫' }], s.motivation.drives, '未配置内驱力'),
+            table([{ key: 'label', label: '驱力' }, { key: 'value', label: '值' }, { key: 'threshold', label: '阈值' }, { key: 'urgent', label: '紧迫' }, ...devColumn(devDriveActions)], s.motivation.drives, '未配置内驱力'),
             el('h3', { text: '承诺账本' }),
-            table([{ key: 'id', label: 'ID', class: 'mono' }, { key: 'text', label: '内容' }, { key: 'status', label: '状态' }, { key: 'evidenceRef', label: '证据', class: 'mono' }],
+            table([{ key: 'id', label: 'ID', class: 'mono' }, { key: 'text', label: '内容' }, { key: 'status', label: '状态' }, { key: 'evidenceRef', label: '证据', class: 'mono' }, ...devColumn(devCommitmentActions)],
                 s.motivation.commitments, '没有承诺'),
         ]),
         card('Affordance · 我能做什么', Object.entries(s.affordance).flatMap(([channel, options]) => [
             el('h3', { text: `${channel}（${options.length}）` }),
             options.length ? chips(options.map(option => `${option.label} ${option.verb}${option.target ? `(${option.target})` : ''}`)) : el('div', { class: 'empty', text: '空：此渠道没有可做的动作' }),
-        ]), '各扩展登记的可行动作'),
+        ]).concat(devNote('可行动作由各扩展在代码里登记，这里只读。') ?? []), '各扩展登记的可行动作'),
     ])
 }
 
@@ -173,15 +196,16 @@ async function viewMemories() {
     }
     return card('记忆', [
         el('form', { class: 'toolbar', onsubmit: event => { event.preventDefault(); apply() } }, [search, tagInput,
-            el('label', { class: 'toggle' }, [showDeleted, '含已删除']), el('button', { type: 'submit', text: '筛选' })]),
+            el('label', { class: 'toggle' }, [showDeleted, '含已删除']), el('button', { type: 'submit', text: '筛选' }),
+            devOn() ? devButton('新增记忆', 'memory-add', { fields: MEMORY_FIELDS() }) : null]),
         table([
             { key: 'id', label: 'ID', class: 'mono' }, { key: 'title', label: '标题' }, { key: 'content', label: '内容' },
             { label: '类型/状态', value: row => chips([row.kind, row.status, row.origin, row.trust], row.status === 'fact' ? 'good' : 'warn') },
             { label: '标签', value: row => chips(row.tags) }, { key: 'sourceRef', label: '出处', class: 'mono' },
             { label: '', class: 'actions', value: row => row.deletedAtSim !== null ? el('span', { class: 'muted', text: '已删除' })
-                : el('button', { class: 'small danger', text: '软删除', onclick: () => {
+                : el('span', {}, [...(devOn() ? devMemoryActions(row) : []), el('button', { class: 'small danger', text: '软删除', onclick: () => {
                     if (confirm(`软删除记忆「${row.title}」？审计会保留记录。`)) run('删除记忆', () => post(`/instances/${state.instance}/memories/${encodeURIComponent(row.id)}/delete`, {}))
-                } }) },
+                } })]) },
         ], memories, '没有符合条件的记忆'),
     ], `${memories.length} 条`)
 }
@@ -268,14 +292,14 @@ async function buildTabs() {
         onclick: () => { location.hash = id } }, [label, el('span', { class: 'badge', hidden: !badge, text: String(badge ?? 0) })])
     $('tabs').replaceChildren(
         tab('semantics', '六语义'), tab('traces', '思维链'), tab('memories', '记忆'), tab('review', '待审记忆', semantics.review.memories), tab('audit', '审计'),
-        tab('config', '配置'),
+        tab('model', '模型接入', modelState.info?.current?.mock ? '!' : 0), tab('config', '配置'),
         ...plugins.flatMap(plugin => [el('span', { class: 'group', text: `插件 · ${plugin.title}` }),
             ...plugin.panels.map(panel => tab(`plugin:${plugin.id}:${panel.id}`, panel.title, panel.badge))]),
     )
 }
 
 async function render(force = true) {
-    if (!state.instance) return
+    if (!state.instance) { if (state.tab === 'model') await rerenderModel(); return }
     state.tab = (location.hash.slice(1).split('?')[0]) || 'semantics'
     for (const node of document.querySelectorAll('[data-tab]')) node.setAttribute('aria-selected', String(node.dataset.tab === state.tab))
     try {
@@ -285,6 +309,11 @@ async function render(force = true) {
         else if (state.tab === 'review') view = await viewReview()
         else if (state.tab === 'audit') view = await viewAudit()
         else if (state.tab === 'traces') view = await viewTraces(force)
+        else if (state.tab === 'model') {
+            // Holds a form being filled in: never rebuild it on auto-refresh.
+            if (!force) return await refreshBadges()
+            view = await viewModel()
+        }
         else if (state.tab === 'config') {
             // Static per process: auto-refresh would only reset scroll and folds.
             if (!force) return await refreshBadges()
@@ -306,9 +335,18 @@ async function render(force = true) {
 async function connect() {
     try {
         const instances = await api('/instances')
+        document.body.classList.add('connected')
+        $('controls').hidden = false
+        $('tabs').hidden = false
+        await refreshModelBanner()
         const select = $('instance')
         select.replaceChildren(...instances.map(item => el('option', { value: item.id, text: `${item.label || item.id} · ${item.templateId}@${item.templateVersion} · ${item.worldId}` })))
-        if (!instances.length) { show('没有实例', 'error'); return }
+        if (!instances.length) {
+            show('还没有实例', 'error')
+            state.tab = 'model'
+            $('view').replaceChildren(el('p', { class: 'hint', text: '还没有角色实例：先在任一聊天入口和角色说一句话，实例就会创建。模型可以先在下方配置。' }), await viewModel())
+            return
+        }
         state.instance = instances.some(item => item.id === state.instance) ? state.instance : instances[0].id
         select.value = state.instance
         await buildTabs()
@@ -329,6 +367,20 @@ function schedule() {
     }, 3000)
 }
 
+$('dev').checked = devState.on
+document.body.classList.toggle('dev-mode', devState.on)
+$('dev').addEventListener('change', () => {
+    devState.on = $('dev').checked
+    localStorage.setItem('cl-console-dev', devState.on ? '1' : '0')
+    document.body.classList.toggle('dev-mode', devState.on)
+    show(devState.on ? '开发者模式：可增改删语义，所有修改写审计' : '已关闭开发者模式', devState.on ? 'ok' : '')
+    render()
+})
+$('logout').addEventListener('click', () => {
+    sessionStorage.removeItem('cl-console-token')
+    location.hash = ''
+    location.reload()
+})
 $('token').value = state.token
 $('login').addEventListener('submit', event => {
     event.preventDefault()

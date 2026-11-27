@@ -32,6 +32,16 @@ function fold(key, summary, body, openByDefault = false) {
     return node
 }
 
+/** A card that starts collapsed; the summary line stays visible. Open state survives refresh. */
+function foldCard(key, title, children, note) {
+    const node = el('details', { class: 'card fold-card', open: traceState.open.has(key) }, [
+        el('summary', {}, el('h2', {}, [title, note ? el('small', { text: note }) : null])),
+        el('div', { class: 'fold-body' }, [].concat(children)),
+    ])
+    node.addEventListener('toggle', () => { if (node.open) traceState.open.add(key); else traceState.open.delete(key) })
+    return node
+}
+
 // Runaway whitespace is invisible in a <pre>; count it so a stalled envelope is obvious.
 const trailingBlank = raw => {
     const n = (raw ?? '').length - (raw ?? '').trimEnd().length
@@ -231,25 +241,26 @@ async function viewConfig() {
     const profile = c.template.profile ?? {}
     const obj = value => pre(json(value))
     const entries = record => kv(Object.entries(record ?? {}).map(([key, value]) => [key, typeof value === 'object' && value !== null ? json(value) : value]))
-    return el('div', { class: 'grid' }, [
-        card('模型', [
+    return el('div', { class: 'grid fold-grid' }, [
+        foldCard('cfg:card:model', '模型', [
             kv([['对话模型', `${c.provider.name} / ${c.provider.model}`], ['说明', c.provider.note]]),
+            el('p', {}, el('a', { href: '#model', text: '在「模型接入」切换厂商或模型 →' })),
             entries(c.provider.settings),
             el('h3', { text: '思考环模型' }),
             c.thinking ? kv([['模型', `${c.thinking.name} / ${c.thinking.model}`], ['生成上限', c.thinking.maxTokens || '不限'], ...Object.entries(c.thinking.settings).map(([key, value]) => [key, fmt(value)])])
                 : el('div', { class: 'empty', text: '未配置（思考环关闭）' }),
-        ], '密钥不在此显示'),
-        card('对话参数', entries(c.conversation), 'ConversationConfig'),
-        card('上下文预算', entries(c.contextBudget), 'ContextBudget'),
-        card('运行时', [
+        ], c.provider.model),
+        foldCard('cfg:card:conversation', '对话参数', entries(c.conversation), `${Object.keys(c.conversation ?? {}).length} 项`),
+        foldCard('cfg:card:budget', '上下文预算', entries(c.contextBudget), `${Object.keys(c.contextBudget ?? {}).length} 项`),
+        foldCard('cfg:card:runtime', '运行时', [
             kv([['数据库', c.dbPath], ['默认世界', c.worldId], ['记忆审核', c.memoryReview], ['绑定码目标平台', c.bindTargetPlatform],
                 ['思维链缓存', c.traces ? `每实例 ${c.traces.perInstance} 条` : '关闭'], ['世界交互', c.world ? '开启' : '关闭']]),
             c.world ? fold('cfg:world', '世界配置', obj(c.world)) : null,
             el('h3', { text: '开口意愿' }), entries(c.willingness),
             el('h3', { text: '思考环' }), entries(c.thinkingLoop),
-        ]),
-        card('平台适配器', Object.entries(c.adapters).flatMap(([name, value]) => [el('h3', { text: name }), entries(value)])),
-        card('角色模板', [
+        ], `记忆审核 ${c.memoryReview} · 世界交互${c.world ? '开' : '关'}`),
+        foldCard('cfg:card:adapters', '平台适配器', Object.entries(c.adapters).flatMap(([name, value]) => [el('h3', { text: name }), entries(value)]), Object.keys(c.adapters).join(' · ')),
+        foldCard('cfg:card:template', '角色模板', [
             kv([['名字', profile.name], ['模板', `${c.template.id} v${c.template.version}`], ['内容哈希', c.template.contentHash], ['时间线事件', c.template.timelineEvents],
                 ['身份', profile.occupation], ['说话风格', profile.speechStyle], ['关系备注', profile.relationshipNotes]]),
             el('h3', { text: '性格' }), chips(profile.traits ?? []),
@@ -258,8 +269,8 @@ async function viewConfig() {
             profile.shortPersona ? el('div', {}, [el('h3', { text: '短人设' }), pre(profile.shortPersona)]) : null,
             fold('cfg:profile', '完整 profile', obj(profile)),
             fold('cfg:voice', '语音包 voice', obj(c.template.voice)),
-        ]),
-        card('当前实例', [
+        ], `${profile.name ?? c.template.id} v${c.template.version}`),
+        foldCard('cfg:card:instance', '当前实例', [
             kv([['实例', inst.record.id], ['标签', inst.record.label], ['模板', `${inst.record.templateId} v${inst.record.templateVersion}`],
                 ['世界', inst.record.worldId], ['最后活跃', inst.record.lastActiveAtWall], ['记忆冲突', inst.conflicts],
                 ['模板校验', inst.report.templateCheck?.status ?? fmt(inst.report.templateCheck)], ['快照来源', inst.report.snapshot?.source],
@@ -268,6 +279,6 @@ async function viewConfig() {
             table([{ key: 0, label: '身份' }, { key: 1, label: '会话', class: 'mono' }, { label: '内存历史轮', value: row => inst.historyTurns[row[0]] ?? 0 }],
                 Object.entries(inst.sessions), '本进程内还没有会话'),
             fold('cfg:rehydration', '恢复报告', obj(inst.report)),
-        ]),
+        ], inst.record.label || inst.record.id),
     ])
 }
