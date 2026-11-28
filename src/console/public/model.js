@@ -30,22 +30,24 @@ function draftBody(draft) {
     }
 }
 
-async function refreshModelBanner(info) {
+function updateModelBanner(info) {
     const banner = $('banner')
-    try {
-        info ??= await api('/model')
-        modelState.info = info
-        const mock = info.current.mock
+    modelState.info = info
+    const mock = info.current.mock
+    if (banner.hidden === Boolean(mock)) {
         banner.hidden = !mock
         banner.replaceChildren(...(mock ? [
             el('b', { text: '还没接入模型' }), ' 角色现在用的是模拟回复。',
             el('a', { href: '#model', text: '去「模型接入」选一家厂商 →' }),
         ] : []))
-        const badge = document.querySelector('[data-tab="model"] .badge')
-        if (badge) { badge.textContent = '!'; badge.hidden = !mock }
-    } catch {
-        banner.hidden = true
     }
+    const badge = document.querySelector('[data-tab="model"] .badge')
+    if (badge) { badge.textContent = '!'; badge.hidden = !mock }
+}
+
+async function refreshModelBanner() {
+    try { updateModelBanner(await api('/model')) }
+    catch { $('banner').hidden = true }
 }
 
 function presetGrid(info, draft) {
@@ -157,9 +159,7 @@ function profileList(info) {
     return rows.length ? el('ul', { class: 'profiles' }, rows) : el('div', { class: 'empty', text: '还没有保存的连接。在右侧选一家厂商开始。' })
 }
 
-async function viewModel() {
-    const info = await api('/model')
-    await refreshModelBanner(info)
+function viewModel(info) {
     if (!modelState.draft) {
         const active = info.profiles.find(item => item.id === info.active)
         modelState.draft = active ? draftFromProfile(active) : blankDraft(info.presets[0])
@@ -182,9 +182,6 @@ async function viewModel() {
 
 async function rerenderModel() {
     if (state.tab !== 'model' || $('dialog').open) return
-    const scroll = window.scrollY
-    try {
-        $('view').replaceChildren(await viewModel())
-        window.scrollTo(0, scroll)
-    } catch (error) { show(error.message, 'error') }
+    if (state.instance && location.hash.slice(1).split('?')[0] !== 'model') return
+    await render()
 }

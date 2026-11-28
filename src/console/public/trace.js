@@ -1,8 +1,8 @@
 // Thought-trace and configuration views for the owner console.
-// Loaded before app.js; uses its helpers (el, card, kv, table, chips, fmt, api) at call time.
+// Loaded before app.js; uses its helpers (el, card, kv, table, chips, fmt) at call time.
 'use strict'
 
-const traceState = { selected: null, signature: '', open: new Set(), kind: '' }
+const traceState = { selected: null, open: new Set(), kind: '' }
 
 const FALLBACK_LABELS = {
     broken_envelope: '结构化输出损坏 → 兜底句',
@@ -201,12 +201,7 @@ function thinkDetail(trace) {
 
 /* ---------------------------------------------------------------- views */
 
-async function viewTraces(force) {
-    const query = new URLSearchParams({ limit: '100', ...(traceState.kind ? { kind: traceState.kind } : {}) })
-    const data = await api(`/instances/${state.instance}/traces?${query}`)
-    const signature = `${state.instance}|${traceState.kind}|${traceState.selected}|${data.traces.map(t => t.id).join(',')}`
-    if (!force && signature === traceState.signature) return null
-    traceState.signature = signature
+function viewTraces(data) {
     if (!data.enabled) return card('思维链', el('p', { class: 'hint', text: '本进程关闭了思维链记录（tracesPerInstance = 0）。' }))
     const traces = data.traces
     if (!traces.some(t => t.id === traceState.selected)) traceState.selected = traces[0]?.id ?? null
@@ -236,8 +231,7 @@ async function viewTraces(force) {
     ])
 }
 
-async function viewConfig() {
-    const [c, inst] = await Promise.all([api('/config'), api(`/instances/${state.instance}/instance-config`)])
+function viewConfig([c, inst]) {
     const profile = c.template.profile ?? {}
     const obj = value => pre(json(value))
     const entries = record => kv(Object.entries(record ?? {}).map(([key, value]) => [key, typeof value === 'object' && value !== null ? json(value) : value]))

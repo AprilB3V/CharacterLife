@@ -4,6 +4,14 @@
 
 const state = { token: sessionStorage.getItem('cl-console-token') ?? '', instance: null, tab: 'semantics', plugins: [], timer: null, busy: false }
 const $ = id => document.getElementById(id)
+const scrollPositions = new Map()
+const SCROLL_AREAS = '.scroll, .trace-list, pre.block'
+const LIVE_CONTAINERS = '.grid, section.card, .scroll, table, tbody, .trace-layout, .trace-side, .trace-detail, .trace-list, [data-live-layout]'
+const INTERACTIVE = 'a, button, input, select, textarea, form, details, summary, .trace-item'
+let displayedPage = null
+let pendingRender = null
+
+history.scrollRestoration = 'manual'
 
 function el(tag, props = {}, children = []) {
     const node = document.createElement(tag)
@@ -50,7 +58,8 @@ function table(columns, rows, empty = '暂无') {
         const value = typeof column.value === 'function' ? column.value(row) : row[column.key]
         return value instanceof Node ? el('td', { class: column.class }, value) : el('td', { class: column.class, text: fmt(value) })
     })))
-    return el('div', { class: 'scroll' }, el('table', {}, [el('thead', {}, head), el('tbody', {}, body)]))
+    return el('div', { class: 'scroll', 'data-scroll-key': JSON.stringify(columns.map(column => column.label)) },
+        el('table', {}, [el('thead', {}, head), el('tbody', {}, body)]))
 }
 
 function chips(values, kind = '') {
@@ -122,8 +131,7 @@ async function run(label, fn) {
 
 /* ---------------------------------------------------------------- views */
 
-async function viewSemantics() {
-    const s = await api(`/instances/${state.instance}/semantics`)
+function viewSemantics(s) {
     const persona = s.self.persona
     const condition = s.self.condition
     const facts = Object.entries(s.situation.facts ?? {}).filter(([key]) => !key.startsWith('itemName.'))
@@ -180,13 +188,7 @@ async function viewSemantics() {
     ])
 }
 
-async function viewMemories() {
-    const params = new URLSearchParams(location.hash.split('?')[1] ?? '')
-    const q = params.get('q') ?? ''
-    const tag = params.get('tag') ?? ''
-    const deleted = params.get('deleted') === '1'
-    const query = new URLSearchParams({ limit: '500', ...(q ? { q } : {}), ...(tag ? { tag } : {}), ...(deleted ? { deleted: '1' } : {}) })
-    const memories = await api(`/instances/${state.instance}/memories?${query}`)
+function viewMemories(memories, { q, tag, deleted }) {
     const search = el('input', { placeholder: '关键词', value: q })
     const tagInput = el('input', { placeholder: '标签，如 grudge', value: tag })
     const showDeleted = el('input', { type: 'checkbox', checked: deleted })
@@ -210,8 +212,7 @@ async function viewMemories() {
     ], `${memories.length} 条`)
 }
 
-async function viewReview() {
-    const items = await api(`/instances/${state.instance}/memory-review`)
+function viewReview(items) {
     const pending = items.filter(item => item.status === 'pending')
     const decided = items.filter(item => item.status !== 'pending').slice(0, 50)
     const decide = (item, decision) => run(decision === 'approve' ? '批准记忆' : '拒绝记忆',
@@ -221,7 +222,7 @@ async function viewReview() {
         { label: '类型/状态', value: row => chips([row.input.kind, row.input.status, row.input.origin]) },
         { label: '标签', value: row => chips(row.input.tags ?? []) }, { key: 'sourceRef', label: '对话轮', class: 'mono' },
     ]
-    return el('div', {}, [
+    return el('div', { 'data-live-layout': true }, [
         card('待审记忆', [
             el('p', { class: 'muted', text: '模型每轮提出的记忆先停在这里。批准后按原聊天身份与 Policy 写入；运行时依据世界事件写入的记忆不经过此队列。' }),
             table([...columns, { label: '', class: 'actions', value: row => el('span', {}, [
@@ -232,8 +233,7 @@ async function viewReview() {
     ])
 }
 
-async function viewAudit() {
-    const events = await api(`/instances/${state.instance}/audit?limit=300`)
+function viewAudit(events) {
     return card('审计（本进程内）', table([{ key: 'seq', label: '#' }, { key: 'atWall', label: '时间', class: 'mono' }, { key: 'type', label: '类型' },
         { key: 'actor', label: '执行者' }, { key: 'summary', label: '摘要' }, { label: '数据', class: 'mono', value: row => JSON.stringify(row.data).slice(0, 300) }], events, '暂无审计'),
     '重启后从头计数；持久记录见账本与事件日志')
@@ -260,8 +260,7 @@ function renderSection(pluginId, section) {
     return [head, table(columns, section.rows, section.empty)]
 }
 
-async function viewPlugin(pluginId, panelId) {
-    const plugin = await api(`/instances/${state.instance}/plugins/${encodeURIComponent(pluginId)}`)
+function viewPlugin(plugin, panelId) {
     updatePluginBadges(plugin)
     const panel = plugin.panels.find(item => item.id === panelId) ?? plugin.panels[0]
     if (!panel) return el('p', { class: 'hint', text: '插件没有面板' })
@@ -277,16 +276,25 @@ function updatePluginBadges(plugin) {
     }
 }
 
-async function refreshBadges() {
-    const semantics = await api(`/instances/${state.instance}/semantics?observations=1`)
+async function refreshBadges(instance, isCurrent) {
+    if (!instance) return
+    const base = `/instances/${instance}`
+    const semantics = await api(`${base}/semantics?observations=1`)
+    if (!isCurrent()) return
     const review = document.querySelector('[data-tab="review"] .badge')
     if (review) { review.textContent = String(semantics.review.memories); review.hidden = !semantics.review.memories }
-    for (const plugin of semantics.plugins) updatePluginBadges(await api(`/instances/${state.instance}/plugins/${encodeURIComponent(plugin.id)}`))
+    const plugins = await Promise.all(semantics.plugins.map(plugin => api(`${base}/plugins/${encodeURIComponent(plugin.id)}`)))
+    if (!isCurrent()) return
+    for (const plugin of plugins) updatePluginBadges(plugin)
 }
 
 async function buildTabs() {
-    const semantics = await api(`/instances/${state.instance}/semantics?observations=1`)
-    const plugins = await Promise.all(semantics.plugins.map(plugin => api(`/instances/${state.instance}/plugins/${encodeURIComponent(plugin.id)}`)))
+    const instance = state.instance
+    const base = `/instances/${instance}`
+    const semantics = await api(`${base}/semantics?observations=1`)
+    if (instance !== state.instance) return
+    const plugins = await Promise.all(semantics.plugins.map(plugin => api(`${base}/plugins/${encodeURIComponent(plugin.id)}`)))
+    if (instance !== state.instance) return
     state.plugins = plugins
     const tab = (id, label, badge) => el('button', { role: 'tab', 'data-tab': id, 'aria-selected': String(state.tab === id),
         onclick: () => { location.hash = id } }, [label, el('span', { class: 'badge', hidden: !badge, text: String(badge ?? 0) })])
@@ -298,37 +306,132 @@ async function buildTabs() {
     )
 }
 
+function viewRequest(instance, tab, params) {
+    const base = `/instances/${instance}`
+    if (tab === 'semantics') return [api(`${base}/semantics`), viewSemantics]
+    if (tab === 'review') return [api(`${base}/memory-review`), viewReview]
+    if (tab === 'audit') return [api(`${base}/audit?limit=300`), viewAudit]
+    if (tab === 'memories') {
+        const filters = { q: params.get('q') ?? '', tag: params.get('tag') ?? '', deleted: params.get('deleted') === '1' }
+        const query = new URLSearchParams({ limit: '500' })
+        for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value === true ? '1' : value)
+        return [api(`${base}/memories?${query}`), memories => viewMemories(memories, filters)]
+    }
+    if (tab === 'traces') {
+        const query = new URLSearchParams({ limit: '100', ...(traceState.kind ? { kind: traceState.kind } : {}) })
+        return [api(`${base}/traces?${query}`), viewTraces]
+    }
+    if (tab === 'model') return [api('/model'), info => {
+        updateModelBanner(info)
+        const view = viewModel(info)
+        return instance ? view : el('div', {}, [
+            el('p', { class: 'hint', text: '还没有角色实例：先在任一聊天入口和角色说一句话，实例就会创建。模型可以先在下方配置。' }),
+            view,
+        ])
+    }]
+    if (tab === 'config') return [Promise.all([api('/config'), api(`${base}/instance-config`)]), viewConfig]
+    if (tab.startsWith('plugin:')) {
+        const [, pluginId, panelId] = tab.split(':')
+        return [api(`${base}/plugins/${encodeURIComponent(pluginId)}`), plugin => viewPlugin(plugin, panelId)]
+    }
+    return [null, () => el('p', { class: 'hint', text: '未知页面' })]
+}
+
+function collectScroll(container) {
+    return {
+        x: window.scrollX, y: window.scrollY,
+        areas: [...container.querySelectorAll(SCROLL_AREAS)].map(node => ({
+            key: node.dataset.scrollKey ?? node.className, x: node.scrollLeft, y: node.scrollTop,
+        })),
+    }
+}
+
+function patchView(current, next) {
+    // Keep structural containers in place. Always install fresh handlers for controls.
+    if (current.tagName === next.tagName && current.className === next.className
+        && current.dataset.scrollKey === next.dataset.scrollKey && current.matches(LIVE_CONTAINERS)) {
+        const children = [...next.children]
+        children.forEach((child, index) => {
+            const previous = current.children[index]
+            if (previous) patchView(previous, child)
+            else current.append(child)
+        })
+        while (current.children.length > children.length) current.lastElementChild.remove()
+    } else if (!current.isEqualNode(next) || current.matches(INTERACTIVE) || current.querySelector(INTERACTIVE)) {
+        current.replaceWith(next)
+    }
+}
+
+function displayPage(key, snapshot, view, patch) {
+    const container = $('view')
+    const previous = collectScroll(container)
+    if (displayedPage && displayedPage.key !== key) scrollPositions.set(displayedPage.key, previous)
+    const target = displayedPage?.key === key ? previous : scrollPositions.get(key)
+    if (patch && container.firstElementChild) patchView(container.firstElementChild, view)
+    else container.replaceChildren(view)
+    displayedPage = { key, snapshot }
+    container.querySelectorAll(SCROLL_AREAS).forEach((node, index) => {
+        const area = target?.areas[index]
+        if (area?.key === (node.dataset.scrollKey ?? node.className)) {
+            node.scrollLeft = area.x
+            node.scrollTop = area.y
+        }
+    })
+    window.scrollTo(target?.x ?? 0, target?.y ?? 0)
+}
+
+function setLoading(loading) {
+    const view = $('view')
+    view.inert = loading
+    if (loading) view.setAttribute('aria-busy', 'true')
+    else view.removeAttribute('aria-busy')
+    $('view-loading').hidden = !loading
+}
+
+function editingView() {
+    const active = document.activeElement
+    return $('dialog').open || ($('view').contains(active) && active.matches(INTERACTIVE))
+}
+
 async function render(force = true) {
-    if (!state.instance) { if (state.tab === 'model') await rerenderModel(); return }
-    state.tab = (location.hash.slice(1).split('?')[0]) || 'semantics'
-    for (const node of document.querySelectorAll('[data-tab]')) node.setAttribute('aria-selected', String(node.dataset.tab === state.tab))
+    const instance = state.instance
+    if (!instance && state.tab !== 'model') return
+    if (!force && (pendingRender || editingView())) return
+    const route = () => instance ? location.hash.slice(1) || 'semantics' : 'model'
+    const hash = route()
+    const [tab, query = ''] = hash.split('?', 2)
+    const key = JSON.stringify([instance, hash])
+    const request = {}
+    pendingRender = request
+    const isCurrent = () => pendingRender === request && state.instance === instance && route() === hash
+    const changingPage = displayedPage?.key !== key
+    state.tab = tab
+    for (const node of document.querySelectorAll('[data-tab]')) node.setAttribute('aria-selected', String(node.dataset.tab === tab))
+    setLoading(changingPage)
     try {
-        let view
-        if (state.tab === 'semantics') view = await viewSemantics()
-        else if (state.tab === 'memories') view = await viewMemories()
-        else if (state.tab === 'review') view = await viewReview()
-        else if (state.tab === 'audit') view = await viewAudit()
-        else if (state.tab === 'traces') view = await viewTraces(force)
-        else if (state.tab === 'model') {
-            // Holds a form being filled in: never rebuild it on auto-refresh.
-            if (!force) return await refreshBadges()
-            view = await viewModel()
+        // Background polling leaves the model form and static configuration alone.
+        if (force || changingPage || (tab !== 'model' && tab !== 'config')) {
+            const [response, draw] = viewRequest(instance, tab, new URLSearchParams(query))
+            const data = await response
+            if (!isCurrent()) return
+            const snapshot = JSON.stringify(data)
+            const canUpdate = changingPage || (force ? !$('dialog').open : !editingView())
+            if (canUpdate && (changingPage || force || snapshot !== displayedPage.snapshot)) {
+                displayPage(key, snapshot, draw(data), !force && !changingPage)
+            }
         }
-        else if (state.tab === 'config') {
-            // Static per process: auto-refresh would only reset scroll and folds.
-            if (!force) return await refreshBadges()
-            view = await viewConfig()
-        }
-        else if (state.tab.startsWith('plugin:')) {
-            const [, pluginId, panelId] = state.tab.split(':')
-            view = await viewPlugin(pluginId, panelId)
-        } else view = el('p', { class: 'hint', text: '未知页面' })
-        // Keep the open dialog and focus stable during auto-refresh.
-        // null: nothing changed since the last render (keeps folds and scroll).
-        if (view && !$('dialog').open) $('view').replaceChildren(view)
-        await refreshBadges()
+        setLoading(false)
+        await refreshBadges(instance, isCurrent)
     } catch (error) {
-        show(error.message, 'error')
+        if (!isCurrent()) return
+        if (changingPage && displayedPage?.key !== key) {
+            displayPage(key, null, el('p', { class: 'hint', role: 'alert', text: `页面加载失败：${error.message}` }), false)
+        } else show(error.message, 'error')
+    } finally {
+        if (pendingRender === request) {
+            pendingRender = null
+            setLoading(false)
+        }
     }
 }
 
@@ -344,7 +447,7 @@ async function connect() {
         if (!instances.length) {
             show('还没有实例', 'error')
             state.tab = 'model'
-            $('view').replaceChildren(el('p', { class: 'hint', text: '还没有角色实例：先在任一聊天入口和角色说一句话，实例就会创建。模型可以先在下方配置。' }), await viewModel())
+            await render()
             return
         }
         state.instance = instances.some(item => item.id === state.instance) ? state.instance : instances[0].id
@@ -361,10 +464,19 @@ async function connect() {
 function schedule() {
     clearInterval(state.timer)
     if ($('auto').checked) state.timer = setInterval(async () => {
-        if (state.busy || document.hidden || $('dialog').open) return
-        if (document.activeElement?.closest?.('.toolbar')) return
+        if (state.busy || document.hidden) return
         await render(false)
     }, 3000)
+}
+
+async function refreshConsole() {
+    const instance = state.instance
+    try {
+        if (instance) await Promise.all([render(), buildTabs()])
+        else await render()
+    } catch (error) {
+        if (state.instance === instance) show(error.message, 'error')
+    }
 }
 
 $('dev').checked = devState.on
@@ -388,8 +500,8 @@ $('login').addEventListener('submit', event => {
     sessionStorage.setItem('cl-console-token', state.token)
     connect()
 })
-$('instance').addEventListener('change', async event => { state.instance = event.target.value; await buildTabs(); await render() })
-$('refresh').addEventListener('click', async () => { if (state.instance) { await buildTabs(); await render() } })
+$('instance').addEventListener('change', event => { state.instance = event.target.value; refreshConsole() })
+$('refresh').addEventListener('click', refreshConsole)
 $('auto').addEventListener('change', schedule)
 window.addEventListener('hashchange', () => render())
 if (state.token) connect()

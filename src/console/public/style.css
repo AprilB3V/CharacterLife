@@ -1,6 +1,7 @@
 /* CharacterLife owner console. Colors follow CL/design/tokens.css. Visual language shared with the website:
    cream paper, navy ink outlines, hard offset shadows; model internals use the hologram style. */
 :root {
+    scrollbar-gutter: stable;
     --bg: #fbf4e4;
     --dots: #e3d6b8;
     --panel: #fffef8;
@@ -41,7 +42,7 @@ body {
     backdrop-filter: blur(4px);
 }
 .topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
 .controls[hidden] { display: none; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16px; margin-right: 8px; white-space: nowrap; }
 .brand::before {
@@ -55,7 +56,8 @@ body {
 }
 .login { display: flex; gap: 8px; justify-content: center; }
 .dev-toggle:has(input:checked) { color: var(--text); background: #ffe8a3; border: 2px solid var(--line); border-radius: 999px; padding: 0 8px; }
-.field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
+.field { display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.field select { min-width: 0; text-overflow: ellipsis; }
 .toggle { color: var(--muted); display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .toggle input { accent-color: var(--accent); }
 .status { margin-left: auto; padding: 1px 10px; font-size: 13px; font-weight: 600; color: var(--muted); border-radius: 999px; }
@@ -113,6 +115,11 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: default; transfor
 
 /* ---------------------------------------------------------------- layout */
 .view { padding: 20px 20px 32px; }
+.view-loading {
+    position: fixed; z-index: 3; inset-inline-start: 50%; inset-block-end: 24px; transform: translateX(-50%);
+    margin: 0; padding: 6px 14px; border: 2px solid var(--line); border-radius: 10px;
+    background: var(--yellow); box-shadow: var(--shadow); pointer-events: none;
+}
 .hint {
     display: block; width: fit-content; margin: 0 auto 16px; color: var(--muted); padding: 8px 14px;
     background: var(--panel); border: 2px dashed var(--rule); border-radius: 10px; text-align: center;
