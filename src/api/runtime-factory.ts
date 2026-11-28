@@ -39,6 +39,8 @@ import { SequentialIdFactory } from '../kernel/util/ids.ts'
 import { MockProvider } from '../conversation/providers/mock.ts'
 import { DeepSeekProvider, deepSeekConfigFromEnv, isLocalBaseUrl } from '../conversation/providers/deepseek.ts'
 import { parseReasoningMode, reasoningBody } from '../conversation/providers/reasoning.ts'
+import { SwitchableProvider } from '../conversation/providers/switchable.ts'
+import { modelSettingsPathFor, providerFromProfile, readModelSettings } from '../conversation/providers/model-settings.ts'
 import type { LLMProvider } from '../types.ts'
 import { LlmThinker } from '../kernel/thinking/thinker.ts'
 import type { WillingnessConfig } from '../kernel/thinking/willingness.ts'
@@ -88,6 +90,11 @@ export interface RuntimeConfig {
   /** 角色模板；不传则使用原创角色沈知微 */
   template?: CharacterTemplate
   provider?: LLMProvider
+  /**
+   * Console-saved model connections (JSON). Absent: beside a file database (see modelSettingsPathFor);
+   * null turns the feature off. An injected `provider` always wins over saved settings.
+   */
+  modelSettingsPath?: string | null
   /**
    * Model for the thinking loop (cheap and fast, strict JSON). Absent: `thinkProviderFromEnv()`;
    * when that is not configured either, thinking is off and `/v1/think` refuses.
@@ -174,7 +181,7 @@ export function redactSettings(value: unknown, depth = 0): unknown {
 export interface RuntimeDescription {
   dbPath: string
   worldId: string
-  provider: { name: string; model: string; note: string; settings: Record<string, unknown> }
+  provider: { name: string; model: string; note: string; source?: string; settings: Record<string, unknown> }
   thinking: { name: string; model: string; maxTokens: number; settings: Record<string, unknown> } | null
   conversation: Record<string, unknown>
   contextBudget: Record<string, unknown>
@@ -213,6 +220,10 @@ export interface RuntimeBundle {
   template: CharacterTemplate
   clock: Clock
   provider: LLMProvider
+  /** The same object as `provider`: the console swaps the backing model through it. */
+  chatModel: SwitchableProvider
+  /** Where console-saved model connections live; null when saving is unavailable. */
+  modelSettingsPath: string | null
   /** Thinking loop model; null when thinking is off. */
   thinkProvider: LLMProvider | null
   /** Owner-console thought traces; null when tracing is off. */
@@ -257,6 +268,29 @@ export function chooseProvider(config?: LLMProvider): { provider: LLMProvider; n
   return { provider: new MockProvider({ mode: 'in-character' }), note: 'MockProvider（未配置 CHARACTERLIFE_MODEL_API_KEY 或本地 CHARACTERLIFE_MODEL_BASE_URL）' }
 }
 
+/** Machine-readable origin of a provider picked by chooseProvider. */
+const sourceOf = (provider: LLMProvider, explicit: boolean): string =>
+  explicit ? 'explicit' : provider instanceof MockProvider ? 'mock' : 'env'
+
+/**
+ * Startup model: an injected provider; else the console-saved active connection; else the
+ * environment (chooseProvider). A saved connection whose key is missing falls back with a note.
+ */
+export function chooseStartupProvider(config: { provider?: LLMProvider }, settingsPath: string | null): SwitchableProvider {
+  if (!config.provider && settingsPath) {
+    try {
+      const settings = readModelSettings(settingsPath)
+      const active = settings.profiles.find((item) => item.id === settings.active)
+      if (active) return new SwitchableProvider(providerFromProfile(active), `后台配置「${active.label}」`, `console:${active.id}`)
+    } catch (err) {
+      const fallback = chooseProvider()
+      return new SwitchableProvider(fallback.provider, `${fallback.note}；后台配置不可用：${(err as Error).message}`, sourceOf(fallback.provider, false))
+    }
+  }
+  const chosen = chooseProvider(config.provider)
+  return new SwitchableProvider(chosen.provider, chosen.note, sourceOf(chosen.provider, Boolean(config.provider)))
+}
+
 /**
  * Thinking model from the environment: any OpenAI-compatible endpoint.
  * CHARACTERLIFE_THINK_BASE_URL and CHARACTERLIFE_THINK_MODEL must be set; CHARACTERLIFE_THINK_API_KEY too,
@@ -294,7 +328,9 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
   const persistence = new CharacterPersistence(db)
   const platformStore = new PlatformStore(db)
   const ids = new SequentialIdFactory()
-  const { provider, note } = chooseProvider(config.provider)
+  const modelSettingsPath = config.modelSettingsPath === undefined ? modelSettingsPathFor(config.dbPath) : config.modelSettingsPath
+  const provider = chooseStartupProvider(config, modelSettingsPath)
+  const note = provider.note
   const thinkProvider = config.thinkProvider === undefined ? thinkProviderFromEnv() : config.thinkProvider
   const template = config.template ?? defaultTemplate()
   const tracesPerInstance = config.tracesPerInstance ?? 100
@@ -467,9 +503,16 @@ export function assembleRuntime(config: RuntimeConfig): RuntimeBundle {
     template,
     clock,
     provider,
+    chatModel: provider,
+    modelSettingsPath,
     thinkProvider,
     traces,
-    describe: () => structuredClone(description),
+    // The chat model can be swapped from the console, so its part is read live.
+    describe: () => ({ ...structuredClone(description),
+      provider: { name: provider.name, model: provider.model, note: provider.note, source: provider.source, settings: describeProvider(provider) },
+      thinking: description.thinking && thinkProvider === provider
+        ? { ...structuredClone(description.thinking), name: provider.name, model: provider.model, settings: describeProvider(provider) }
+        : structuredClone(description.thinking) }),
     close: () => db.close(),
     // 便于日志说明当前用的是哪个 provider
     ...({ providerNote: note } as Record<string, unknown>),

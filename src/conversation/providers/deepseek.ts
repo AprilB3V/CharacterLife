@@ -20,6 +20,7 @@ import type { ReasoningMode } from './reasoning.ts'
 export interface DeepSeekProviderOptions {
   /** Required unless baseUrl points at a local host (localhost, 127.0.0.1, ::1, *.localhost). */
   apiKey?: string
+  name?: string
   baseUrl?: string
   model?: string
   timeoutMs?: number
@@ -42,7 +43,7 @@ export class ProviderError extends Error {
 const REASONING_TEXT_CAP = 20_000
 
 export class DeepSeekProvider implements LLMProvider {
-  readonly name = 'deepseek'
+  readonly name: string
   readonly model: string
   #apiKey: string
   #baseUrl: string
@@ -51,6 +52,7 @@ export class DeepSeekProvider implements LLMProvider {
   #extraBody: Record<string, unknown>
 
   constructor(opts: DeepSeekProviderOptions) {
+    this.name = opts.name ?? 'deepseek'
     this.#baseUrl = (opts.baseUrl ?? 'https://api.deepseek.com').replace(/\/+$/, '')
     this.#apiKey = opts.apiKey?.trim() ?? ''
     if (!this.#apiKey && !isLocalBaseUrl(this.#baseUrl)) {
